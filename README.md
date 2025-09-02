@@ -118,7 +118,7 @@ cd MiniVid
 docker build --no-cache
 ```
 
-### 3. Si vous voulez utiliser l'authentificaiton, éditer le .env en conséquence 
+### 3. Si vous voulez utiliser l'authentification, éditer le .env en conséquence 
 
 ```bash
 # URL interne du service
@@ -132,7 +132,13 @@ MINI_PASS=
 INTERVAL=3600
 ```
 
-### 4. Editer le docker-compose pour configurer les dossiers, noms et volumes 
+### 4. Générer la SECRET_KEY en console
+
+```bash
+openssl rand -hex 32
+```
+
+### 5. Editer le docker-compose pour configurer les dossiers, noms et volumes 
 
 ```bash
 services:
@@ -214,7 +220,7 @@ services:
       '
 ```
 
-### 5. Lancer le Docker MiniVid
+### 6. Lancer le Docker MiniVid
 
 ```bash
 docker compose up -d
