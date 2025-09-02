@@ -66,6 +66,19 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 ### ⚙️ Configuration simple
 - Tout se règle via **variables d’environnement** dans votre `docker-compose.yml`
 
+
+## 📸 Captures & Article
+
+Pour découvrir MiniVid en images et lire la présentation complète, consultez l’article dédié sur mon blog :  
+
+👉 [MiniVid — Indexage, lecture, tags et favoris pour vos vidéos locales](https://upandclear.org/2025/09/03/minivid-indexage-lecture-tags-et-favoris-pour-vos-videos-locales/)
+
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2025/09/minivid1.jpg.webp)
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2025/09/minivid2.jpg.webp)
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2025/09/minivid3.png.webp)
+
+
+
 ---
 
 ## ⚙️ Variables d’environnement
@@ -92,6 +105,7 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 | **API_READ_KEY**                 | *(vide)*                          | Clé API (optionnelle) pour accès en lecture seule                          |
 
 ---
+
 
 
 
