@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>MiniVid — Connexion</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+  <link rel="stylesheet" href="/static/style.css"/>
+<style>#backTop{display:inline-flex !important}</style>
+</head>
+<body class="loginpage">
+<div id="___topanchor"></div>
+
+  <main class="login">
+    <img src="/static/logo.svg" alt="logo" height="56"/>
+    <h1>MiniVid</h1>
+    {% if enabled %}
+    <form method="post">
+      <label>Utilisateur</label>
+      <input type="text" name="username" required autofocus/>
+      <label>Mot de passe</label>
+      <input type="password" name="password" required/>
+      <label class="remember"><input type="checkbox" name="remember" value="1"/> Se souvenir de moi</label>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <button type="submit">Connexion</button>
+    </form>
+    {% else %}
+    <p>Authentification désactivée (mode LAN). Définir <code>MINI_USER</code>, <code>MINI_PASS</code> et <code>SECRET_KEY</code> pour activer.</p>
+    {% endif %}
+  </main>
+
+<footer class="sitefoot">
+  <p>© MiniVid — 
+    <a href="https://opensource.org/license/mit" target="_blank" rel="noopener">Licence MIT</a> — 
+    <a href="http://upandclear.org" target="_blank" rel="noopener">Blog</a> • 
+    <a href="https://github.com/Aerya" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<style>
+  .sitefoot {
+    text-align: center;
+    margin: 2rem 0 1rem;
+    font-size: .9rem;
+    color: #666;
+  }
+  .sitefoot a {
+    color: inherit;
+    text-decoration: underline;
+  }
+</style>
+
+
+<a id="backTop" href="#___topanchor" class="backtop" style="position:fixed;right:18px;bottom:18px;z-index:2147483647;border:1px solid currentColor;border-radius:999px;padding:.5rem .6rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer;display:inline-flex;pointer-events:auto;text-decoration:none;color:inherit">↑</a>
+</body>
+</html>

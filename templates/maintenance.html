@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>MiniVid — Maintenance</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+  <link rel="stylesheet" href="/static/style.css"/>
+
+<style>/*THEME_TOGGLE*/
+html.light{filter:invert(1) hue-rotate(180deg)}
+html.light img,html.light video,html.light canvas,html.light iframe,html.light picture{filter:invert(1) hue-rotate(180deg)}
+#themeToggle{background:transparent;border:1px solid currentColor;border-radius:10px;padding:.25rem .5rem;margin-left:.5rem;line-height:1}
+.tagsline{gap:.45rem .6rem}
+.tagsline .pill small{margin-left:.25rem}
+</style>
+
+<style>
+.backtop{position:fixed;right:18px;bottom:18px;z-index:999;display:none;border:1px solid currentColor;border-radius:999px;padding:.5rem .6rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer}
+html.light .backtop{background:rgba(255,255,255,.65)}
+.backtop.show{display:inline-flex}
+</style>
+
+<style>
+.fsbtn{position:absolute;right:14px;top:14px;padding:.35rem .5rem;border:1px solid currentColor;border-radius:.5rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer;z-index:5}
+html.light .fsbtn{background:rgba(255,255,255,.65)}
+.player, .watch, .viewer{position:relative}
+</style>
+<style>#backTop{display:inline-flex !important}</style>
+
+<style>
+/* A11y focus ring */
+:focus-visible{ outline: 2px solid #3b82f6; outline-offset: 2px; }
+</style>
+</head>
+<body class="maintenance">
+<div id="___topanchor"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="/static/logo.svg" alt="logo" height="28"/>
+    <strong>MiniVid</strong>
+  </div>
+  <a class="back" id="btn-back" href="{{ back }}">← Retour</a></header>
+
+
+  <main class="container" style="padding:16px;">
+    <div class="page-header" style="margin-bottom:1rem;">
+      <h2 style="margin:0;">Maintenance</h2>
+    </div>
+
+    <div class="layout maint" style="display:grid;grid-template-columns:300px 1fr;gap:1rem;">
+      <!-- Colonne Actions -->
+      <section class="card">
+        <header class="card-header">
+          <h3 class="card-title" style="margin:0;">Actions</h3>
+        </header>
+        <div class="card-body">
+          <div class="btn-group" style="display:flex;gap:.5rem;flex-wrap:wrap;">
+            <button id="btn-full"  class="btn btn-primary" onclick="startFull()">Rescan complet</button>
+            <button id="btn-purge" class="btn btn-danger"  onclick="purgeThumbs()">Purger miniatures</button>
+          </div>
+
+          <div id="scan-status" class="text-muted" style="margin-top:.75rem;">Prêt.</div>
+          <div class="progress" style="height:10px;margin-top:.5rem;">
+            <div id="scan-bar" class="progress-bar" role="progressbar" style="width:0%"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Colonne Journal (live) -->
+      <section class="card" style="min-height:320px;">
+        <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
+          <h3 class="card-title" style="margin:0;">Journal récent</h3>
+          <small id="journal-hint" class="text-muted" style="opacity:.8;"></small>
+        </header>
+        <div class="card-body">
+          <div id="journal" class="table-responsive">
+            <div class="text-muted">Chargement…</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // --- Bouton Retour EXACT sur la page précédente ---
+    (function setupBack(){
+      const back = document.getElementById('btn-back');
+      if (!back) return;
+      back.addEventListener('click', function(e){
+        e.preventDefault();
+        const ref = document.referrer || "";
+        try {
+          if (ref && new URL(ref).origin === window.location.origin) {
+            history.back();
+            setTimeout(()=>{ if (document.referrer) location.href = ref; else location.href = "/browse"; }, 300);
+          } else {
+            location.href = "/browse";
+          }
+        } catch(_e){
+          location.href = "/browse";
+        }
+      });
+    })();
+
+    // --- UI helpers ---
+    const statusEl = document.getElementById('scan-status');
+    const barEl    = document.getElementById('scan-bar');
+    const hintEl   = document.getElementById('journal-hint');
+
+    let pollProgTimer  = null;
+    let pollLogTimer   = null;
+    let lastRendered   = "";
+
+    function setStatus(txt){ if(statusEl) statusEl.textContent = txt; }
+    function setProgress(p){
+      if(!barEl) return;
+      const v = Math.max(0, Math.min(100, parseInt(p||0)));
+      barEl.style.width = v + "%";
+      barEl.setAttribute("aria-valuenow", v);
+    }
+    function setHint(txt){ if(hintEl) hintEl.textContent = txt || ""; }
+
+    // --- Actions ---
+    async function startFull(){
+      const b2 = document.getElementById('btn-full');
+      if (b2) b2.disabled = true;
+      setStatus("Démarrage du scan…");
+      setProgress(0);
+      setHint("Journal en direct…");
+      try{
+        const r = await fetch("/api/maintenance/rescan", { method:"POST", credentials:"same-origin" });
+        if (r.ok || r.status === 202 || r.status === 409) {
+          startLiveJournal();
+          pollProgress();
+        } else {
+          const j = await r.json().catch(()=>({}));
+          setStatus("Erreur: " + (j.error || r.status));
+          setHint("");
+          if (b2) b2.disabled = false;
+        }
+      }catch(e){
+        setStatus("Erreur réseau: " + e);
+        setHint("");
+        if (b2) b2.disabled = false;
+      }
+    }
+
+    async function purgeThumbs(){
+      const btn = document.getElementById('btn-purge');
+      if (btn) btn.disabled = true;
+      setHint("Mise à jour du journal…");
+      try{
+        const r = await fetch("/api/maintenance/purge_thumbs", { method:"POST", credentials:"same-origin" });
+        const j = await r.json().catch(()=>({}));
+        if (r.ok && j.ok) {
+          alert(`Supprimé: ${j.removed || 0} miniatures`);
+          loadJournal();
+        } else {
+          alert(`Erreur purge (${r.status}) : ${j.error || 'inconnue'}`);
+        }
+      }catch(e){
+        alert("Erreur réseau purge: " + e);
+      }finally{
+        setHint("");
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // --- Progress / Live logs ---
+    async function pollProgress(){
+      clearTimeout(pollProgTimer);
+      try{
+        const r = await fetch("/api/maintenance/progress", { credentials:"same-origin" });
+        const j = await r.json();
+        if (j && j.ok){
+          const running = !!j.running;
+          setProgress(j.progress || 0);
+          setStatus((running ? "Scan en cours — " : "Statut : ") + (j.message || ""));
+          const b2 = document.getElementById('btn-full');
+          if (b2) b2.disabled = running;
+          pollProgTimer = setTimeout(pollProgress, running ? 1000 : 5000);
+          if (!running) {
+            stopLiveJournal();
+            setHint("");
+            loadJournal();
+          }
+        } else {
+          pollProgTimer = setTimeout(pollProgress, 4000);
+        }
+      }catch(e){
+        pollProgTimer = setTimeout(pollProgress, 5000);
+      }
+    }
+
+    async function loadJournal(){
+      const box = document.getElementById('journal');
+      if (!box) return;
+      try{
+        const r = await fetch("/api/maintenance/journal", { credentials:"same-origin" });
+        const j = await r.json();
+        if(!j || !j.ok){ box.innerHTML = '<div class="text-muted">—</div>'; return; }
+        const ev = j.events || [];
+        if(!ev.length){ box.innerHTML = '<div class="text-muted">Aucun évènement</div>'; return; }
+
+        const rows = ev.slice().reverse().map(e=>{
+          const dt = new Date((e.ts||0)*1000).toLocaleString(undefined, {
+            year:'numeric', month:'2-digit', day:'2-digit',
+            hour:'2-digit', minute:'2-digit', second:'2-digit',
+            hour12:false
+          });
+          const kind = e.event || "";
+          const items = (e.items!=null? e.items : "—");
+          const changedRemoved = (e.changed!=null? e.changed : (e.removed!=null? e.removed : "—"));
+          const took = (e.took_ms!=null? (e.took_ms+"ms") : "—");
+          return `<tr>
+            <td>${dt}</td>
+            <td>${kind}</td>
+            <td>${items}</td>
+            <td>${changedRemoved}</td>
+            <td>${took}</td>
+          </tr>`;
+        }).join("");
+
+        const html = `
+          <div class="table-wrapper" style="overflow:auto;">
+            <table class="table" style="width:100%; min-width:680px;">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Action</th>
+                  <th>Fichier(s)</th>
+                  <th>Modifié(s)</th>
+                  <th>Durée</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+        if (html !== lastRendered) {
+          lastRendered = html;
+          box.innerHTML = html;
+        }
+      }catch{
+        const box = document.getElementById('journal');
+        if (box) box.innerHTML = '<div class="text-muted">—</div>';
+      }
+    }
+
+    function startLiveJournal(){
+      stopLiveJournal();
+      pollLogTimer = setInterval(loadJournal, 1200);
+      loadJournal();
+    }
+    function stopLiveJournal(){
+      if (pollLogTimer) {
+        clearInterval(pollLogTimer);
+        pollLogTimer = null;
+      }
+    }
+
+    // init
+    (function(){
+      pollProgress();
+      loadJournal();
+    })();
+  </script>
+</body>
+</html>
