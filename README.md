@@ -119,45 +119,32 @@ Aucun appel externe, tout est 100% local. Fonctionne en http://IP:port comme en 
 
 ## 🛠️ Installation
 
-### 1. Cloner le dépôt
-
-```bash
-git clone https://github.com/Aerya/MiniVid.git
-cd MiniVid
-```
-
-### 2. Construire l'image Docker
-
-```bash
-docker build --no-cache
-```
-
-### 3. Si vous voulez utiliser l'authentification, éditer le .env en conséquence 
+### 1. Si vous voulez utiliser l'authentification, éditer le .env en conséquence 
 
 ```bash
 # URL interne du service
 APP_URL=http://minivid:8080
 
 # Auth (laisser vide pour désactiver l'auth)
-MINI_USER=
-MINI_PASS=
+MINI_USER=michel
+MINI_PASS=m1ch3l
 
 # Fréquence en secondes (3600 = 1h)
 INTERVAL=3600
 ```
 
-### 4. Générer la SECRET_KEY en console
+### 2. Générer la SECRET_KEY en console
 
 ```bash
 openssl rand -hex 32
 ```
 
-### 5. Editer le docker-compose pour configurer les dossiers, noms et volumes 
+### 3. Editer le docker-compose pour configurer la clé, les dossiers, noms et volumes 
 
 ```bash
 services:
   minivid:
-    build: .
+    image: ghcr.io/aerya/minivid:latest
     container_name: minivid
     restart: always
     environment:
@@ -232,10 +219,4 @@ services:
           sleep "$INTERVAL"
         done
       '
-```
-
-### 6. Lancer le Docker MiniVid
-
-```bash
-docker compose up -d
 ```
