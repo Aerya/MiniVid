@@ -226,9 +226,9 @@ services:
 
 👉 [Télécharger et lancer Windows-MiniVid.bat](https://github.com/Aerya/MiniVid/blob/main/Windows-MiniVid.cmd)
 
-Il installera si nécessaire Docker Desktop sur la machine.
-Guidage complet pour la configuration de MiniVid (édition complète disponible)
-Ajout de dossiers locaux comme distants (SMB/CIFS avec ou sans user:pwd)
+- Il installera si nécessaire Docker Desktop sur la machine,
+- Guidage complet pour la configuration de MiniVid (édition complète disponible),
+- Ajout de dossiers locaux comme distants (SMB/CIFS avec ou sans user:pwd).
 
 ![MiniVid Windows](https://upandclear.org/wp-content/uploads/2025/09/minivid-windows.png.webp)
 
