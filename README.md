@@ -117,7 +117,7 @@ Aucun appel externe, tout est 100% local. Fonctionne en http://IP:port comme en 
 
 
 
-## 🛠️ Installation
+## 🛠️ Installation Manuelle via Docker
 
 ### 1. Si vous voulez utiliser l'authentification, éditer le .env en conséquence 
 
@@ -220,3 +220,20 @@ services:
         done
       '
 ```
+
+
+## 🛠️ Installation Automatisée pour Windows
+
+👉 [Télécharger et lancer Windows-MiniVid.bat](https://github.com/Aerya/MiniVid/blob/main/Windows-MiniVid.cmd)
+
+Il installera si nécessaire Docker Desktop sur la machine.
+Guidage complet pour la configuration de MiniVid (édition complète disponible)
+Ajout de dossiers locaux comme distants (SMB/CIFS avec ou sans user:pwd)
+
+![MiniVid Windows](https://upandclear.org/wp-content/uploads/2025/09/minivid-windows.png.webp)
+
+
+
+
+
+
