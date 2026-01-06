@@ -1,52 +1,86 @@
+{% macro render_video_card(it, mix, sort, readf, per) %}
+<article class="card {{ 'played' if it.played else 'unplayed' }}" data-vid="{{ it.id }}"
+  data-duration="{{ it.duration or '' }}">
+  <a class="thumb" href="/watch/{{ it.id }}?back={{ request.full_path | urlencode }}">
+    <img loading="lazy" class="lazy-thumb" src="/static/placeholder.svg" data-src="/thumb/{{ it.id }}.jpg"
+      alt="preview" />
+    <div class="badge">{{ it.ext.upper() }}</div>
+    {% if it.played %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
+  </a>
+
+  <!-- Étoile favori compacte -->
+  <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori"
+    data-id="{{ it.id }}">★</button>
+
+  <h3 title="{{ it.name }}">{{ it.name }}</h3>
+  <p class="meta">
+    <span>{{ it.size | filesize }}</span>
+    {% if it.res %} • <span>{{ it.res }}</span>{% endif %}
+    {% if it.p %} • <span>{{ it.p }}</span>{% endif %}
+  </p>
+
+  <p class="tagsline">
+    {% set t_show = (it.ctags or it.tags or [])[:5] %}
+    {% if t_show %}
+    {% for t in t_show %}
+    <a class="pill"
+      href="{{ url_for('browse', tags=(','.join((request.args.get('tags','') or '').split(',') + [t])), mix=mix, sort=sort, read=readf, per=per) }}"
+      data-tag="{{ t }}">{{ t }}</a>
+    {% endfor %}
+    {% else %}
+    <span class="muted">(pas de tag)</span>
+    {% endif %}
+  </p>
+</article>
+{% endmacro %}
+
+{% macro render_folder_card(it) %}
+<article class="card folder">
+  <a class="thumb" href="{{ it.url }}" title="Ouvrir le dossier">
+    <div class="foldericon">📁</div>
+    <div class="badge">DOSSIER</div>
+    <div class="badge right">{{ it.count }} éléments</div>
+  </a>
+  <h3 title="{{ it.name }}">{{ it.name }}</h3>
+  <p class="meta"><span>Dernière modif.</span> • <span>{{ it.latest | datetime }}</span></p>
+</article>
+{% endmacro %}
+
+{% if smart_groups %}
+{# Affichage groupé par période #}
+{% for group in smart_groups %}
+<h2 class="group-header">{{ group.label }} <small>({{ group.videos|length }})</small></h2>
+<section class="grid">
+  {% for it in group.videos %}
+  {% if it.kind == 'folder' %}
+  {{ render_folder_card(it) }}
+  {% else %}
+  {{ render_video_card(it, mix, sort, readf, per) }}
+  {% endif %}
+  {% endfor %}
+</section>
+{% endfor %}
+
+{# Afficher les dossiers séparément en haut si smart mode #}
+{% set folders_only = grid | selectattr('kind', 'equalto', 'folder') | list %}
+{% if folders_only %}
+<h2 class="group-header">📁 Dossiers <small>({{ folders_only|length }})</small></h2>
+<section class="grid">
+  {% for it in folders_only %}
+  {{ render_folder_card(it) }}
+  {% endfor %}
+</section>
+{% endif %}
+{% else %}
+{# Affichage classique #}
 <section class="grid">
   {% if not grid %}<p class="empty">Aucun élément.</p>{% endif %}
   {% for it in grid %}
-    {% if it.kind == 'folder' %}
-      <article class="card folder">
-        <a class="thumb" href="{{ it.url }}" title="Ouvrir le dossier">
-          <div class="foldericon">📁</div>
-          <div class="badge">DOSSIER</div>
-          <div class="badge right">{{ it.count }} éléments</div>
-        </a>
-        <h3 title="{{ it.name }}">{{ it.name }}</h3>
-        <p class="meta"><span>Dernière modif.</span> • <span>{{ it.latest | datetime }}</span></p>
-      </article>
-{% else %}
-  <article class="card {{ 'played' if it.played else 'unplayed' }}" data-vid="{{ it.id }}" data-duration="{{ it.duration or '' }}">
-    <a class="thumb" href="/watch/{{ it.id }}?back={{ request.full_path | urlencode }}">
-      <img loading="lazy" src="/thumb/{{ it.id }}.jpg" alt="preview"/>
-      <div class="badge">{{ it.ext.upper() }}</div>
-      {% if it.played %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
-    </a>
-
-    <!-- Étoile favori compacte -->
-    <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori" data-id="{{ it.id }}">★</button>
-
-    <h3 title="{{ it.name }}">{{ it.name }}</h3>
-    <p class="meta">
-      <span>{{ it.size | filesize }}</span>
-      {% if it.res %} • <span>{{ it.res }}</span>{% endif %}
-      {% if it.p %} • <span>{{ it.p }}</span>{% endif %}
-    </p>
-
-    <p class="tagsline">
-      {% set t_show = (it.ctags or it.tags or [])[:5] %}
-      {% if t_show %}
-        {% for t in t_show %}
-          <a class="pill" href="{{ url_for('browse', tags=(','.join((request.args.get('tags','') or '').split(',') + [t])), mix=mix, sort=sort, read=readf, per=per) }}" data-tag="{{ t }}">{{ t }}</a>
-        {% endfor %}
-      {% else %}
-        <span class="muted">(pas de tag)</span>
-      {% endif %}
-    </p>
-
-    <!-- Ancien bouton texte : on peut le supprimer si voulu
-    <div class="actions">
-      <button class="favbtn-grid {{ 'on' if it.fav else '' }}" data-vid="{{ it.id }}">{{ '★' if it.fav else '☆' }}</button>
-    </div>
-    -->
-  </article>
-{% endif %}
-
+  {% if it.kind == 'folder' %}
+  {{ render_folder_card(it) }}
+  {% else %}
+  {{ render_video_card(it, mix, sort, readf, per) }}
+  {% endif %}
   {% endfor %}
 </section>
+{% endif %}

@@ -1,288 +1,507 @@
 <!doctype html>
 <html lang="fr">
+
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>MiniVid — {{ name }}</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
-  <link rel="stylesheet" href="/static/style.css"/>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/style.css" />
 
-<style>/*THEME_TOGGLE*/
-html.light{filter:invert(1) hue-rotate(180deg)}
-html.light img,html.light video,html.light canvas,html.light iframe,html.light picture{filter:invert(1) hue-rotate(180deg)}
-#themeToggle{background:transparent;border:1px solid currentColor;border-radius:10px;padding:.25rem .5rem;margin-left:.5rem;line-height:1}
-.tagsline{gap:.45rem .6rem}
-.tagsline .pill small{margin-left:.25rem}
-</style>
+  <style>
+    /*THEME_TOGGLE*/
+    html.light {
+      filter: invert(1) hue-rotate(180deg)
+    }
 
-<style>
-.backtop{position:fixed;right:18px;bottom:18px;z-index:999;display:none;border:1px solid currentColor;border-radius:999px;padding:.5rem .6rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer}
-html.light .backtop{background:rgba(255,255,255,.65)}
-.backtop.show{display:inline-flex}
-</style>
+    html.light img,
+    html.light video,
+    html.light canvas,
+    html.light iframe,
+    html.light picture {
+      filter: invert(1) hue-rotate(180deg)
+    }
 
-<style>
-.fsbtn{position:absolute;right:14px;top:14px;padding:.35rem .5rem;border:1px solid currentColor;border-radius:.5rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer;z-index:5}
-html.light .fsbtn{background:rgba(255,255,255,.65)}
-.player, .watch, .viewer{position:relative}
-</style>
-<style>#backTop{display:inline-flex !important}</style>
+    #themeToggle {
+      background: transparent;
+      border: 1px solid currentColor;
+      border-radius: 10px;
+      padding: .25rem .5rem;
+      margin-left: .5rem;
+      line-height: 1
+    }
 
-<style>
-/* A11y focus ring */
-:focus-visible{ outline: 2px solid #3b82f6; outline-offset: 2px; }
-</style>
+    .tagsline {
+      gap: .45rem .6rem
+    }
+
+    .tagsline .pill small {
+      margin-left: .25rem
+    }
+  </style>
+
+  <style>
+    .backtop {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 999;
+      display: none;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: .5rem .6rem;
+      background: rgba(0, 0, 0, .35);
+      backdrop-filter: blur(2px);
+      cursor: pointer
+    }
+
+    html.light .backtop {
+      background: rgba(255, 255, 255, .65)
+    }
+
+    .backtop.show {
+      display: inline-flex
+    }
+  </style>
+
+  <style>
+    .fsbtn {
+      position: absolute;
+      right: 14px;
+      top: 14px;
+      padding: .35rem .5rem;
+      border: 1px solid currentColor;
+      border-radius: .5rem;
+      background: rgba(0, 0, 0, .35);
+      backdrop-filter: blur(2px);
+      cursor: pointer;
+      z-index: 5
+    }
+
+    html.light .fsbtn {
+      background: rgba(255, 255, 255, .65)
+    }
+
+    .player,
+    .watch,
+    .viewer {
+      position: relative
+    }
+  </style>
+  <style>
+    #backTop {
+      display: inline-flex !important
+    }
+  </style>
+
+  <style>
+    /* A11y focus ring */
+    :focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+  </style>
 </head>
+
 <body class="watchpage" data-vid="{{ vid }}">
-<div id="___topanchor"></div>
+  <div id="___topanchor"></div>
 
-<header class="topbar">
-  <div class="brand">
-    <img src="/static/logo.svg" alt="logo" height="28"/>
-    <strong>MiniVid</strong>
-  </div>
-  <a class="back" href="{{ back }}">← Retour</a>
-</header>
-
-<main class="watch">
-  {% if unsupported %}
-  <div class="fallback">
-    <p><strong>Ce navigateur ne peut pas lire directement ce type de fichier (<code>.{{ ext }}</code>) et le transcodage est désactivé.</strong></p>
-    <p>Activez <code>MINI_TRANSCODE=1</code> pour permettre un remux/transcodage à la volée, ou utilisez un navigateur basé Chromium.</p>
-  </div>
-  {% else %}
-  <div class="player-wrap">
-    <video id="v" playsinline webkit-playsinline controls autoplay style="width:100%;height:auto;max-height:80vh;">
-      <source src="{{ play_url }}"/>
-    </video>
-  </div>
-  {% endif %}
-
-  {% if res %}
-    <p class="meta" id="resline">Résolution : <span id="resval">{{ res }}</span></p>
-  {% else %}
-    <p class="meta" id="resline">Résolution : <span id="resval">?</span></p>
-  {% endif %}
-
-  <section class="meta-ops">
-    <div class="tagsline">
-      {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
-      {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
-      <button id="addtag" class="pill add">＋ Tag</button>
+  <header class="topbar">
+    <a class="back-btn" href="{{ back }}" title="Retour à la liste">
+      <span class="back-icon">←</span>
+      <span class="back-text">Retour</span>
+    </a>
+    <div class="brand">
+      <img src="/static/logo.svg" alt="logo" height="28" />
+      <strong>MiniVid</strong>
     </div>
-    <div class="actions">
-      <button id="favbtn" class="fav {{ 'on' if fav else '' }}">{{ '★ Favori' if fav else '☆ Favori' }}</button>
-      <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer Non lue' if played else 'Marquer Lue' }}</button>
-      <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
+    <div class="header-right">
+      <button id="themeToggle" class="btn" title="Thème sombre/clair">🌙</button>
     </div>
-  </section>
-</main>
+  </header>
 
-<footer class="sitefoot">
-  <p>© MiniVid — <a href="https://opensource.org/license/mit" target="_blank" rel="noopener">Licence MIT</a> — <a href="http://upandclear.org" target="_blank" rel="noopener">Blog</a> • <a href="https://github.com/Aerya" target="_blank" rel="noopener">GitHub</a></p>
-</footer>
+  <!-- Floating back button for mobile -->
+  <a class="floating-back" href="{{ back }}" title="Retour">←</a>
 
-<script>
-const backLink = document.querySelector('a.back');
-const lastBrowse = localStorage.getItem('minivid_last_browse');
-if (backLink && backLink.getAttribute('href') === '/browse' && lastBrowse) {
-  backLink.setAttribute('href', lastBrowse);
-}
-
-document.getElementById('addtag').addEventListener('click', async () => {
-  const res = prompt('Ajouter des tags (séparés par des virgules) :'); if(!res) return;
-  const tags = res.split(',').map(s=>s.trim()).filter(Boolean); if(!tags.length) return;
-  try{
-    await fetch('/api/tag',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({vid: "{{ vid }}", action:'add', tags})
-    });
-    location.reload();
-  }catch(e){ alert('Erreur tag'); }
-});
-
-const favBtn = document.getElementById('favbtn');
-favBtn.addEventListener('click', async () => {
-  const next = !favBtn.classList.contains('on');
-  try{
-    await fetch('/api/fav',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({vid:"{{ vid }}", fav: next})
-    });
-    favBtn.classList.toggle('on');
-    favBtn.textContent = next ? '★ Favori' : '☆ Favori';
-  }catch(e){ alert('Erreur favori'); }
-});
-
-const readBtn = document.getElementById('readbtn');
-const readState = document.getElementById('readstate');
-readBtn.addEventListener('click', async () => {
-  const next = !readBtn.classList.contains('on');
-  try{
-    await fetch('/api/played',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({vid:"{{ vid }}", played: next})
-    });
-    readBtn.classList.toggle('on');
-    readBtn.textContent = next ? 'Marquer Non lue' : 'Marquer Lue';
-    readState.textContent = next ? 'Lue' : 'Non lue';
-  }catch(e){ alert('Erreur état de lecture'); }
-});
-
-const v = document.getElementById('v');
-const span = document.getElementById('resval');
-if (v) {
-  let sent = false;
-  function maybeMark(){
-    if(sent) return;
-    const th = Math.min(10, (v.duration||1)*0.05);
-    if(v.currentTime >= th || v.ended){
-      sent = true;
-      fetch('/api/played',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({vid:"{{ vid }}", played: true})
-      }).then(()=>{
-        readBtn?.classList.add('on');
-        if (readBtn) readBtn.textContent='Marquer Non lue';
-        if (readState) readState.textContent='Lue';
-      }).catch(()=>{});
-    }
-  }
-  v.addEventListener('timeupdate', maybeMark);
-  v.addEventListener('ended', maybeMark);
-  v.addEventListener('loadedmetadata', ()=> {
-    if(v.videoWidth && v.videoHeight){ span.textContent = v.videoWidth+'×'+v.videoHeight; }
-  });
-}
-</script>
-
-<script>
-(function(){
-  const key='minivid_theme';
-  try{
-    const saved=localStorage.getItem(key)||'dark';
-    if(saved==='light') document.documentElement.classList.add('light');
-    document.addEventListener('click', function(e){
-      const b=e.target.closest('#themeToggle');
-      if(!b) return;
-      const el=document.documentElement;
-      el.classList.toggle('light');
-      localStorage.setItem(key, el.classList.contains('light')?'light':'dark');
-    });
-  }catch(e){}
-})();
-document.addEventListener('DOMContentLoaded', function(){
-  const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent||'').trim().toLowerCase() === 'accueil');
-  const logo = Array.from(document.querySelectorAll('header a, header .brand a, header .logo a')).find(a => (a.textContent||'').trim().toLowerCase() === 'minivid');
-  if (home && logo) { logo.setAttribute('href', home.getAttribute('href')); }
-});
-</script>
-
-<button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page" onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!==\'undefined\'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
-
-<script>
-(function(){
-  var btn=document.getElementById('backTop');
-  if(!btn) return;
-  function toggle(){ (window.scrollY>200?btn.classList.add:btn.classList.remove)('show'); }
-  window.addEventListener('scroll', toggle, {passive:true});
-  toggle();
-  btn.addEventListener('click', function(){ window.scrollTo({top:0, behavior:'smooth'}); });
-})();
-</script>
-
-<script>
-(function(){
-  const v = document.getElementById('v');
-  const b = document.getElementById('btnFS');
-  function enterFS(el){
-    const c = el.closest('.player') || el;
-    const target = c;
-    if (document.fullscreenElement){
-      document.exitFullscreen().catch(()=>{});
-      return;
-    }
-    (target.requestFullscreen||target.webkitRequestFullscreen||target.msRequestFullscreen||target.mozRequestFullScreen)?.call(target);
-  }
-  if (b && v){
-    b.addEventListener('click', function(e){ e.preventDefault(); enterFS(v); });
-  }
-})();
-</script>
-
-<script>/*BACKTOP_FIX_LISTENER*/
-(function(){
-  try{
-    var btn=document.getElementById('backTop');
-    if(!btn) return;
-    function __goTop__(e){
-      try{
-        var el=document.scrollingElement||document.documentElement||document.body;
-        if(el && el.scrollTo){ el.scrollTo({top:0,behavior:'smooth'}); }
-        else{ window.scrollTo(0,0); }
-      }catch(_){ window.scrollTo(0,0); }
-      if(e){ e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
-      return false;
-    }
-    btn.addEventListener('click', __goTop__, true);
-    btn.onclick = __goTop__;
-  }catch(_){}
-})();
-</script>
-
-<script>
-// __VID_PROGRESS__
-(function(){
-  try{
-    var v = document.querySelector('video');
-    if(!v) return;
-    var vid = (document.body.getAttribute('data-vid') || location.pathname.split('/').pop() || '').trim();
-    function key(){ return 'progress::'+vid; }
-    v.addEventListener('loadedmetadata', function(){
-      try{
-        var s = localStorage.getItem(key());
-        if(s){
-          var t = parseFloat(s)||0;
-          if(t > 1 && t < (v.duration||1)-1){ v.currentTime = t; }
+  <main class="watch">
+    {% if unsupported %}
+    <div class="fallback">
+      <p><strong>Ce navigateur ne peut pas lire directement ce type de fichier (<code>.{{ ext }}</code>) et le
+          transcodage est désactivé.</strong></p>
+      <p>Activez <code>MINI_TRANSCODE=1</code> pour permettre un remux/transcodage à la volée, ou utilisez un navigateur
+        basé Chromium.</p>
+      <a class="dlbtn" href="/download/{{ vid }}">📥 Télécharger le fichier</a>
+    </div>
+    {% else %}
+    <div class="player-wrap">
+      {% if playback_method == 'hls' %}
+      <video id="v" playsinline webkit-playsinline controls autoplay
+        style="width:100%;height:auto;max-height:80vh;"></video>
+      <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+      <script>
+        const video = document.getElementById('v');
+        const hlsSrc = "{{ play_url }}";
+        if (Hls.isSupported()) {
+          const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+          hls.loadSource(hlsSrc);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = hlsSrc;
+          video.addEventListener('loadedmetadata', () => video.play());
         }
-      }catch(e){}
-    }, {once:true});
-    var saveTick = 0;
-    v.addEventListener('timeupdate', function(){
-      if(++saveTick % 3) return;
-      try{ localStorage.setItem(key(), String(v.currentTime||0)); }catch(e){}
+      </script>
+      {% else %}
+      <video id="v" playsinline webkit-playsinline controls autoplay style="width:100%;height:auto;max-height:80vh;">
+        <source id="vsource" src="{{ play_url }}" />
+      </video>
+
+      {% if playback_method == 'direct' and can_hls %}
+      <!-- Fallback automatique vers HLS si le direct échoue -->
+      <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+      <script>
+        const video = document.getElementById('v');
+        const hlsSrc = "{{ url_for('hls_playlist', vid=vid) }}";
+
+        video.onerror = () => {
+          console.warn("Lecture directe échouée, tentative HLS...");
+          const badge = document.querySelector('.playback-badge');
+          if (badge) badge.textContent = 'hls (fallback)';
+
+          if (Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(hlsSrc);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = hlsSrc;
+            video.play();
+          }
+        };
+      </script>
+      {% endif %}
+
+      {% endif %}
+      {% if playback_method %}
+      <span class="playback-badge">{{ playback_method }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if res %}
+    <p class="meta" id="resline">Résolution : <span id="resval">{{ res }}</span></p>
+    {% else %}
+    <p class="meta" id="resline">Résolution : <span id="resval">?</span></p>
+    {% endif %}
+
+    <section class="meta-ops">
+      <div class="tagsline">
+        {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
+        {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
+        <button id="addtag" class="pill add">＋ Tag</button>
+      </div>
+      <div class="actions">
+        <button id="favbtn" class="fav {{ 'on' if fav else '' }}">{{ '★ Favori' if fav else '☆ Favori' }}</button>
+        <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer Non lue' if played else 'Marquer Lue'
+          }}</button>
+        <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
+      </div>
+    </section>
+  </main>
+
+  <!-- Keyboard shortcuts panel -->
+  <div class="shortcuts-hint" id="shortcuts">
+    <button class="toggle-shortcuts"
+      onclick="document.getElementById('shortcutsPanel').hidden = !document.getElementById('shortcutsPanel').hidden">⌨️
+      Raccourcis</button>
+    <div class="shortcuts-panel" id="shortcutsPanel" hidden>
+      <p><kbd>Espace</kbd> / <kbd>K</kbd> — Lecture/Pause</p>
+      <p><kbd>J</kbd> — Reculer 10s</p>
+      <p><kbd>L</kbd> — Avancer 10s</p>
+      <p><kbd>←</kbd> / <kbd>→</kbd> — ±5s</p>
+      <p><kbd>↑</kbd> / <kbd>↓</kbd> — Volume</p>
+      <p><kbd>F</kbd> — Plein écran</p>
+      <p><kbd>M</kbd> — Muet</p>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+      <span>MiniVid v2.0</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <strong style="color: #667eea;">Aerya</strong>
+        <img src="https://upandclear.org/wp-content/uploads/2024/06/Logo.detoure1.png.webp" alt="Aerya"
+          style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+      </div>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <a href="https://github.com/Aerya/MiniVid" target="_blank"
+          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">GitHub</a>
+        <a href="https://upandclear.org/" target="_blank"
+          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">Blog</a>
+        <a href="https://ko-fi.com/upandclear" target="_blank"
+          style="display: flex; align-items: center; gap: 4px; text-decoration: none;"><img
+            src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/ko-fi.webp" alt="Ko-fi"
+            style="width: 18px; height: 18px;"> ❤️</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const backLink = document.querySelector('a.back');
+    const lastBrowse = localStorage.getItem('minivid_last_browse');
+    if (backLink && backLink.getAttribute('href') === '/browse' && lastBrowse) {
+      backLink.setAttribute('href', lastBrowse);
+    }
+
+    document.getElementById('addtag').addEventListener('click', async () => {
+      const res = prompt('Ajouter des tags (séparés par des virgules) :'); if (!res) return;
+      const tags = res.split(',').map(s => s.trim()).filter(Boolean); if (!tags.length) return;
+      try {
+        await fetch('/api/tag', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vid: "{{ vid }}", action: 'add', tags })
+        });
+        location.reload();
+      } catch (e) { alert('Erreur tag'); }
     });
-    v.addEventListener('ended', function(){ try{ localStorage.removeItem(key()); }catch(e){} });
-    // Gestes mobiles
-    var lastTap=0;
-    v.addEventListener('touchend', function(ev){
-      var now=Date.now();
-      var rect=v.getBoundingClientRect();
-      var x=(ev.changedTouches&&ev.changedTouches[0]? ev.changedTouches[0].clientX : 0) - rect.left;
-      if(now - lastTap < 350){
-        if(x < rect.width/2){ v.currentTime = Math.max(0,(v.currentTime||0)-10); }
-        else{ v.currentTime = Math.min(v.duration||v.currentTime+10,(v.currentTime||0)+10); }
-        lastTap=0; ev.preventDefault(); return false;
-      } else { lastTap=now; }
-    }, {passive:false});
-    var startX=null;
-    v.addEventListener('touchstart', function(ev){ startX = (ev.touches&&ev.touches[0]? ev.touches[0].clientX : null); }, {passive:true});
-    v.addEventListener('touchend', function(ev){
-      if(startX==null) return;
-      var x = (ev.changedTouches&&ev.changedTouches[0]? ev.changedTouches[0].clientX : startX);
-      var dx = x - startX;
-      if(Math.abs(dx) > 60){
-        if(dx>0){ v.currentTime = Math.max(0,(v.currentTime||0)-15); }
-        else{ v.currentTime = Math.min(v.duration||v.currentTime+15,(v.currentTime||0)+15); }
-        ev.preventDefault(); return false;
+
+    const favBtn = document.getElementById('favbtn');
+    favBtn.addEventListener('click', async () => {
+      const next = !favBtn.classList.contains('on');
+      try {
+        await fetch('/api/fav', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vid: "{{ vid }}", fav: next })
+        });
+        favBtn.classList.toggle('on');
+        favBtn.textContent = next ? '★ Favori' : '☆ Favori';
+      } catch (e) { alert('Erreur favori'); }
+    });
+
+    const readBtn = document.getElementById('readbtn');
+    const readState = document.getElementById('readstate');
+    readBtn.addEventListener('click', async () => {
+      const next = !readBtn.classList.contains('on');
+      try {
+        await fetch('/api/played', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vid: "{{ vid }}", played: next })
+        });
+        readBtn.classList.toggle('on');
+        readBtn.textContent = next ? 'Marquer Non lue' : 'Marquer Lue';
+        readState.textContent = next ? 'Lue' : 'Non lue';
+      } catch (e) { alert('Erreur état de lecture'); }
+    });
+
+    const v = document.getElementById('v');
+    const span = document.getElementById('resval');
+    if (v) {
+      let sent = false;
+      function maybeMark() {
+        if (sent) return;
+        const th = Math.min(10, (v.duration || 1) * 0.05);
+        if (v.currentTime >= th || v.ended) {
+          sent = true;
+          fetch('/api/played', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vid: "{{ vid }}", played: true })
+          }).then(() => {
+            readBtn?.classList.add('on');
+            if (readBtn) readBtn.textContent = 'Marquer Non lue';
+            if (readState) readState.textContent = 'Lue';
+          }).catch(() => { });
+        }
       }
-    }, {passive:false});
-  }catch(e){}
-})();
-</script>
+      v.addEventListener('timeupdate', maybeMark);
+      v.addEventListener('ended', maybeMark);
+      v.addEventListener('loadedmetadata', () => {
+        if (v.videoWidth && v.videoHeight) { span.textContent = v.videoWidth + '×' + v.videoHeight; }
+      });
+    }
+  </script>
+
+  <script>
+    (function () {
+      const key = 'minivid_theme';
+      try {
+        const saved = localStorage.getItem(key) || 'dark';
+        if (saved === 'light') document.documentElement.classList.add('light');
+        document.addEventListener('click', function (e) {
+          const b = e.target.closest('#themeToggle');
+          if (!b) return;
+          const el = document.documentElement;
+          el.classList.toggle('light');
+          localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
+        });
+      } catch (e) { }
+    })();
+    document.addEventListener('DOMContentLoaded', function () {
+      const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').trim().toLowerCase() === 'accueil');
+      const logo = Array.from(document.querySelectorAll('header a, header .brand a, header .logo a')).find(a => (a.textContent || '').trim().toLowerCase() === 'minivid');
+      if (home && logo) { logo.setAttribute('href', home.getAttribute('href')); }
+    });
+  </script>
+
+  <!-- Keyboard shortcuts handler -->
+  <script>
+    document.addEventListener('keydown', (e) => {
+      const v = document.getElementById('v');
+      if (!v || e.target.matches('input, textarea, [contenteditable]')) return;
+
+      const key = e.key.toLowerCase();
+      switch (key) {
+        case ' ':
+        case 'k':
+          e.preventDefault();
+          v.paused ? v.play() : v.pause();
+          break;
+        case 'j':
+          e.preventDefault();
+          v.currentTime = Math.max(0, v.currentTime - 10);
+          break;
+        case 'l':
+          e.preventDefault();
+          v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
+          break;
+        case 'f':
+          e.preventDefault();
+          if (document.fullscreenElement) {
+            document.exitFullscreen?.();
+          } else {
+            (v.requestFullscreen || v.webkitRequestFullscreen || v.msRequestFullscreen)?.call(v);
+          }
+          break;
+        case 'm':
+          e.preventDefault();
+          v.muted = !v.muted;
+          break;
+        case 'arrowleft':
+          e.preventDefault();
+          v.currentTime = Math.max(0, v.currentTime - 5);
+          break;
+        case 'arrowright':
+          e.preventDefault();
+          v.currentTime = Math.min(v.duration || 0, v.currentTime + 5);
+          break;
+        case 'arrowup':
+          e.preventDefault();
+          v.volume = Math.min(1, v.volume + 0.1);
+          break;
+        case 'arrowdown':
+          e.preventDefault();
+          v.volume = Math.max(0, v.volume - 0.1);
+          break;
+      }
+    });
+  </script>
+
+  <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page"
+    onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!==\'undefined\'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('backTop');
+      if (!btn) return;
+      function toggle() { (window.scrollY > 200 ? btn.classList.add : btn.classList.remove)('show'); }
+      window.addEventListener('scroll', toggle, { passive: true });
+      toggle();
+      btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    })();
+  </script>
+
+  <script>
+    (function () {
+      const v = document.getElementById('v');
+      const b = document.getElementById('btnFS');
+      function enterFS(el) {
+        const c = el.closest('.player') || el;
+        const target = c;
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => { });
+          return;
+        }
+        (target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen || target.mozRequestFullScreen)?.call(target);
+      }
+      if (b && v) {
+        b.addEventListener('click', function (e) { e.preventDefault(); enterFS(v); });
+      }
+    })();
+  </script>
+
+  <script>/*BACKTOP_FIX_LISTENER*/
+    (function () {
+      try {
+        var btn = document.getElementById('backTop');
+        if (!btn) return;
+        function __goTop__(e) {
+          try {
+            var el = document.scrollingElement || document.documentElement || document.body;
+            if (el && el.scrollTo) { el.scrollTo({ top: 0, behavior: 'smooth' }); }
+            else { window.scrollTo(0, 0); }
+          } catch (_) { window.scrollTo(0, 0); }
+          if (e) { e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
+          return false;
+        }
+        btn.addEventListener('click', __goTop__, true);
+        btn.onclick = __goTop__;
+      } catch (_) { }
+    })();
+  </script>
+
+  <script>
+    // __VID_PROGRESS__
+    (function () {
+      try {
+        var v = document.querySelector('video');
+        if (!v) return;
+        var vid = (document.body.getAttribute('data-vid') || location.pathname.split('/').pop() || '').trim();
+        function key() { return 'progress::' + vid; }
+        v.addEventListener('loadedmetadata', function () {
+          try {
+            var s = localStorage.getItem(key());
+            if (s) {
+              var t = parseFloat(s) || 0;
+              if (t > 1 && t < (v.duration || 1) - 1) { v.currentTime = t; }
+            }
+          } catch (e) { }
+        }, { once: true });
+        var saveTick = 0;
+        v.addEventListener('timeupdate', function () {
+          if (++saveTick % 3) return;
+          try { localStorage.setItem(key(), String(v.currentTime || 0)); } catch (e) { }
+        });
+        v.addEventListener('ended', function () { try { localStorage.removeItem(key()); } catch (e) { } });
+        // Gestes mobiles
+        var lastTap = 0;
+        v.addEventListener('touchend', function (ev) {
+          var now = Date.now();
+          var rect = v.getBoundingClientRect();
+          var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : 0) - rect.left;
+          if (now - lastTap < 350) {
+            if (x < rect.width / 2) { v.currentTime = Math.max(0, (v.currentTime || 0) - 10); }
+            else { v.currentTime = Math.min(v.duration || v.currentTime + 10, (v.currentTime || 0) + 10); }
+            lastTap = 0; ev.preventDefault(); return false;
+          } else { lastTap = now; }
+        }, { passive: false });
+        var startX = null;
+        v.addEventListener('touchstart', function (ev) { startX = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : null); }, { passive: true });
+        v.addEventListener('touchend', function (ev) {
+          if (startX == null) return;
+          var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : startX);
+          var dx = x - startX;
+          if (Math.abs(dx) > 60) {
+            if (dx > 0) { v.currentTime = Math.max(0, (v.currentTime || 0) - 15); }
+            else { v.currentTime = Math.min(v.duration || v.currentTime + 15, (v.currentTime || 0) + 15); }
+            ev.preventDefault(); return false;
+          }
+        }, { passive: false });
+      } catch (e) { }
+    })();
+  </script>
 </body>
+
 </html>

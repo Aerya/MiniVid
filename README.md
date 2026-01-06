@@ -5,6 +5,17 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 
 ---
 
+## 🚀 Nouveautés v2.0
+
+- **✨ Interface Moderne** : Design "Premium" avec police **Inter**, effets de **Glassmorphism** et animations fluides.
+- **🎥 Lecture Native (DIRECT)** : Priorité à la lecture sans transcodage pour les formats supportés par le navigateur (MKV/MP4).
+- **🔄 Fallback Intelligent** : Bascule automatique en HLS (transcodé) si le flux direct n'est pas supporté.
+- **⚡ Optimisations HLS** : Accélération matérielle **NVIDIA NVENC** (GPU) et mise en cache des segments sur disque.
+- **📅 Grouper par date** : Nouvelle vue chronologique (Aujourd'hui, Cette semaine, Ce mois...) pour vos vidéos.
+- **⌨️ UX & Accessibilité** : Skeleton loading, nouveaux raccourcis clavier (J/K/L, F, M, Espace) et support total des caractères Cyrilliques.
+
+---
+
 ## ✨ Fonctionnalités
 
 ### 📂 Navigation par dossiers
@@ -24,20 +35,19 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 - Par statut **Lue / Non lue**
 
 ### 🗂 Filtres et tris personnalisables
-- Nom  
-- Taille  
-- Date de modification  
+- Nom, Taille, Date de modification
 - Statut **Lues / Non lues**
+- **Grouper par date** (Vue chronologique)
 
 ### ⭐ Favoris
 - Marquez vos vidéos d’un clic (★)  
 - Accédez à la vue dédiée **Favoris**
 
-### 🎥 Lecteur intégré (HTML5 natif)
-- Supporte **mp4**, **webm** et **mkv** (Chrome/Chromium)  
-- Les fichiers non compatibles avec Firefox (`.mkv`, `.avi`, `.flv`, `.m2ts`)  
-  → automatiquement basculés en **remux/transcodage à la volée** avec `ffmpeg` si activé  
-  ⚠️ Peut solliciter fortement le CPU
+### 🎥 Lecteur intégré (HTML5 natif / HLS)
+- Support natif **mp4**, **webm** et **mkv** (Chrome/Edge)
+- **HLS dynamique** pour Firefox et formats non supportés
+- **Accélération matérielle** (NVENC) pour le transcodage
+- Reprise de lecture automatique (Progress bar)
 
 ### 🖼️ Miniatures automatiques
 - Générées avec `ffmpeg`  
@@ -45,14 +55,16 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 - Ajustable via les variables `MINI_THUMB_OFFSET`, `MINI_THUMB_MAX`
 
 ### 📱 Interface responsive
+- Design moderne Inter, Glassmorphism
 - Desktop, tablette et mobile
+- Skeleton loading pour un affichage fluide
 
 ### 🌙 Mode clair / sombre
 - Bascule instantanée
 
 ### 🛠️ Page Maintenance
 - Rescan complet de la bibliothèque  
-- Purge des miniatures  
+- Purge des miniatures et du cache HLS
 - Journal d’événements en direct (logs des actions)
 
 ### ⏱️ Scan automatique
@@ -111,7 +123,7 @@ Pour découvrir MiniVid en images et lire la présentation complète, consultez 
 
 
 L'indexation des fichiers se fait à la volée au 1er lancement, plus ou moins rapidement selon la quantité de vidéos et le CPU.
-Le transcodage sous Firefox/LibreWolf peut faire souffrir le CPU sur une petite machine, je ne l'ai pas optimisé vu qu'il est plus simple de passer par un autre navigateur.
+Le transcodage est optimisé via GPU (NVENC) si disponible.
 Aucun appel externe, tout est 100% local. Fonctionne en http://IP:port comme en reverse proxy.
 
 
@@ -231,9 +243,3 @@ services:
 - Ajout de dossiers locaux comme distants (SMB/CIFS avec ou sans user:pwd).
 
 ![MiniVid Windows](https://upandclear.org/wp-content/uploads/2025/09/minivid-windows.png.webp)
-
-
-
-
-
-

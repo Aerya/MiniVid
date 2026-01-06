@@ -1,56 +1,79 @@
 <!doctype html>
 <html lang="fr">
+
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MiniVid — Connexion</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
-  <link rel="stylesheet" href="/static/style.css"/>
-<style>#backTop{display:inline-flex !important}</style>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    #backTop {
+      display: inline-flex !important
+    }
+  </style>
 </head>
+
 <body class="loginpage">
-<div id="___topanchor"></div>
+  <div id="___topanchor"></div>
 
   <main class="login">
-    <img src="/static/logo.svg" alt="logo" height="56"/>
+    <img src="/static/logo.svg" alt="logo" height="56" />
     <h1>MiniVid</h1>
     {% if enabled %}
     <form method="post">
       <label>Utilisateur</label>
-      <input type="text" name="username" required autofocus/>
+      <input type="text" name="username" required autofocus />
       <label>Mot de passe</label>
-      <input type="password" name="password" required/>
-      <label class="remember"><input type="checkbox" name="remember" value="1"/> Se souvenir de moi</label>
+      <input type="password" name="password" required />
+      <label class="remember"><input type="checkbox" name="remember" value="1" /> Se souvenir de moi</label>
       {% if error %}<p class="error">{{ error }}</p>{% endif %}
       <button type="submit">Connexion</button>
     </form>
     {% else %}
-    <p>Authentification désactivée (mode LAN). Définir <code>MINI_USER</code>, <code>MINI_PASS</code> et <code>SECRET_KEY</code> pour activer.</p>
+    <p>Authentification désactivée (mode LAN). Définir <code>MINI_USER</code>, <code>MINI_PASS</code> et
+      <code>SECRET_KEY</code> pour activer.</p>
     {% endif %}
   </main>
 
-<footer class="sitefoot">
-  <p>© MiniVid — 
-    <a href="https://opensource.org/license/mit" target="_blank" rel="noopener">Licence MIT</a> — 
-    <a href="http://upandclear.org" target="_blank" rel="noopener">Blog</a> • 
-    <a href="https://github.com/Aerya" target="_blank" rel="noopener">GitHub</a>
-  </p>
-</footer>
+  <footer class="footer">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+      <span>MiniVid v2.0</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <strong style="color: #667eea;">Aerya</strong>
+        <img src="https://upandclear.org/wp-content/uploads/2024/06/Logo.detoure1.png.webp" alt="Aerya"
+          style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+      </div>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <a href="https://github.com/Aerya/MiniVid" target="_blank"
+          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">GitHub</a>
+        <a href="https://upandclear.org/" target="_blank"
+          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">Blog</a>
+        <a href="https://ko-fi.com/upandclear" target="_blank"
+          style="display: flex; align-items: center; gap: 4px; text-decoration: none;"><img
+            src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/ko-fi.webp" alt="Ko-fi"
+            style="width: 18px; height: 18px;"> ❤️</a>
+      </div>
+    </div>
+  </footer>
 
-<style>
-  .sitefoot {
-    text-align: center;
-    margin: 2rem 0 1rem;
-    font-size: .9rem;
-    color: #666;
-  }
-  .sitefoot a {
-    color: inherit;
-    text-decoration: underline;
-  }
-</style>
+  <style>
+    .sitefoot {
+      text-align: center;
+      margin: 2rem 0 1rem;
+      font-size: .9rem;
+      color: #666;
+    }
+
+    .sitefoot a {
+      color: inherit;
+      text-decoration: underline;
+    }
+  </style>
 
 
-<a id="backTop" href="#___topanchor" class="backtop" style="position:fixed;right:18px;bottom:18px;z-index:2147483647;border:1px solid currentColor;border-radius:999px;padding:.5rem .6rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer;display:inline-flex;pointer-events:auto;text-decoration:none;color:inherit">↑</a>
+  <a id="backTop" href="#___topanchor" class="backtop"
+    style="position:fixed;right:18px;bottom:18px;z-index:2147483647;border:1px solid currentColor;border-radius:999px;padding:.5rem .6rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer;display:inline-flex;pointer-events:auto;text-decoration:none;color:inherit">↑</a>
 </body>
+
 </html>

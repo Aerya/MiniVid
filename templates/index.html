@@ -1,393 +1,589 @@
 <!doctype html>
 <html lang="fr">
+
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>MiniVid</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
-  <link rel="stylesheet" href="/static/style.css"/>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
 
-<style>/*THEME_TOGGLE*/
-html.light{filter:invert(1) hue-rotate(180deg)}
-html.light img,html.light video,html.light canvas,html.light iframe,html.light picture{filter:invert(1) hue-rotate(180deg)}
-#themeToggle{background:transparent;border:1px solid currentColor;border-radius:10px;padding:.25rem .5rem;margin-left:.5rem;line-height:1}
-/* gaps adoucis : le gros du compactage est désormais dans style.css */
-.tagbar .taggroup{gap:.5rem .65rem}
-.tagsline{gap:.45rem .6rem}
-.tagbar .pill small, .tagsline .pill small{margin-left:.25rem}
-.tagbar .pill{line-height:1.15}
-.tagsline .pill{line-height:1.15}
-</style>
+  <style>
+    /*THEME_TOGGLE*/
+    html.light {
+      filter: invert(1) hue-rotate(180deg)
+    }
 
-<style>
-.backtop{position:fixed;right:18px;bottom:18px;z-index:999;display:none;border:1px solid currentColor;border-radius:999px;padding:.5rem .6rem;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);cursor:pointer}
-html.light .backtop{background:rgba(255,255,255,.65)}
-.backtop.show{display:inline-flex}
-</style>
-<style>#backTop{display:inline-flex !important}</style>
+    html.light img,
+    html.light video,
+    html.light canvas,
+    html.light iframe,
+    html.light picture {
+      filter: invert(1) hue-rotate(180deg)
+    }
 
-<style>
-/* Progress bar overlay on cards */
-.card-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.25);}
-.card-progress>i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#3b82f6);width:0%}
-/* Grid size variable */
-:root{ --card-scale: 1; }
-.grid, .cards{--gap:12px}
-.card{transform:scale(var(--card-scale)); transform-origin:top left}
-/* A11y */
-:focus-visible{ outline: 2px solid #3b82f6; outline-offset: 2px; }
-</style>
+    #themeToggle {
+      background: transparent;
+      border: 1px solid currentColor;
+      border-radius: 10px;
+      padding: .25rem .5rem;
+      margin-left: .5rem;
+      line-height: 1
+    }
+
+    /* gaps adoucis : le gros du compactage est désormais dans style.css */
+    .tagbar .taggroup {
+      gap: .5rem .65rem
+    }
+
+    .tagsline {
+      gap: .45rem .6rem
+    }
+
+    .tagbar .pill small,
+    .tagsline .pill small {
+      margin-left: .25rem
+    }
+
+    .tagbar .pill {
+      line-height: 1.15
+    }
+
+    .tagsline .pill {
+      line-height: 1.15
+    }
+  </style>
+
+  <style>
+    .backtop {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 999;
+      display: none;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: .5rem .6rem;
+      background: rgba(0, 0, 0, .35);
+      backdrop-filter: blur(2px);
+      cursor: pointer
+    }
+
+    html.light .backtop {
+      background: rgba(255, 255, 255, .65)
+    }
+
+    .backtop.show {
+      display: inline-flex
+    }
+  </style>
+  <style>
+    #backTop {
+      display: inline-flex !important
+    }
+  </style>
+
+  <style>
+    /* Progress bar overlay on cards */
+    .card-progress {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 4px;
+      background: rgba(255, 255, 255, .25);
+    }
+
+    .card-progress>i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #22c55e, #3b82f6);
+      width: 0%
+    }
+
+    /* Grid size variable */
+    :root {
+      --card-scale: 1;
+    }
+
+    .grid,
+    .cards {
+      --gap: 12px
+    }
+
+    .card {
+      transform: scale(var(--card-scale));
+      transform-origin: top left
+    }
+
+    /* A11y */
+    :focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+  </style>
 </head>
+
 <body>
-<div id="___topanchor"></div>
+  <div id="___topanchor"></div>
 
-<header class="topbar">
-  <div class="brand">
-    <img src="/static/logo.svg" alt="logo" height="28"/>
-    <strong>MiniVid</strong>
-  </div>
-  <form class="controls" action="/browse" method="get">
-    <input type="hidden" name="root" value="{{ rootq or '' }}"/>
-    <input type="hidden" name="dir"  value="{{ dirq_q or '' }}"/>
-    <input type="text" name="q" value="{{ q }}" placeholder="Rechercher…"/>
-    <label for="read" class="lbl">Tri</label>
-    <select name="sort">
-      <option value="name"  {{ 'selected' if sort=='name' else '' }}>Nom</option>
-      <option value="date"  {{ 'selected' if sort=='date' else '' }}>Récentes</option>
-      <option value="size"  {{ 'selected' if sort=='size' else '' }}>Taille</option>
-      <option value="status_unread" {{ 'selected' if sort=='status_unread' else '' }}>Non lues d'abord</option>
-      <option value="status_read"   {{ 'selected' if sort=='status_read'   else '' }}>Lues d'abord</option>
-    </select>
-    <label for="read" class="lbl">Affichage</label>
-    <select name="read" id="read">
-      <option value="all"    {{ 'selected' if readf=='all'    else '' }}>Toutes</option>
-      <option value="unread" {{ 'selected' if readf=='unread' else '' }}>Non lues</option>
-      <option value="read"   {{ 'selected' if readf=='read'   else '' }}>Lues</option>
-    </select>
-    <select name="per" id="per">
-      <option value="all" {{ 'selected' if per in ['all','0',''] else '' }}>Tout</option>
-      <option value="12"  {{ 'selected' if per=='12' else '' }}>12</option>
-      <option value="24"  {{ 'selected' if per=='24' else '' }}>24</option>
-      <option value="48"  {{ 'selected' if per=='48' else '' }}>48</option>
-      <option value="96"  {{ 'selected' if per=='96' else '' }}>96</option>
-    </select>
-    <select name="mix" id="mix">
-      <option value="all"            {{ 'selected' if mix=='all' else '' }}>Tout mélangé</option>
-      <option value="folders_first"  {{ 'selected' if mix=='folders_first' else '' }}>Dossiers puis vidéos</option>
-      <option value="videos_first"   {{ 'selected' if mix=='videos_first'  else '' }}>Vidéos puis dossiers</option>
-    </select>
-    <label for="thumb" class="lbl">Vignettes</label>
-    <select name="thumb" id="thumb">
-      <option value="200">Petite</option>
-      <option value="240" selected>Moyenne</option>
-      <option value="300">Grande</option>
-    </select>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/static/logo.svg" alt="logo" height="28" />
+      <strong>MiniVid</strong>
+    </div>
+    <form class="controls" action="/browse" method="get">
+      <input type="hidden" name="root" value="{{ rootq or '' }}" />
+      <input type="hidden" name="dir" value="{{ dirq_q or '' }}" />
+      <input type="text" name="q" value="{{ q }}" placeholder="Rechercher…" />
+      <label for="read" class="lbl">Tri</label>
+      <select name="sort">
+        <option value="name" {{ 'selected' if sort=='name' else '' }}>Nom</option>
+        <option value="date" {{ 'selected' if sort=='date' else '' }}>Récentes</option>
+        <option value="size" {{ 'selected' if sort=='size' else '' }}>Taille</option>
+        <option value="status_unread" {{ 'selected' if sort=='status_unread' else '' }}>Non lues d'abord</option>
+        <option value="status_read" {{ 'selected' if sort=='status_read' else '' }}>Lues d'abord</option>
+      </select>
+      <label for="read" class="lbl">Affichage</label>
+      <select name="read" id="read">
+        <option value="all" {{ 'selected' if readf=='all' else '' }}>Toutes</option>
+        <option value="unread" {{ 'selected' if readf=='unread' else '' }}>Non lues</option>
+        <option value="read" {{ 'selected' if readf=='read' else '' }}>Lues</option>
+      </select>
+      <select name="per" id="per">
+        <option value="all" {{ 'selected' if per in ['all','0',''] else '' }}>Tout</option>
+        <option value="12" {{ 'selected' if per=='12' else '' }}>12</option>
+        <option value="24" {{ 'selected' if per=='24' else '' }}>24</option>
+        <option value="48" {{ 'selected' if per=='48' else '' }}>48</option>
+        <option value="96" {{ 'selected' if per=='96' else '' }}>96</option>
+      </select>
+      <select name="mix" id="mix">
+        <option value="all" {{ 'selected' if mix=='all' else '' }}>Tout mélangé</option>
+        <option value="folders_first" {{ 'selected' if mix=='folders_first' else '' }}>Dossiers puis vidéos</option>
+        <option value="videos_first" {{ 'selected' if mix=='videos_first' else '' }}>Vidéos puis dossiers</option>
+      </select>
+      <label for="thumb" class="lbl">Vignettes</label>
+      <select name="thumb" id="thumb">
+        <option value="200">Petite</option>
+        <option value="240" selected>Moyenne</option>
+        <option value="300">Grande</option>
+      </select>
 
-    <a class="favbtn {{ 'active' if fav_only else '' }}" href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}">★ Favoris</a>
-    <button type="submit">Appliquer</button>
-    <button id="themeToggle" class="btn" title="Thème sombre/clair" aria-label="Basculer le thème">🌙</button>
-  </form>
-</header>
+      <label class="smart-toggle" title="Grouper par période">
+        <input type="checkbox" id="smartSort" name="smart" {{ 'checked' if smart else '' }} />
+        <span>Grouper par date</span>
+      </label>
+      <a class="favbtn {{ 'active' if fav_only else '' }}"
+        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&smart={{ '1' if smart else '0' }}">★
+        Favoris</a>
+      <button type="submit">Appliquer</button>
+      <button id="themeToggle" class="btn" title="Thème sombre/clair" aria-label="Basculer le thème">🌙</button>
+    </form>
+  </header>
 
-<nav class="roots">
-  <a href="/browse?mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}" class="{{ 'active' if not root_index and rootq!='0' else '' }}">Global</a>
-  {% for r in roots %}
-    <a href="/browse?root={{ r.idx }}&mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}" class="{{ 'active' if root_index==r.idx else '' }}">{{ r.name }}</a>
-  {% endfor %}
-  {% if parent_url %}<a class="backbtn" href="{{ parent_url }}">← Dossier parent</a>{% endif %}
-  {% if crumbs and root_index is not none %}<span class="crumbs">/ {% for c in crumbs %}<a href="{{ c.url }}">{{ c.label }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</span>{% endif %}
-  <a href="/maintenance" title="Maintenance">Maintenance</a>
-</nav>
+  <nav class="roots">
+    {% if parent_url %}<a class="backbtn" href="{{ parent_url }}">← Dossier parent</a>{% endif %}
+    <a href="/browse?mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}"
+      class="{{ 'active' if not root_index and rootq!='0' else '' }}">Global</a>
+    {% for r in roots %}
+    <a href="/browse?root={{ r.idx }}&mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}"
+      class="{{ 'active' if root_index==r.idx else '' }}">{{ r.name }}</a>
+    {% endfor %}
+    {% if crumbs and root_index is not none %}<span class="crumbs">/ {% for c in crumbs %}<a href="{{ c.url }}">{{
+        c.label }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</span>{% endif %}
+    <a href="/maintenance" title="Maintenance">Maintenance</a>
+  </nav>
 
-<div class="tagbar">
-  <div class="taggroup" id="popular-tags">
-    <strong>Tags populaires :</strong>
-    {% for t,c in popular %}
+  <div class="tagbar">
+    <div class="taggroup" id="popular-tags">
+      <strong>Tags populaires :</strong>
+      {% for t,c in popular %}
       <a class="pill" href="/browse?tag={{ t|e }}" data-tag="{{ t }}">{{ t }} <small>({{ c }})</small></a>
       <button class="x" data-tag="{{ t }}" title="Masquer">×</button>
-    {% else %}
+      {% else %}
       <span class="muted">(aucun)</span>
-    {% endfor %}
+      {% endfor %}
+    </div>
   </div>
-</div>
-<div id="selfilter" class="tagbar selected">
-  <strong>Tags sélectionnés :</strong>
-  <span id="selwrap"></span>
-</div>
+  <div id="selfilter" class="tagbar selected">
+    <strong>Tags sélectionnés :</strong>
+    <span id="selwrap"></span>
+  </div>
 
-{% set sel_tags = ((request.args.get('tags','') or '').split(',')) | reject('equalto','') | list %}
-<main>
-  {# La grille + cartes viennent d’un partial ; les cartes doivent contenir data-vid et le bouton .fav-btn #}
-  {% include 'section_combined.html' %}
+  {% set sel_tags = ((request.args.get('tags','') or '').split(',')) | reject('equalto','') | list %}
+  <main>
+    {# La grille + cartes viennent d’un partial ; les cartes doivent contenir data-vid et le bouton .fav-btn #}
+    {% include 'section_combined.html' %}
 
-  {% if pages > 1 %}
-  <nav class="pager">
-    {% set qbase = 'root=' ~ (rootq or '') ~ '&dir=' ~ (dirq_q or '') ~ '&q=' ~ (q or '') ~ '&tag=' ~ (tag or '') ~ '&utag=' ~ (utag or '') ~ '&list=' ~ (listq or '') ~ '&fav=' ~ (1 if fav_only else 0) ~ '&sort=' ~ sort ~ '&read=' ~ readf ~ '&per=' ~ per ~ '&mix=' ~ mix %}
-    <a class="pbtn {{ 'disabled' if page==1 else '' }}" href="/browse?{{ qbase }}&page={{ page-1 }}">← Précédent</a>
-    <span class="pcounter">Page {{ page }} / {{ pages }} ({{ total_items }} éléments)</span>
-    <a class="pbtn {{ 'disabled' if page==pages else '' }}" href="/browse?{{ qbase }}&page={{ page+1 }}">Suivant →</a>
-  </nav>
-  {% endif %}
-</main>
+    {% if pages > 1 %}
+    <nav class="pager">
+      {% set qbase = 'root=' ~ (rootq or '') ~ '&dir=' ~ (dirq_q or '') ~ '&q=' ~ (q or '') ~ '&tag=' ~ (tag or '') ~
+      '&utag=' ~ (utag or '') ~ '&list=' ~ (listq or '') ~ '&fav=' ~ (1 if fav_only else 0) ~ '&sort=' ~ sort ~ '&read='
+      ~ readf ~ '&per=' ~ per ~ '&mix=' ~ mix %}
+      <a class="pbtn {{ 'disabled' if page==1 else '' }}" href="/browse?{{ qbase }}&page={{ page-1 }}">← Précédent</a>
+      <span class="pcounter">Page {{ page }} / {{ pages }} ({{ total_items }} éléments)</span>
+      <a class="pbtn {{ 'disabled' if page==pages else '' }}" href="/browse?{{ qbase }}&page={{ page+1 }}">Suivant →</a>
+    </nav>
+    {% endif %}
+  </main>
 
-<footer class="sitefoot">
-  <p>© MiniVid — <a href="https://opensource.org/license/mit" target="_blank" rel="noopener">Licence MIT</a> — <a href="http://upandclear.org" target="_blank" rel="noopener">Blog</a> • <a href="https://github.com/Aerya" target="_blank" rel="noopener">GitHub</a></p>
-</footer>
+  <footer class="footer">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+      <span>MiniVid v2.0</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <strong style="color: #667eea;">Aerya</strong>
+        <img src="https://upandclear.org/wp-content/uploads/2024/06/Logo.detoure1.png.webp" alt="Aerya"
+          style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+      </div>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <a href="https://github.com/Aerya/MiniVid" target="_blank"
+          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">GitHub</a>
+        <a href="https://upandclear.org/" target="_blank"
+          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">Blog</a>
+        <a href="https://ko-fi.com/upandclear" target="_blank"
+          style="display: flex; align-items: center; gap: 4px; text-decoration: none;"><img
+            src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/ko-fi.webp" alt="Ko-fi"
+            style="width: 18px; height: 18px;"> ❤️</a>
+      </div>
+    </div>
+  </footer>
 
-<script>
-['per','read','mix'].forEach(id => {
-  const el = document.getElementById(id);
-  const k = 'minivid_' + id;
-  const v = localStorage.getItem(k); if (v && el) el.value = v;
-  if (el) el.addEventListener('change', () => localStorage.setItem(k, el.value));
-});
+  <script>
+    // --- Smart sort toggle ---
+    const smartToggle = document.getElementById('smartSort');
+    if (smartToggle) {
+      // Restore from localStorage if not set by URL
+      const saved = localStorage.getItem('minivid_smart_sort');
+      const urlParams = new URLSearchParams(location.search);
+      if (!urlParams.has('smart') && saved === 'on') {
+        smartToggle.checked = true;
+      }
 
-localStorage.setItem('minivid_last_browse', location.pathname + location.search);
-history.scrollRestoration = 'manual';
-const scrollKey = 'minivid_scroll:' + location.pathname + location.search;
-window.addEventListener('pageshow', () => {
-  const y = sessionStorage.getItem(scrollKey);
-  if (y) { requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10)||0)); }
-});
-function saveScroll(){ sessionStorage.setItem(scrollKey, String(window.scrollY)); }
-document.querySelectorAll('a.thumb, .controls a, .controls button, .roots a, .pager a, .tagbar a').forEach(el => {
-  el.addEventListener('click', saveScroll, {capture:true});
-});
-
-document.querySelectorAll('.tagbar button.x').forEach(btn => {
-  btn.addEventListener('click', async (e) => {
-    e.preventDefault();
-    const t = btn.dataset.tag;
-    try {
-      await fetch('/api/prefs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({hide_tags_add:[t]})});
-      btn.previousElementSibling.remove();
-      btn.remove();
-    } catch (err) { alert('Erreur masquage tag'); }
-  });
-});
-
-/* Handler favori — nouvelle étoile .fav-btn (overlay) + rétro-compat .favbtn-grid */
-document.addEventListener('click', async (e) => {
-  const star = e.target.closest('.fav-btn');
-  if (star) {
-    e.preventDefault();
-    // récupère l’ID depuis le bouton ou l’ancêtre .card
-    let vid = star.dataset.id || star.dataset.vid;
-    if (!vid) {
-      const card = star.closest('[data-vid]');
-      if (card) vid = card.getAttribute('data-vid');
-    }
-    if (!vid) return;
-
-    const next = !star.classList.contains('active');
-    try {
-      await fetch('/api/fav', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({vid, fav: next})
+      smartToggle.addEventListener('change', () => {
+        localStorage.setItem('minivid_smart_sort', smartToggle.checked ? 'on' : 'off');
+        const url = new URL(location.href);
+        url.searchParams.set('smart', smartToggle.checked ? '1' : '0');
+        location.href = url.toString();
       });
-      star.classList.toggle('active', next);
-      star.setAttribute('aria-pressed', next ? 'true' : 'false');
-    } catch (err) { alert('Erreur favori'); }
-    return;
-  }
-
-  // ancien bouton dans la grille (texte) — conservé par sécurité
-  const old = e.target.closest('.favbtn-grid');
-  if (old) {
-    e.preventDefault();
-    const vid = old.dataset.vid;
-    const next = !old.classList.contains('on');
-    try {
-      await fetch('/api/fav', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({vid, fav: next})});
-      old.classList.toggle('on');
-      old.textContent = (next ? '★' : '☆') + ' Favori';
-    } catch (err) { alert('Erreur favori'); }
-  }
-});
-
-// --- Multi-tags ---
-function parseQS(){ return new URLSearchParams(location.search); }
-function getSelState(){
-  const p = parseQS();
-  const multi = (p.get('tags')||'').split(',').map(s=>s.trim()).filter(Boolean);
-  const singleTag = (p.get('tag')||'').trim();
-  const singleUtag = (p.get('utag')||'').trim();
-  return {multi, singleTag, singleUtag};
-}
-function setSelTags(arr){
-  const p = parseQS();
-  if (arr.length) p.set('tags', arr.join(',')); else p.delete('tags');
-  p.delete('tag'); p.delete('utag');
-  location.search = p.toString();
-}
-function clearAllTags(){
-  const p = parseQS();
-  p.delete('tags'); p.delete('tag'); p.delete('utag');
-  location.search = p.toString();
-}
-function removeSingle(kind){
-  const p = parseQS();
-  p.delete(kind);
-  location.search = p.toString();
-}
-function toggleTag(t){
-  const state = getSelState();
-  const arr = state.multi.slice();
-  if (state.singleTag) arr.push(state.singleTag);
-  if (state.singleUtag) arr.push(state.singleUtag);
-  const set = new Set(arr.map(x=>x.toLowerCase()));
-  if (set.has(t.toLowerCase())) {
-    const out = arr.filter(x => x.toLowerCase() !== t.toLowerCase());
-    setSelTags(out);
-  } else {
-    arr.push(t);
-    setSelTags(arr);
-  }
-}
-function renderSelTags(){
-  const wrap = document.getElementById('selwrap');
-  const bar = document.getElementById('selfilter');
-  const state = getSelState();
-  if(!wrap) return;
-  wrap.innerHTML = '';
-
-  const pills = [];
-  if (state.singleTag){ pills.push({label: state.singleTag, remove: ()=>removeSingle('tag')}); }
-  if (state.singleUtag){ pills.push({label: state.singleUtag, remove: ()=>removeSingle('utag')}); }
-  state.multi.forEach(t => pills.push({label: t, remove: ()=>toggleTag(t)}));
-
-  if(!pills.length){ bar.style.display='none'; return; }
-  bar.style.display='flex';
-  pills.forEach(p => {
-    const a = document.createElement('a'); a.className='pill on'; a.href='#'; a.textContent=p.label;
-    a.addEventListener('click',(e)=>{e.preventDefault(); toggleTag(p.label);});
-    const x = document.createElement('button'); x.textContent='×'; x.className='x';
-    x.addEventListener('click',(e)=>{e.preventDefault(); p.remove();});
-    const span = document.createElement('span'); span.className='selpill'; span.appendChild(a); span.appendChild(x);
-    wrap.appendChild(span);
-  });
-}
-document.querySelectorAll('.tagbar a.pill, .tagsline a.pill').forEach(a => {
-  a.addEventListener('click', (e)=>{
-    const t = a.dataset.tag;
-    if(!t) return;
-    e.preventDefault();
-    toggleTag(t);
-  });
-});
-renderSelTags();
-
-// --- Taille vignettes ---
-(function(){
-  const sel = document.getElementById('thumb');
-  const k = 'minivid_thumb_px';
-  function apply(px){
-    const root = document.documentElement;
-    root.style.setProperty('--thumb-h', px+'px');
-    const min = Math.max(200, Math.floor(px*1.1));
-    root.style.setProperty('--card-min', min+'px');
-  }
-  const saved = localStorage.getItem(k);
-  if (saved){ apply(parseInt(saved,10)||240); if(sel) sel.value = String(parseInt(saved,10)||240); }
-  if (sel){
-    sel.addEventListener('change', ()=>{
-      const px = parseInt(sel.value,10)||240;
-      localStorage.setItem(k, String(px));
-      apply(px);
-    });
-  }
-})();
-</script>
-
-<script>
-/* Theme toggle */
-(function(){
-  const key='minivid_theme';
-  try{
-    const saved=localStorage.getItem(key)||'dark';
-    if(saved==='light') document.documentElement.classList.add('light');
-    document.addEventListener('click', function(e){
-      const b=e.target.closest('#themeToggle');
-      if(!b) return;
-      const el=document.documentElement;
-      el.classList.toggle('light');
-      localStorage.setItem(key, el.classList.contains('light')?'light':'dark');
-    });
-  }catch(e){}
-})();
-
-/* Raccourci logo -> Accueil si présent */
-document.addEventListener('DOMContentLoaded', function(){
-  const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent||'').trim().toLowerCase() === 'accueil');
-  const logo = Array.from(document.querySelectorAll('header a, header .brand a, header .logo a')).find(a => (a.textContent||'').trim().toLowerCase() === 'minivid');
-  if (home && logo) { logo.setAttribute('href', home.getAttribute('href')); }
-});
-</script>
-
-<button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page" onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!=='undefined'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
-
-<script>
-(function(){
-  var btn=document.getElementById('backTop');
-  if(!btn) return;
-  function toggle(){ (window.scrollY>200?btn.classList.add:btn.classList.remove)('show'); }
-  window.addEventListener('scroll', toggle, {passive:true});
-  toggle();
-  btn.addEventListener('click', function(){ window.scrollTo({top:0, behavior:'smooth'}); });
-})();
-</script>
-
-<script>/*BACKTOP_FIX_LISTENER*/
-(function(){
-  try{
-    var btn=document.getElementById('backTop');
-    if(!btn) return;
-    function __goTop__(e){
-      try{
-        var el=document.scrollingElement||document.documentElement||document.body;
-        if(el && el.scrollTo){ el.scrollTo({top:0,behavior:'smooth'}); }
-        else{ window.scrollTo(0,0); }
-      }catch(_){ window.scrollTo(0,0); }
-      if(e){ e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
-      return false;
     }
-    btn.addEventListener('click', __goTop__, true);
-    btn.onclick = __goTop__;
-  }catch(_){}
-})();
-</script>
 
-<script>
-/* __THUMB_PROGRESS__ */
-(function(){
-  try{
-    var cards = document.querySelectorAll('[data-vid], a[href*="/watch/"]');
-    cards.forEach(function(el){
-      var vid = el.getAttribute('data-vid');
-      if(!vid && el.getAttribute('href')){
-        var m = el.getAttribute('href').match(/\/watch\/(\w+)/); if(m) vid = m[1];
+    // --- Lazy loading with Intersection Observer ---
+    (function () {
+      const lazyImages = document.querySelectorAll('img.lazy-thumb, img[data-src]');
+      if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const img = entry.target;
+              const src = img.dataset.src || img.src;
+              if (img.dataset.src) {
+                img.src = img.dataset.src;
+                img.removeAttribute('data-src');
+              }
+              img.onload = () => img.classList.add('loaded');
+              observer.unobserve(img);
+            }
+          });
+        }, { rootMargin: '200px' });
+
+        lazyImages.forEach(img => {
+          if (!img.dataset.src && img.src) {
+            img.dataset.src = img.src;
+            img.src = '/static/placeholder.svg';
+          }
+          observer.observe(img);
+        });
+      } else {
+        // Fallback for older browsers
+        lazyImages.forEach(img => img.classList.add('loaded'));
       }
-      if(!vid) return;
-      var t = 0, d = 0;
-      try{ t = parseFloat(localStorage.getItem('progress::'+vid))||0; }catch(e){}
-      var rootCard = el.closest('.card') || el;
-      var dur = rootCard && rootCard.getAttribute('data-duration');
-      if(dur){ d = parseFloat(dur)||0; }
-      var pct = (d>0 && t>0) ? Math.max(0, Math.min(100, Math.round(100*t/d))) : 0;
-      if(pct>0){
-        var c = rootCard.querySelector('.card-progress');
-        if(!c){
-          c = document.createElement('div'); c.className='card-progress';
-          var i=document.createElement('i'); c.appendChild(i);
-          rootCard.style.position = rootCard.style.position || 'relative';
-          rootCard.appendChild(c);
+    })();
+
+    // --- Preload video on hover ---
+    document.querySelectorAll('.card[data-vid]').forEach(card => {
+      let preloadTimer;
+      card.addEventListener('mouseenter', () => {
+        preloadTimer = setTimeout(() => {
+          const vid = card.dataset.vid;
+          if (vid && !document.querySelector(`link[href*="${vid}"]`)) {
+            const link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.href = `/stream/${vid}`;
+            document.head.appendChild(link);
+          }
+        }, 400);
+      });
+      card.addEventListener('mouseleave', () => clearTimeout(preloadTimer));
+    });
+
+    ['per', 'read', 'mix'].forEach(id => {
+      const el = document.getElementById(id);
+      const k = 'minivid_' + id;
+      const v = localStorage.getItem(k); if (v && el) el.value = v;
+      if (el) el.addEventListener('change', () => localStorage.setItem(k, el.value));
+    });
+
+    localStorage.setItem('minivid_last_browse', location.pathname + location.search);
+    history.scrollRestoration = 'manual';
+    const scrollKey = 'minivid_scroll:' + location.pathname + location.search;
+    window.addEventListener('pageshow', () => {
+      const y = sessionStorage.getItem(scrollKey);
+      if (y) { requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10) || 0)); }
+    });
+    function saveScroll() { sessionStorage.setItem(scrollKey, String(window.scrollY)); }
+    document.querySelectorAll('a.thumb, .controls a, .controls button, .roots a, .pager a, .tagbar a').forEach(el => {
+      el.addEventListener('click', saveScroll, { capture: true });
+    });
+  </script>
+
+  <script>
+    document.querySelectorAll('.tagbar button.x').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const t = btn.dataset.tag;
+        try {
+          await fetch('/api/prefs', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body:
+              JSON.stringify({ hide_tags_add: [t] })
+          });
+          btn.previousElementSibling.remove();
+          btn.remove();
+        } catch (err) { alert('Erreur masquage tag'); }
+      });
+    });
+
+    /* Handler favori — nouvelle étoile .fav-btn (overlay) + rétro-compat .favbtn-grid */
+    document.addEventListener('click', async (e) => {
+      const star = e.target.closest('.fav-btn');
+      if (star) {
+        e.preventDefault();
+        // récupère l’ID depuis le bouton ou l’ancêtre .card
+        let vid = star.dataset.id || star.dataset.vid;
+        if (!vid) {
+          const card = star.closest('[data-vid]');
+          if (card) vid = card.getAttribute('data-vid');
         }
-        c.firstChild.style.width = pct+'%';
+        if (!vid) return;
+
+        const next = !star.classList.contains('active');
+        try {
+          await fetch('/api/fav', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vid, fav: next })
+          });
+          star.classList.toggle('active', next);
+          star.setAttribute('aria-pressed', next ? 'true' : 'false');
+        } catch (err) { alert('Erreur favori'); }
+        return;
+      }
+
+      // ancien bouton dans la grille (texte) — conservé par sécurité
+      const old = e.target.closest('.favbtn-grid');
+      if (old) {
+        e.preventDefault();
+        const vid = old.dataset.vid;
+        const next = !old.classList.contains('on');
+        try {
+          await fetch('/api/fav', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+              vid, fav:
+                next
+            })
+          });
+          old.classList.toggle('on');
+          old.textContent = (next ? '★' : '☆') + ' Favori';
+        } catch (err) { alert('Erreur favori'); }
       }
     });
-  }catch(e){}
-})();
-</script>
+
+    // --- Multi-tags ---
+    function parseQS() { return new URLSearchParams(location.search); }
+    function getSelState() {
+      const p = parseQS();
+      const multi = (p.get('tags') || '').split(',').map(s => s.trim()).filter(Boolean);
+      const singleTag = (p.get('tag') || '').trim();
+      const singleUtag = (p.get('utag') || '').trim();
+      return { multi, singleTag, singleUtag };
+    }
+    function setSelTags(arr) {
+      const p = parseQS();
+      if (arr.length) p.set('tags', arr.join(',')); else p.delete('tags');
+      p.delete('tag'); p.delete('utag');
+      location.search = p.toString();
+    }
+    function clearAllTags() {
+      const p = parseQS();
+      p.delete('tags'); p.delete('tag'); p.delete('utag');
+      location.search = p.toString();
+    }
+    function removeSingle(kind) {
+      const p = parseQS();
+      p.delete(kind);
+      location.search = p.toString();
+    }
+    function toggleTag(t) {
+      const state = getSelState();
+      const arr = state.multi.slice();
+      if (state.singleTag) arr.push(state.singleTag);
+      if (state.singleUtag) arr.push(state.singleUtag);
+      const set = new Set(arr.map(x => x.toLowerCase()));
+      if (set.has(t.toLowerCase())) {
+        const out = arr.filter(x => x.toLowerCase() !== t.toLowerCase());
+        setSelTags(out);
+      } else {
+        arr.push(t);
+        setSelTags(arr);
+      }
+    }
+    function renderSelTags() {
+      const wrap = document.getElementById('selwrap');
+      const bar = document.getElementById('selfilter');
+      const state = getSelState();
+      if (!wrap) return;
+      wrap.innerHTML = '';
+
+      const pills = [];
+      if (state.singleTag) { pills.push({ label: state.singleTag, remove: () => removeSingle('tag') }); }
+      if (state.singleUtag) { pills.push({ label: state.singleUtag, remove: () => removeSingle('utag') }); }
+      state.multi.forEach(t => pills.push({ label: t, remove: () => toggleTag(t) }));
+
+      if (!pills.length) { bar.style.display = 'none'; return; }
+      bar.style.display = 'flex';
+      pills.forEach(p => {
+        const a = document.createElement('a'); a.className = 'pill on'; a.href = '#'; a.textContent = p.label;
+        a.addEventListener('click', (e) => { e.preventDefault(); toggleTag(p.label); });
+        const x = document.createElement('button'); x.textContent = '×'; x.className = 'x';
+        x.addEventListener('click', (e) => { e.preventDefault(); p.remove(); });
+        const span = document.createElement('span'); span.className = 'selpill'; span.appendChild(a); span.appendChild(x);
+        wrap.appendChild(span);
+      });
+    }
+    document.querySelectorAll('.tagbar a.pill, .tagsline a.pill').forEach(a => {
+      a.addEventListener('click', (e) => {
+        const t = a.dataset.tag;
+        if (!t) return;
+        e.preventDefault();
+        toggleTag(t);
+      });
+    });
+    renderSelTags();
+
+    // --- Taille vignettes ---
+    (function () {
+      const sel = document.getElementById('thumb');
+      const k = 'minivid_thumb_px';
+      function apply(px) {
+        const root = document.documentElement;
+        root.style.setProperty('--thumb-h', px + 'px');
+        const min = Math.max(200, Math.floor(px * 1.1));
+        root.style.setProperty('--card-min', min + 'px');
+      }
+      const saved = localStorage.getItem(k);
+      if (saved) { apply(parseInt(saved, 10) || 240); if (sel) sel.value = String(parseInt(saved, 10) || 240); }
+      if (sel) {
+        sel.addEventListener('change', () => {
+          const px = parseInt(sel.value, 10) || 240;
+          localStorage.setItem(k, String(px));
+          apply(px);
+        });
+      }
+    })();
+  </script>
+
+  <script>
+    /* Theme toggle */
+    (function () {
+      const key = 'minivid_theme';
+      try {
+        const saved = localStorage.getItem(key) || 'dark';
+        if (saved === 'light') document.documentElement.classList.add('light');
+        document.addEventListener('click', function (e) {
+          const b = e.target.closest('#themeToggle');
+          if (!b) return;
+          const el = document.documentElement;
+          el.classList.toggle('light');
+          localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
+        });
+      } catch (e) { }
+    })();
+
+    /* Raccourci logo -> Accueil si présent */
+    document.addEventListener('DOMContentLoaded', function () {
+      const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').trim().toLowerCase() === 'accueil');
+      const logo = Array.from(document.querySelectorAll('header a, header .brand a, header .logo a')).find(a => (a.textContent || '').trim().toLowerCase() === 'minivid');
+      if (home && logo) { logo.setAttribute('href', home.getAttribute('href')); }
+    });
+  </script>
+
+  <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page"
+    onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!=='undefined'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('backTop');
+      if (!btn) return;
+      function toggle() { (window.scrollY > 200 ? btn.classList.add : btn.classList.remove)('show'); }
+      window.addEventListener('scroll', toggle, { passive: true });
+      toggle();
+      btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    })();
+  </script>
+
+  <script>/*BACKTOP_FIX_LISTENER*/
+    (function () {
+      try {
+        var btn = document.getElementById('backTop');
+        if (!btn) return;
+        function __goTop__(e) {
+          try {
+            var el = document.scrollingElement || document.documentElement || document.body;
+            if (el && el.scrollTo) { el.scrollTo({ top: 0, behavior: 'smooth' }); }
+            else { window.scrollTo(0, 0); }
+          } catch (_) { window.scrollTo(0, 0); }
+          if (e) { e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
+          return false;
+        }
+        btn.addEventListener('click', __goTop__, true);
+        btn.onclick = __goTop__;
+      } catch (_) { }
+    })();
+  </script>
+
+  <script>
+    /* __THUMB_PROGRESS__ */
+    (function () {
+      try {
+        var cards = document.querySelectorAll('[data-vid], a[href*="/watch/"]');
+        cards.forEach(function (el) {
+          var vid = el.getAttribute('data-vid');
+          if (!vid && el.getAttribute('href')) {
+            var m = el.getAttribute('href').match(/\/watch\/(\w+)/); if (m) vid = m[1];
+          }
+          if (!vid) return;
+          var t = 0, d = 0;
+          try { t = parseFloat(localStorage.getItem('progress::' + vid)) || 0; } catch (e) { }
+          var rootCard = el.closest('.card') || el;
+          var dur = rootCard && rootCard.getAttribute('data-duration');
+          if (dur) { d = parseFloat(dur) || 0; }
+          var pct = (d > 0 && t > 0) ? Math.max(0, Math.min(100, Math.round(100 * t / d))) : 0;
+          if (pct > 0) {
+            var c = rootCard.querySelector('.card-progress');
+            if (!c) {
+              c = document.createElement('div'); c.className = 'card-progress';
+              var i = document.createElement('i'); c.appendChild(i);
+              rootCard.style.position = rootCard.style.position || 'relative';
+              rootCard.appendChild(c);
+            }
+            c.firstChild.style.width = pct + '%';
+          }
+        });
+      } catch (e) { }
+    })();
+  </script>
 </body>
+
 </html>

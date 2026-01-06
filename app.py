@@ -228,15 +228,21 @@ def id_for(root_idx: int, rel: str) -> str:
     return base64.urlsafe_b64encode(b).decode("ascii")
 
 def id_to_parts(vid: str):
-    b = base64.urlsafe_b64decode(vid.encode("ascii"))
+    # Les espaces et retours à la ligne peuvent polluer l'ID pendant le transport
+    vid = "".join(vid.split())
+    # Les '+' peuvent être convertis en espaces par certains serveurs/proxys
+    vid = vid.replace(' ', '+')
+    b = base64.urlsafe_b64decode(vid.encode("ascii") + b"==")
     s = b.decode("utf-8", "surrogatepass")
     i, rel = s.split("|", 1)
     return int(i), rel
 
 # ---------- Scan ----------
 MEDIA = []
+MEDIA_CACHE = {"items": [], "hash": "", "last_scan": 0, "count": 0}
+
 def scan_media():
-    global MEDIA
+    global MEDIA, MEDIA_CACHE
     items = []
     for ridx, root in enumerate(MEDIA_DIRS):
         if not root or not os.path.isdir(root):
@@ -265,7 +271,15 @@ def scan_media():
                 }
                 items.append(item)
     MEDIA = items
-    LOG.info("Scanned %d items across %d roots", len(MEDIA), len(MEDIA_DIRS))
+    # Mise à jour du cache
+    cache_hash = hashlib.md5(json.dumps([i["id"] for i in items[:100]]).encode()).hexdigest()
+    MEDIA_CACHE = {
+        "items": items,
+        "hash": cache_hash,
+        "last_scan": int(time.time()),
+        "count": len(items)
+    }
+    LOG.info("Scanned %d items across %d roots (hash: %s)", len(MEDIA), len(MEDIA_DIRS), cache_hash[:8])
 
 # --- Auto scan thread ---
 def _autoscan_loop():
@@ -305,39 +319,67 @@ def write_state(st):
     os.replace(tmp, os.path.join(DATA_DIR, "state.json"))
 
 # ---------- Banned tags (ENV + UI) ----------
+# Cache global pour banned_tags (évite 100+ appels par page)
+_BANNED_TAGS_CACHE = {"tags": None, "mtime": 0}
+
 def _env_banned_tags():
     raw = (os.environ.get("MINI_BANNED_TAGS") or "").strip()
     if not raw:
         return set()
     return {t.strip().lower() for t in re.split(r"[,\s;]+", raw) if t.strip()}
 
+def _invalidate_banned_cache():
+    """Invalide le cache des banned_tags."""
+    global _BANNED_TAGS_CACHE
+    _BANNED_TAGS_CACHE = {"tags": None, "mtime": 0}
+
 def get_banned_tags():
+    """Retourne les tags bannis avec cache intelligent."""
+    global _BANNED_TAGS_CACHE
+    state_path = os.path.join(DATA_DIR, "state.json")
+    try:
+        mtime = os.path.getmtime(state_path) if os.path.exists(state_path) else 0
+    except Exception:
+        mtime = 0
+    
+    # Utiliser le cache si valide
+    if _BANNED_TAGS_CACHE["tags"] is not None and _BANNED_TAGS_CACHE["mtime"] >= mtime:
+        return _BANNED_TAGS_CACHE["tags"]
+    
     st = read_state()
     ui = st.get("banned_tags")
     if isinstance(ui, list) and any(ui):
-        return {str(t).strip().lower() for t in ui if str(t).strip()}
-    return _env_banned_tags()
+        result = frozenset(str(t).strip().lower() for t in ui if str(t).strip())
+    else:
+        result = frozenset(_env_banned_tags())
+    
+    _BANNED_TAGS_CACHE = {"tags": result, "mtime": mtime}
+    return result
 
 def set_banned_tags(tags_iterable):
     tags = {str(t).strip().lower() for t in (tags_iterable or []) if str(t).strip()}
     st = read_state()
     st["banned_tags"] = sorted(tags)
     write_state(st)
+    _invalidate_banned_cache()
     return st["banned_tags"]
 
 def clear_banned_tags():
     st = read_state()
     st["banned_tags"] = []
     write_state(st)
+    _invalidate_banned_cache()
     return []
 
-# Redéfinition de canon_tag pour intégrer bans + synonymes
-def canon_tag(t:str)->str:
+# Redéfinition de canon_tag pour intégrer bans + synonymes (avec cache)
+def canon_tag(t:str, banned_cache=None)->str:
+    """Canonicalise un tag. banned_cache peut être passé pour éviter des appels répétés."""
     t = (t or '').strip().lower()
     if not t:
         return ""
     t = SYNONYMS.get(t, t)
-    if t in get_banned_tags():
+    banned = banned_cache if banned_cache is not None else get_banned_tags()
+    if t in banned:
         return ""
     return t
 
@@ -346,7 +388,7 @@ def _tagify_filter_banned(words):
     seen = set()
     out = []
     for w in words:
-        ct = canon_tag(w)
+        ct = canon_tag(w, banned)
         if not ct or ct in banned or ct in seen:
             continue
         seen.add(ct)
@@ -554,6 +596,65 @@ def health():
                    have_watch=os.path.exists(os.path.join(TPL_DIR,'watch.html')),
                    have_login=os.path.exists(os.path.join(TPL_DIR,'login.html')))
 
+# --- Tri intelligent (Smart Sorting) ---
+def smart_group_items(items, mode="date"):
+    """
+    Groupe intelligemment les items:
+    - 'date': par période (Aujourd'hui, Cette semaine, Ce mois, Plus ancien)
+    - 'folder': par dossier parent
+    - 'size': par catégorie de taille
+    """
+    now = time.time()
+    day = 86400
+    
+    if mode == "date":
+        groups = [
+            {"key": "today", "label": "📅 Aujourd'hui", "videos": []},
+            {"key": "week", "label": "📆 Cette semaine", "videos": []},
+            {"key": "month", "label": "📅 Ce mois", "videos": []},
+            {"key": "older", "label": "📁 Plus ancien", "videos": []},
+        ]
+        
+        for item in items:
+            if item.get("kind") == "folder":
+                continue  # Les dossiers ne sont pas groupés
+            mtime = item.get("mtime", 0)
+            age = now - mtime
+            
+            if age < day:
+                groups[0]["videos"].append(item)
+            elif age < 7 * day:
+                groups[1]["videos"].append(item)
+            elif age < 30 * day:
+                groups[2]["videos"].append(item)
+            else:
+                groups[3]["videos"].append(item)
+        
+        # Ne retourner que les groupes non vides
+        return [g for g in groups if g["videos"]]
+    
+    elif mode == "size":
+        groups = [
+            {"key": "large", "label": "📦 Grande taille (>1 Go)", "videos": []},
+            {"key": "medium", "label": "📁 Taille moyenne (100 Mo - 1 Go)", "videos": []},
+            {"key": "small", "label": "📄 Petite taille (<100 Mo)", "videos": []},
+        ]
+        
+        for item in items:
+            if item.get("kind") == "folder":
+                continue
+            size = item.get("size", 0)
+            if size > 1073741824:  # > 1 Go
+                groups[0]["videos"].append(item)
+            elif size > 104857600:  # > 100 Mo
+                groups[1]["videos"].append(item)
+            else:
+                groups[2]["videos"].append(item)
+        
+        return [g for g in groups if g["videos"]]
+    
+    return []
+
 @app.route("/browse")
 def browse():
     if not auth_required():
@@ -566,6 +667,7 @@ def browse():
     if mix not in ("all","folders_first","videos_first"): mix = "all"
     page = int((request.args.get("page") or "1") or 1)
     sort = (request.args.get("sort") or "date").strip().lower()
+    smart = (request.args.get("smart") or "0") in ("1","true","yes","on")
     q    = (request.args.get("q") or "").strip()
     tag  = strip_surrogates((request.args.get("tag") or "").strip())
     utag = strip_surrogates((request.args.get("utag") or "").strip())
@@ -801,18 +903,23 @@ def browse():
         else:
             parent_url = f"/browse?root={(root_index if root_index is not None else '')}&read={readf}&per={per}&mix={mix}&sort={sort}"
 
-    app.logger.info("Listing items: total=%s page=%s/%s combined_page=%s", total_items, page, pages, len(combined_page))
+    app.logger.info("Listing items: total=%s page=%s/%s combined_page=%s smart=%s", total_items, page, pages, len(combined_page), smart)
     try:
         items = mark_duplicates(items)
     except Exception:
         pass
+    
+    # Générer les groupes intelligents si activé
+    smart_groups = smart_group_items(combined_page, "date") if smart else None
+    
     return render_template("index.html", sel_tags=sel_tags, popular=popular,
         utags=state.get("utags",{}),
         grid=combined_page, folder_total=len([x for x in combined if x['kind']=='folder']), video_total=len([x for x in combined if x['kind']=='video']), total_items=total_items,upopular=upopular, lists=[],
         q=q, tag=tag, utag=utag, listq=listq, fav_only=fav_only,
         sort=sort, dirq_q=dirq_q, crumbs=crumbs, parent_url=parent_url,
         rootq=rootq_raw, root_index=root_index, roots=roots, auth=AUTH_ENABLED, user=session.get("user"),
-        per=per, page=page, pages=pages, readf=readf, mix=mix
+        per=per, page=page, pages=pages, readf=readf, mix=mix,
+        smart=smart, smart_groups=smart_groups
     )
 
 def _ctype_for(path):
@@ -950,22 +1057,13 @@ def stream(vid):
     full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
     if not os.path.exists(full):
         abort(404)
-    size = os.path.getsize(full)
-    range_header = request.headers.get("Range", None)
-    if not range_header:
-        return send_file(full, mimetype=_ctype_for(full), as_attachment=False)
-    m = re.match(r"bytes=(\d+)-(\d*)", range_header or "")
-    if not m:
-        return send_file(full, mimetype=_ctype_for(full), as_attachment=False)
-    start = int(m.group(1))
-    end = int(m.group(2)) if m.group(2) else size-1
-    end = min(end, size-1)
-    length = end - start + 1
-    resp = app.response_class(_range_stream(full, start, end), status=206, mimetype=_ctype_for(full), direct_passthrough=True)
-    resp.headers.add("Content-Range", f"bytes {start}-{end}/{size}")
-    resp.headers.add("Accept-Ranges", "bytes")
-    resp.headers.add("Content-Length", str(length))
-    return resp
+
+    # Utiliser Flask send_file qui gère les Ranges, ETag et encodage UTF-8 des noms de fichiers correctement
+    # 'conditional=True' (par défaut) active le support des Ranges.
+    return send_file(full, 
+                     mimetype=_ctype_for(full), 
+                     as_attachment=False, 
+                     download_name=os.path.basename(full))
 
 @app.route("/play/<vid>")
 def play(vid):
@@ -990,17 +1088,177 @@ def play(vid):
 def _probe_streams(path):
     try:
         p = subprocess.run(
-            ["ffprobe","-v","error","-select_streams","v:0,a:0","-show_entries","stream=codec_name,codec_type,width,height","-of","json", path],
+            ["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,codec_type,width,height:format=format_name", "-of", "json", path],
             capture_output=True, text=True, timeout=int(os.environ.get("MINI_FFPROBE_TIMEOUT","10"))
         )
         if p.returncode == 0 and p.stdout:
             jd = json.loads(p.stdout)
             v = next((s for s in jd.get("streams",[]) if s.get("codec_type")=="video"), {})
             a = next((s for s in jd.get("streams",[]) if s.get("codec_type")=="audio"), {})
-            return v.get("codec_name",""), a.get("codec_name",""), v.get("width"), v.get("height")
+            fmt = jd.get("format", {}).get("format_name", "")
+            return fmt, v.get("codec_name",""), a.get("codec_name",""), v.get("width"), v.get("height")
     except Exception as e:
         LOG.warning("ffprobe failed: %s", e)
-    return "", "", None, None
+    return "", "", "", None, None
+
+def _get_duration(path):
+    """Obtient la durée d'une vidéo en secondes."""
+    try:
+        p = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path],
+            capture_output=True, text=True, timeout=int(os.environ.get("MINI_FFPROBE_TIMEOUT", "10"))
+        )
+        if p.returncode == 0 and p.stdout:
+            jd = json.loads(p.stdout)
+            dur = jd.get("format", {}).get("duration")
+            if dur:
+                return float(dur)
+    except Exception as e:
+        LOG.warning("ffprobe duration failed: %s", e)
+    return 0
+
+def _is_h264(path):
+    """Vérifie si la vidéo est en H.264."""
+    _, vcodec, _, _, _ = _probe_streams(path)
+    return vcodec in ("h264", "avc1")
+
+# --- HLS Streaming pour Firefox ---
+HLS_SEGMENT_DIR = os.path.join(THUMB_DIR, "hls")
+os.makedirs(HLS_SEGMENT_DIR, exist_ok=True)
+
+def check_nvenc():
+    """Détecte si l'accélération matérielle NVENC est disponible."""
+    try:
+        # Test simple: générer une image noire via nvenc
+        cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x64", "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-"]
+        p = subprocess.run(cmd, capture_output=True, timeout=5)
+        if p.returncode == 0:
+            LOG.info("Accélération matérielle NVIDIA NVENC détectée.")
+            return True
+    except Exception as e:
+        LOG.warning("Erreur lors de la détection NVENC: %s", e)
+    LOG.info("Accélération matérielle NVIDIA NVENC non disponible.")
+    return False
+
+HAS_NVENC = check_nvenc()
+
+@app.route("/hls/<vid>/playlist.m3u8")
+def hls_playlist(vid):
+    """Génère une playlist HLS à la volée pour le remux."""
+    if not auth_required():
+        return redirect(url_for("login"))
+    try:
+        ridx, rel = id_to_parts(vid)
+    except Exception:
+        abort(404)
+    if ridx < 0 or ridx >= len(MEDIA_DIRS):
+        abort(404)
+    full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
+    if not os.path.exists(full):
+        abort(404)
+    
+    # Déterminer la durée
+    duration = _get_duration(full)
+    if duration <= 0:
+        duration = 3600  # fallback 1h
+    segment_duration = 6  # secondes par segment
+    
+    # Générer le m3u8
+    playlist = "#EXTM3U\n#EXT-X-VERSION:3\n"
+    playlist += f"#EXT-X-TARGETDURATION:{segment_duration}\n"
+    playlist += "#EXT-X-MEDIA-SEQUENCE:0\n"
+    
+    num_segments = int(duration / segment_duration) + 1
+    for i in range(num_segments):
+        seg_dur = min(segment_duration, duration - i * segment_duration)
+        if seg_dur > 0:
+            playlist += f"#EXTINF:{seg_dur:.3f},\n"
+            playlist += f"/hls/{vid}/segment_{i}.ts\n"
+    
+    playlist += "#EXT-X-ENDLIST\n"
+    
+    from flask import Response
+    return Response(playlist, mimetype="application/vnd.apple.mpegurl")
+
+@app.route("/hls/<vid>/segment_<int:seg>.ts")
+def hls_segment(vid, seg):
+    """Génère un segment TS à la volée avec mise en cache."""
+    if not auth_required():
+        return redirect(url_for("login"))
+    try:
+        ridx, rel = id_to_parts(vid)
+    except Exception:
+        abort(404)
+    if ridx < 0 or ridx >= len(MEDIA_DIRS):
+        abort(404)
+    
+    # Dossier de cache par vidéo pour éviter les collisions
+    v_cache_dir = os.path.join(HLS_SEGMENT_DIR, vid)
+    os.makedirs(v_cache_dir, exist_ok=True)
+    cache_path = os.path.join(v_cache_dir, f"seg_{seg}.ts")
+    
+    if os.path.exists(cache_path):
+        return send_file(cache_path, mimetype="video/mp2t")
+
+    full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
+    if not os.path.exists(full):
+        abort(404)
+    
+    segment_duration = 6
+    start_time = seg * segment_duration
+    
+    # Stratégie de transcodage
+    is_h264 = _is_h264(full)
+    if is_h264:
+        vcodec_args = ["-c:v", "copy"]
+    elif HAS_NVENC:
+        vcodec_args = ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-cq", "23"]
+    else:
+        vcodec_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+    
+    # Commande FFmpeg optimisée
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-ss", str(start_time), "-i", full,
+        "-t", str(segment_duration),
+        "-avoid_negative_ts", "1",
+    ] + vcodec_args + [
+        "-c:a", "aac", "-b:a", "160k",
+        "-f", "mpegts", cache_path
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True, timeout=30)
+        return send_file(cache_path, mimetype="video/mp2t")
+    except Exception as e:
+        LOG.error("HLS segment error: %s", e)
+        abort(500)
+
+def _get_best_playback_url(vid, full, ext, ua):
+    """Retourne la meilleure URL et méthode selon le navigateur et les codecs."""
+    ff_like = any(x in ua.lower() for x in ("firefox", "librewolf", "waterfox", "iceweasel"))
+    
+    fmt, vcodec, acodec, w, h = _probe_streams(full)
+    
+    # Codecs jugés "natifs" (H.264 + AAC/MP3)
+    can_copy = vcodec in ("h264", "avc1") and acodec in ("aac", "mp3", "mp4a", "mpga")
+    
+    # On tente le direct pour MP4/MKV si les codecs sont bons, sauf sur Firefox 
+    # où le MKV est trop capricieux sans HLS.
+    if can_copy:
+        if not ff_like:
+            return url_for("stream", vid=vid), "direct"
+        else:
+            # Firefox supporte mieux le HLS pour les formats non-MP4
+            if ext == "mp4":
+                return url_for("stream", vid=vid), "direct"
+            return url_for("hls_playlist", vid=vid), "hls"
+            
+    if ALLOW_TRANSCODE:
+        # Transcodage nécessaire : HLS avec cache et GPU
+        return url_for("hls_playlist", vid=vid), "hls"
+    
+    return None, "unsupported"
 
 def _gen_ffmpeg(cmd):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -1029,7 +1287,7 @@ def remux(vid):
     full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
     if not os.path.exists(full):
         abort(404)
-    vcodec, acodec, w, h = _probe_streams(full)
+    _, vcodec, acodec, w, h = _probe_streams(full)
     out_args = ["-movflags","+frag_keyframe+empty_moov","-f","mp4","-"]
     base_cmd = ["ffmpeg","-loglevel","error","-nostdin","-y","-i", full]
     if vcodec in ("h264","avc1"):
@@ -1045,7 +1303,13 @@ def remux(vid):
                 vf = ["-vf","scale='min(1280,iw)':-2"]
         except Exception:
             pass
-        cmd = base_cmd + ["-c:v","libx264","-preset","veryfast","-crf","22","-pix_fmt","yuv420p"] + vf + ["-c:a","aac","-b:a","160k"] + out_args
+        
+        if HAS_NVENC:
+            v_args = ["-c:v","h264_nvenc","-preset","p1","-tune","ll","-cq","23","-pix_fmt","yuv420p"]
+        else:
+            v_args = ["-c:v","libx264","-preset","veryfast","-crf","22","-pix_fmt","yuv420p"]
+
+        cmd = base_cmd + v_args + vf + ["-c:a","aac","-b:a","160k"] + out_args
     LOG.info("ffmpeg cmd: %s", " ".join(cmd))
     resp = app.response_class(_gen_ffmpeg(cmd), mimetype="video/mp4", direct_passthrough=True)
     resp.headers["Cache-Control"] = "no-store"
@@ -1083,32 +1347,17 @@ def watch(vid):
     back = request.args.get("back") or "/browse"
 
     ua = (request.headers.get("User-Agent") or "").lower()
-    ff_like = any(x in ua for x in ("firefox","librewolf","waterfox","iceweasel"))
-    unsupported_ext = ext in ("mkv","m2ts","avi","flv")
-
-    # Choisir l'URL de lecture intelligemment
-    play_url = url_for("stream", vid=vid)
-    unsupported = False
-
-    if ff_like and unsupported_ext:
-        # On tente le remux/transcode côté serveur
-        vcodec, acodec, w, h = _probe_streams(full)
-        can_copy = (vcodec in ("h264","avc1")) and (acodec in ("aac","mp3","mp2","mp4a","mpga"))
-        if can_copy:
-            play_url = url_for("remux", vid=vid)  # remux rapide -> MP4
-        else:
-            if ALLOW_TRANSCODE:
-                play_url = url_for("remux", vid=vid)  # transcode on-the-fly H.264/AAC
-            else:
-                # Ici, on ne peut pas transcoder -> on prévient l’utilisateur
-                unsupported = True
-                play_url = None  # on laisse le bandeau de fallback
+    
+    # Utiliser la nouvelle détection intelligente
+    play_url, playback_method = _get_best_playback_url(vid, full, ext, ua)
+    unsupported = (playback_method == "unsupported")
 
     return render_template(
         "watch.html",
         vid=vid, name=name, ctype=_ctype_for(full), back=back,
         tags=tags, utags=ut, fav=fav, played=played, res=res,
-        play_url=play_url, ext=ext, unsupported=unsupported
+        play_url=play_url, ext=ext, unsupported=unsupported,
+        playback_method=playback_method, can_hls=ALLOW_TRANSCODE
     )
 
 
@@ -1265,8 +1514,21 @@ def api_maintenance_purge_thumbs():
                         os.remove(os.path.join(THUMB_DIR, fn)); cnt += 1
                     except Exception:
                         pass
-        _log_event("purge_thumbs", removed=cnt)
-        return jsonify(ok=True, removed=cnt)
+        
+        # Purger aussi le cache HLS
+        hls_cnt = 0
+        if os.path.isdir(HLS_SEGMENT_DIR):
+            import shutil
+            for d in os.listdir(HLS_SEGMENT_DIR):
+                full_d = os.path.join(HLS_SEGMENT_DIR, d)
+                if os.path.isdir(full_d):
+                    try:
+                        shutil.rmtree(full_d); hls_cnt += 1
+                    except Exception:
+                        pass
+        
+        _log_event("purge_thumbs", removed=cnt, hls_removed=hls_cnt)
+        return jsonify(ok=True, removed=cnt, hls_removed=hls_cnt)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
 
