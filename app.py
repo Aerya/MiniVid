@@ -57,6 +57,9 @@ SCAN_INTERVAL = int(os.environ.get("MINI_SCAN_INTERVAL","3600"))  # secondes
 MINI_THUMB_OFFSET = int(os.environ.get("MINI_THUMB_OFFSET", "5"))
 MINI_THUMB_MAX    = int(os.environ.get("MINI_THUMB_MAX", "30"))
 
+# Footer customization (hide personal links for privacy)
+HIDE_FOOTER_CREDITS = (os.environ.get("HIDE_FOOTER_CREDITS", "0").lower() in ("1", "true", "yes", "on"))
+
 MIME_MAP = {
     "mp4":"video/mp4",
     "mkv":"video/x-matroska",
@@ -116,6 +119,11 @@ ST_DIR   = os.path.abspath(os.path.join(BASE_DIR, "static"))
 app = Flask(__name__, template_folder=TPL_DIR, static_folder=ST_DIR)
 app.secret_key = SECRET_KEY
 LOG.info("Template dir: %s | Static dir: %s", TPL_DIR, ST_DIR)
+
+# Inject hide_credits into all templates
+@app.context_processor
+def inject_footer_config():
+    return dict(hide_credits=HIDE_FOOTER_CREDITS)
 
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')

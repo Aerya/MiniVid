@@ -41,18 +41,22 @@
       <span>MiniVid v2.0</span>
       <div style="display: flex; align-items: center; gap: 8px;">
         <strong style="color: #667eea;">Aerya</strong>
+        {% if not hide_credits %}
         <img src="https://upandclear.org/wp-content/uploads/2024/06/Logo.detoure1.png.webp" alt="Aerya"
           style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
+        {% endif %}
       </div>
       <div style="display: flex; align-items: center; gap: 15px;">
         <a href="https://github.com/Aerya/MiniVid" target="_blank"
           style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">GitHub</a>
+        {% if not hide_credits %}
         <a href="https://upandclear.org/" target="_blank"
           style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">Blog</a>
         <a href="https://ko-fi.com/upandclear" target="_blank"
           style="display: flex; align-items: center; gap: 4px; text-decoration: none;"><img
             src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/ko-fi.webp" alt="Ko-fi"
             style="width: 18px; height: 18px;"> ❤️</a>
+        {% endif %}
       </div>
     </div>
   </footer>
