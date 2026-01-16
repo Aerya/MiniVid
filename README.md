@@ -85,9 +85,10 @@ Pour découvrir MiniVid en images et lire la présentation complète, consultez 
 
 👉 [MiniVid — Indexage, lecture, tags et favoris pour vos vidéos locales](https://upandclear.org/2025/09/03/minivid-indexage-lecture-tags-et-favoris-pour-vos-videos-locales/)
 
-![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2025/09/minivid1.jpg.webp)
-![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2025/09/minivid2.jpg.webp)
-![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2025/09/minivid3.png.webp)
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2026/01/minivid1.jpg)
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2026/01/minivid2.jpg)
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2026/01/minivid3.jpg)
+![MiniVid Screenshot](https://upandclear.org/wp-content/uploads/2026/01/minivid4.jpg)
 
 
 
