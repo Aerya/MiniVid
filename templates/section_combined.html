@@ -35,11 +35,17 @@
 {% endmacro %}
 
 {% macro render_folder_card(it) %}
-<article class="card folder">
-  <a class="thumb" href="{{ it.url }}" title="Ouvrir le dossier">
+<article class="card folder {{ 'played' if it.all_read else 'unplayed' }}">
+  <a class="thumb" href="{{ it.url }}" title="{{ 'Voir la vidéo' if it.is_single else 'Ouvrir le dossier' }}">
+    {% if it.first_vid %}
+    <img loading="lazy" class="lazy-thumb" src="/static/placeholder.svg" data-src="/thumb/{{ it.first_vid.id }}.jpg"
+      alt="preview" />
+    {% else %}
     <div class="foldericon">📁</div>
-    <div class="badge">DOSSIER</div>
-    <div class="badge right">{{ it.count }} éléments</div>
+    {% endif %}
+    <div class="badge">{{ 'VIDÉO' if it.is_single else 'DOSSIER' }}</div>
+    <div class="badge right">{{ it.read_count }}/{{ it.count }}</div>
+    {% if it.all_read %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
   </a>
   <h3 title="{{ it.name }}">{{ it.name }}</h3>
   <p class="meta"><span>Dernière modif.</span> • <span>{{ it.latest | datetime }}</span></p>

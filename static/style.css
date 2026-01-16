@@ -278,7 +278,9 @@ a.thumb {
   background: #16a34a;
   color: #06101e;
   font-weight: 700;
-  padding: .1rem .4rem;
+  font-size: 11px;
+  line-height: 1;
+  padding: .2rem .5rem;
   border-radius: .4rem;
 }
 

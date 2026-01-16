@@ -114,7 +114,6 @@ Pour découvrir MiniVid en images et lire la présentation complète, consultez 
 | **MINI_THUMB_OFFSET**            | `5`                               | Seconde du screenshot miniature                                            |
 | **MINI_THUMB_MAX**               | `30`                              | Offset max (si vidéo longue)                                               |
 | **MINI_FFPROBE_TIMEOUT**         | `10`                              | Timeout en secondes pour `ffprobe`/`ffmpeg`                                |
-| **API_READ_KEY**                 | *(vide)*                          | Clé API (optionnelle) pour accès en lecture seule                          |
 
 ---
 
@@ -161,12 +160,12 @@ services:
     restart: always
     environment:
       TZ: Europe/Paris
-      MEDIA_DIRS: /videos1|/videos2|/videos3|/videos4|/videos5
-      MEDIA_NAMES: ruTorrent|MeTube|Docs|Concerts|Tests formats vidéo
+      MEDIA_DIRS: /videos1|/videos2
+      MEDIA_NAMES: ruTorrent|MeTube
       DATA_DIR: /data
       THUMB_DIR: /cache/thumbs
-      MINI_ALLOWED_EXT: .mp4,.webm,.mkv,.avi,.flv,.m2ts
-      MINI_PLAYBACK	Mode de lecture : auto
+      MINI_ALLOWED_EXT: .mp4,.webm,.mkv,.avi,.flv,.m2ts,.ts
+      MINI_PLAYBACK: "auto"
       MINI_TRANSCODE: 1
       MINI_FIREFOX_MKV_FALLBACK: 1
       MINI_THUMB_OFFSET: 5
@@ -187,15 +186,10 @@ services:
         here,there,then,than,are,was,being,been,have,had,just,only,
         over,under,very,more,most,less,were,com,net
     volumes:
-      - /mnt/user/rutorrent-direct:/videos1:ro
-      - /mnt/user/MeTube:/videos2:ro
-      - /mnt/user/TEST/Docs:/videos3:ro
-      - /mnt/user/TEST/Concerts:/videos4:ro
-      - /mnt/user/TEST/Formats:/videos5:ro
-      - /mnt/user/appdata/MiniVid/data:/data
-      - /mnt/user/appdata/MiniVid/cache:/cache
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+      - /mnt/Fichiers/rutorrentdirect:/videos1:ro
+      - /mnt/Fichiers/metube:/videos2:ro
+      - /mnt/Docker/MiniVid/data:/data
+      - /mnt/Docker/MiniVid/cache:/cache
     ports:
       - "8080:8080"
 

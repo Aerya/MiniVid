@@ -740,7 +740,7 @@ def browse():
     if root_index is not None:
         items = [i for i in items if i["root"] == root_index]
     if dirq:
-        items = [i for i in items if (i["dir"] or "") == dirq]
+        items = [i for i in items if (i["dir"] or "") == dirq or (i["dir"] or "").startswith(dirq + "/")]
     if q:
         ql = q.lower(); items = [i for i in items if ql in i["name"].lower()]
     if tag:
@@ -774,15 +774,29 @@ def browse():
             chid = child_of(it)
             if chid:
                 buckets.setdefault(chid, []).append(it)
+        
         for name_raw, vids in buckets.items():
             latest = max(v["mtime"] for v in vids) if vids else 0
+            # Feature 1: Read status
+            total_count = len(vids)
+            read_count = sum(1 for v in vids if v.get("played"))
+            all_read = (read_count == total_count) if total_count > 0 else False
+            # Feature 3: First video thumbnail (most recent)
+            sorted_vids = sorted(vids, key=lambda x: x["mtime"], reverse=True)
+            first_vid = sorted_vids[0] if sorted_vids else None
+            # Feature 2: Single-video folder
+            is_single = (total_count == 1)
             folders.append({
                 "kind": "folder",
                 "name": safe_display_name(name_raw),
                 "name_raw": name_raw,
                 "name_q": urlq(name_raw),
                 "latest": latest,
-                "count": len(vids),
+                "count": total_count,
+                "read_count": read_count,
+                "all_read": all_read,
+                "first_vid": first_vid,
+                "is_single": is_single,
                 "size": 0
             })
 
@@ -812,8 +826,14 @@ def browse():
     combined = []
     if not (tag or utag or listq):
         for f in folders:
-            next_dir_q = (dirq_q + "%2F" + f["name_q"]) if dirq_q else f["name_q"]
-            f["url"] = f"/browse?root={(root_index if root_index is not None else '')}&dir={next_dir_q}&mix={mix}&sort={sort}&read={readf}&per={per}"
+            # Single-video folders link directly to the video
+            if f.get("is_single") and f.get("first_vid"):
+                vid_id = f["first_vid"]["id"]
+                back_url = f"/browse?root={(root_index if root_index is not None else '')}&dir={dirq_q}&read={readf}&per={per}&mix={mix}&sort={sort}"
+                f["url"] = f"/watch/{vid_id}?back={urlq(back_url)}"
+            else:
+                next_dir_q = (dirq_q + "%2F" + f["name_q"]) if dirq_q else f["name_q"]
+                f["url"] = f"/browse?root={(root_index if root_index is not None else '')}&dir={next_dir_q}&mix={mix}&sort={sort}&read={readf}&per={per}"
             combined.append(f)
     for v in items:
         # Only list videos for the CURRENT directory (non-recursive)
