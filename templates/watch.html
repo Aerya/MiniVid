@@ -432,36 +432,17 @@
 
       if (currentZoom === 1) {
         playerWrap.style.width = '100%';
-      playerWrap.style.maxWidth = '1400px'; 
+      playerWrap.style.maxWidth = '1400px';
+      v.style.maxHeight = '80vh'; // Restore height constraint
       } else {
-        // Calculate Native Dimensions
-        const nativeW = v.videoWidth || 1920;
-      const watchContainer = document.querySelector('.watch');
-      const containerW = watchContainer ? watchContainer.clientWidth : window.innerWidth;
-
-      // Target width based on container width * zoom factor
-      let targetW = containerW * currentZoom;
-
-      // Cap at native video width to prevent upscaling blurriness, 
-      // unless native is smaller than container, then allow up to native.
-      // Actually user wants x1.5 / x2 of "origin size" AND "window size".
-      // Let's interpret: expand player to 1.5x or 2x of current view, limited by Native.
-
-      // Simply: apply width % on player-wrap. 
-      // But player-wrap has max-width 1400px.
-      // We override max-width to allow expansion.
+        // Zoom logic: Scale relative to viewport width
+        // We remove constraints to allow "true" zoom (upscaling)
+        const viewportW = window.innerWidth;
+      let targetW = viewportW * currentZoom;
 
       playerWrap.style.maxWidth = 'none';
-
-        // If we strictly follow "according to native size", we should cap.
-        if (targetW > nativeW) {
-        targetW = nativeW;
-        }
-
-      // If targetW is still smaller than containerW (small video), we just set it to targetW.
-      // But if it's larger, it will overflow.
-
       playerWrap.style.width = targetW + 'px';
+      v.style.maxHeight = 'none'; // Uncap height to allow proportional growth
       }
     }
 

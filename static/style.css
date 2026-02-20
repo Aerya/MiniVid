@@ -26,6 +26,9 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
@@ -208,6 +211,7 @@ body {
 
 main {
   padding: .6rem 1.2rem 1rem 1.2rem;
+  flex: 1;
 }
 
 .grid {
@@ -581,22 +585,15 @@ h3 {
 /* --- iOS/Android landscape optimisations --- */
 @media (orientation: landscape) {
   #v {
-    max-height: 80dvh;
-    height: auto;
+    max-height: 85vh;
     width: 100%;
   }
 }
 
 @supports (-webkit-touch-callout: none) {
   @media (orientation: landscape) {
-
-    html,
-    body {
-      height: 100dvh;
-    }
-
     #v {
-      max-height: 80dvh;
+      max-height: 80vh;
     }
   }
 }
