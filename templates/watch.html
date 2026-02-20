@@ -194,6 +194,13 @@
     <p class="meta" id="resline">Résolution : <span id="resval">?</span></p>
     {% endif %}
 
+    <div class="zoom-bar">
+      <span>Zoom :</span>
+      <button class="zoom-btn active" data-zoom="1">x1</button>
+      <button class="zoom-btn" data-zoom="1.5">x1.5</button>
+      <button class="zoom-btn" data-zoom="2">x2</button>
+    </div>
+
     <section class="meta-ops">
       <div class="tagsline">
         {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
@@ -222,6 +229,7 @@
       <p><kbd>↑</kbd> / <kbd>↓</kbd> — Volume</p>
       <p><kbd>F</kbd> — Plein écran</p>
       <p><kbd>M</kbd> — Muet</p>
+      <p><kbd>Z</kbd> — Zoom (x1/x1.5/x2)</p>
     </div>
   </div>
 
@@ -352,6 +360,7 @@
 
   <!-- Keyboard shortcuts handler -->
   <script>
+    <script>
     document.addEventListener('keydown', (e) => {
       const v = document.getElementById('v');
       if (!v || e.target.matches('input, textarea, [contenteditable]')) return;
@@ -359,76 +368,149 @@
       const key = e.key.toLowerCase();
       switch (key) {
         case ' ':
-        case 'k':
-          e.preventDefault();
-          v.paused ? v.play() : v.pause();
-          break;
-        case 'j':
-          e.preventDefault();
-          v.currentTime = Math.max(0, v.currentTime - 10);
-          break;
-        case 'l':
-          e.preventDefault();
-          v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
-          break;
-        case 'f':
-          e.preventDefault();
-          if (document.fullscreenElement) {
-            document.exitFullscreen?.();
+      case 'k':
+      e.preventDefault();
+      v.paused ? v.play() : v.pause();
+      break;
+      case 'j':
+      e.preventDefault();
+      v.currentTime = Math.max(0, v.currentTime - 10);
+      break;
+      case 'l':
+      e.preventDefault();
+      v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
+      break;
+      case 'f':
+      e.preventDefault();
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
           } else {
-            (v.requestFullscreen || v.webkitRequestFullscreen || v.msRequestFullscreen)?.call(v);
+        (v.requestFullscreen || v.webkitRequestFullscreen || v.msRequestFullscreen)?.call(v);
           }
-          break;
-        case 'm':
-          e.preventDefault();
-          v.muted = !v.muted;
-          break;
-        case 'arrowleft':
-          e.preventDefault();
-          v.currentTime = Math.max(0, v.currentTime - 5);
-          break;
-        case 'arrowright':
-          e.preventDefault();
-          v.currentTime = Math.min(v.duration || 0, v.currentTime + 5);
-          break;
-        case 'arrowup':
-          e.preventDefault();
-          v.volume = Math.min(1, v.volume + 0.1);
-          break;
-        case 'arrowdown':
-          e.preventDefault();
-          v.volume = Math.max(0, v.volume - 0.1);
-          break;
+      break;
+      case 'm':
+      e.preventDefault();
+      v.muted = !v.muted;
+      break;
+      case 'z':
+      e.preventDefault();
+      cycleZoom();
+      break;
+      case 'arrowleft':
+      e.preventDefault();
+      v.currentTime = Math.max(0, v.currentTime - 5);
+      break;
+      case 'arrowright':
+      e.preventDefault();
+      v.currentTime = Math.min(v.duration || 0, v.currentTime + 5);
+      break;
+      case 'arrowup':
+      e.preventDefault();
+      v.volume = Math.min(1, v.volume + 0.1);
+      break;
+      case 'arrowdown':
+      e.preventDefault();
+      v.volume = Math.max(0, v.volume - 0.1);
+      break;
       }
     });
+
+      // Zoom Logic
+      const zoomBtns = document.querySelectorAll('.zoom-btn');
+      const playerWrap = document.querySelector('.player-wrap');
+      const v = document.getElementById('v');
+      let currentZoom = 1;
+
+      function setZoom(zoom) {
+      if (!v || !playerWrap) return;
+      currentZoom = parseFloat(zoom);
+
+      // Update UI buttons
+      zoomBtns.forEach(b => {
+        b.classList.toggle('active', parseFloat(b.dataset.zoom) === currentZoom);
+      });
+
+      if (currentZoom === 1) {
+        playerWrap.style.width = '100%';
+      playerWrap.style.maxWidth = '1400px'; 
+      } else {
+        // Calculate Native Dimensions
+        const nativeW = v.videoWidth || 1920;
+      const watchContainer = document.querySelector('.watch');
+      const containerW = watchContainer ? watchContainer.clientWidth : window.innerWidth;
+
+      // Target width based on container width * zoom factor
+      let targetW = containerW * currentZoom;
+
+      // Cap at native video width to prevent upscaling blurriness, 
+      // unless native is smaller than container, then allow up to native.
+      // Actually user wants x1.5 / x2 of "origin size" AND "window size".
+      // Let's interpret: expand player to 1.5x or 2x of current view, limited by Native.
+
+      // Simply: apply width % on player-wrap. 
+      // But player-wrap has max-width 1400px.
+      // We override max-width to allow expansion.
+
+      playerWrap.style.maxWidth = 'none';
+
+        // If we strictly follow "according to native size", we should cap.
+        if (targetW > nativeW) {
+        targetW = nativeW;
+        }
+
+      // If targetW is still smaller than containerW (small video), we just set it to targetW.
+      // But if it's larger, it will overflow.
+
+      playerWrap.style.width = targetW + 'px';
+      }
+    }
+
+      // Initialize zoom on load to setup native constraints if needed
+      if(v) {
+        v.addEventListener('loadedmetadata', () => {
+          // Optional: Disable x1.5/x2 if video is too small? 
+          // For now keep it simple.
+        });
+    }
+
+    zoomBtns.forEach(btn => {
+        btn.addEventListener('click', () => setZoom(btn.dataset.zoom));
+    });
+
+      function cycleZoom() {
+      const zooms = [1, 1.5, 2];
+      const idx = zooms.indexOf(currentZoom);
+      const next = (idx + 1) % zooms.length;
+      setZoom(zooms[next]);
+    }
   </script>
 
   <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page"
     onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!==\'undefined\'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
 
   <script>
-    (function () {
+      (function () {
       var btn = document.getElementById('backTop');
       if (!btn) return;
-      function toggle() { (window.scrollY > 200 ? btn.classList.add : btn.classList.remove)('show'); }
-      window.addEventListener('scroll', toggle, { passive: true });
+      function toggle() {(window.scrollY > 200 ? btn.classList.add : btn.classList.remove)('show'); }
+      window.addEventListener('scroll', toggle, {passive: true });
       toggle();
-      btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+      btn.addEventListener('click', function () {window.scrollTo({ top: 0, behavior: 'smooth' }); });
     })();
   </script>
 
   <script>
-    (function () {
+      (function () {
       const v = document.getElementById('v');
       const b = document.getElementById('btnFS');
       function enterFS(el) {
         const c = el.closest('.player') || el;
-        const target = c;
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => { });
-          return;
+      const target = c;
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => { });
+      return;
         }
-        (target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen || target.mozRequestFullScreen)?.call(target);
+      (target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen || target.mozRequestFullScreen)?.call(target);
       }
       if (b && v) {
         b.addEventListener('click', function (e) { e.preventDefault(); enterFS(v); });
@@ -437,72 +519,72 @@
   </script>
 
   <script>/*BACKTOP_FIX_LISTENER*/
-    (function () {
+      (function () {
       try {
         var btn = document.getElementById('backTop');
-        if (!btn) return;
-        function __goTop__(e) {
+      if (!btn) return;
+      function __goTop__(e) {
           try {
             var el = document.scrollingElement || document.documentElement || document.body;
-            if (el && el.scrollTo) { el.scrollTo({ top: 0, behavior: 'smooth' }); }
-            else { window.scrollTo(0, 0); }
-          } catch (_) { window.scrollTo(0, 0); }
-          if (e) { e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
-          return false;
+      if (el && el.scrollTo) {el.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else {window.scrollTo(0, 0); }
+          } catch (_) {window.scrollTo(0, 0); }
+      if (e) {e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
+      return false;
         }
-        btn.addEventListener('click', __goTop__, true);
-        btn.onclick = __goTop__;
+      btn.addEventListener('click', __goTop__, true);
+      btn.onclick = __goTop__;
       } catch (_) { }
     })();
   </script>
 
   <script>
-    // __VID_PROGRESS__
-    (function () {
+      // __VID_PROGRESS__
+      (function () {
       try {
         var v = document.querySelector('video');
-        if (!v) return;
-        var vid = (document.body.getAttribute('data-vid') || location.pathname.split('/').pop() || '').trim();
-        function key() { return 'progress::' + vid; }
-        v.addEventListener('loadedmetadata', function () {
+      if (!v) return;
+      var vid = (document.body.getAttribute('data-vid') || location.pathname.split('/').pop() || '').trim();
+      function key() { return 'progress::' + vid; }
+      v.addEventListener('loadedmetadata', function () {
           try {
             var s = localStorage.getItem(key());
-            if (s) {
+      if (s) {
               var t = parseFloat(s) || 0;
-              if (t > 1 && t < (v.duration || 1) - 1) { v.currentTime = t; }
+              if (t > 1 && t < (v.duration || 1) - 1) {v.currentTime = t; }
             }
           } catch (e) { }
-        }, { once: true });
-        var saveTick = 0;
-        v.addEventListener('timeupdate', function () {
+        }, {once: true });
+      var saveTick = 0;
+      v.addEventListener('timeupdate', function () {
           if (++saveTick % 3) return;
-          try { localStorage.setItem(key(), String(v.currentTime || 0)); } catch (e) { }
+      try {localStorage.setItem(key(), String(v.currentTime || 0)); } catch (e) { }
         });
-        v.addEventListener('ended', function () { try { localStorage.removeItem(key()); } catch (e) { } });
-        // Gestes mobiles
-        var lastTap = 0;
-        v.addEventListener('touchend', function (ev) {
+      v.addEventListener('ended', function () { try {localStorage.removeItem(key()); } catch (e) { } });
+      // Gestes mobiles
+      var lastTap = 0;
+      v.addEventListener('touchend', function (ev) {
           var now = Date.now();
-          var rect = v.getBoundingClientRect();
-          var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : 0) - rect.left;
-          if (now - lastTap < 350) {
-            if (x < rect.width / 2) { v.currentTime = Math.max(0, (v.currentTime || 0) - 10); }
-            else { v.currentTime = Math.min(v.duration || v.currentTime + 10, (v.currentTime || 0) + 10); }
-            lastTap = 0; ev.preventDefault(); return false;
-          } else { lastTap = now; }
-        }, { passive: false });
-        var startX = null;
-        v.addEventListener('touchstart', function (ev) { startX = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : null); }, { passive: true });
-        v.addEventListener('touchend', function (ev) {
+      var rect = v.getBoundingClientRect();
+      var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : 0) - rect.left;
+      if (now - lastTap < 350) {
+            if (x < rect.width / 2) {v.currentTime = Math.max(0, (v.currentTime || 0) - 10); }
+      else {v.currentTime = Math.min(v.duration || v.currentTime + 10, (v.currentTime || 0) + 10); }
+      lastTap = 0; ev.preventDefault(); return false;
+          } else {lastTap = now; }
+        }, {passive: false });
+      var startX = null;
+      v.addEventListener('touchstart', function (ev) {startX = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : null); }, {passive: true });
+      v.addEventListener('touchend', function (ev) {
           if (startX == null) return;
-          var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : startX);
-          var dx = x - startX;
+      var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : startX);
+      var dx = x - startX;
           if (Math.abs(dx) > 60) {
-            if (dx > 0) { v.currentTime = Math.max(0, (v.currentTime || 0) - 15); }
-            else { v.currentTime = Math.min(v.duration || v.currentTime + 15, (v.currentTime || 0) + 15); }
-            ev.preventDefault(); return false;
+            if (dx > 0) {v.currentTime = Math.max(0, (v.currentTime || 0) - 15); }
+      else {v.currentTime = Math.min(v.duration || v.currentTime + 15, (v.currentTime || 0) + 15); }
+      ev.preventDefault(); return false;
           }
-        }, { passive: false });
+        }, {passive: false });
       } catch (e) { }
     })();
   </script>
