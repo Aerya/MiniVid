@@ -123,7 +123,7 @@ LOG.info("Template dir: %s | Static dir: %s", TPL_DIR, ST_DIR)
 # Inject hide_credits into all templates
 @app.context_processor
 def inject_footer_config():
-    return dict(hide_credits=HIDE_FOOTER_CREDITS)
+    return dict(hide_credits=HIDE_FOOTER_CREDITS, gemini_enabled=bool(get_gemini_key()))
 
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')
@@ -531,6 +531,289 @@ def api_banned_clear():
         return jsonify(ok=False, error="auth"), 401
     clear_banned_tags()
     return jsonify(ok=True, source="env", tags=sorted(list(_env_banned_tags())))
+
+# --- Gemini auto-tagging ---
+_GEMINI_API_KEY_ENV = (os.environ.get("GEMINI_API_KEY") or "").strip()
+
+def get_gemini_key():
+    """Retourne la clé Gemini : priorité state.json, fallback env."""
+    st = read_state()
+    ui_key = (st.get("gemini_api_key") or "").strip()
+    if ui_key:
+        return ui_key
+    return _GEMINI_API_KEY_ENV
+
+def set_gemini_key(key):
+    """Enregistre la clé Gemini dans state.json."""
+    st = read_state()
+    st["gemini_api_key"] = (key or "").strip()
+    write_state(st)
+
+def delete_gemini_key():
+    """Supprime la clé Gemini du state.json (retour au fallback env)."""
+    st = read_state()
+    st.pop("gemini_api_key", None)
+    write_state(st)
+
+def get_ai_engine():
+    st = read_state()
+    return st.get("ai_engine", "gemini")
+
+def set_ai_engine(engine):
+    st = read_state()
+    st["ai_engine"] = (engine or "").strip()
+    write_state(st)
+
+def get_ollama_url():
+    st = read_state()
+    return st.get("ollama_url", "http://127.0.0.1:11434").strip()
+
+def set_ollama_url(url):
+    st = read_state()
+    st["ollama_url"] = (url or "").strip()
+    write_state(st)
+
+def get_ollama_model():
+    st = read_state()
+    return st.get("ollama_model", "llava:latest").strip()
+
+def set_ollama_model(model):
+    st = read_state()
+    st["ollama_model"] = (model or "").strip()
+    write_state(st)
+
+def get_video_duration(filepath):
+    try:
+        result = subprocess.run([
+            "ffprobe", "-v", "error", "-show_entries",
+            "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filepath
+        ], capture_output=True, text=True, timeout=10)
+        return float(result.stdout.strip())
+    except Exception as e:
+        LOG.warning("ffprobe failed: %s", e)
+        return 0.0
+
+@app.route("/api/autotag", methods=["POST"])
+def api_autotag():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    api_key = get_gemini_key()
+    if not api_key:
+        return jsonify(ok=False, error="no_api_key", message="GEMINI_API_KEY non configurée"), 400
+    try:
+        import urllib.request
+        data = request.get_json(force=True, silent=True) or {}
+        vid = (data.get("vid") or "").strip()
+        if not vid:
+            return jsonify(ok=False, error="missing_vid"), 400
+
+        # Resolve file path
+        try:
+            ridx, rel = id_to_parts(vid)
+        except Exception:
+            return jsonify(ok=False, error="invalid_vid"), 400
+        if ridx >= len(MEDIA_DIRS):
+            return jsonify(ok=False, error="root_not_found"), 404
+        filepath = os.path.join(MEDIA_DIRS[ridx], rel)
+        if not os.path.isfile(filepath):
+            return jsonify(ok=False, error="file_not_found"), 404
+
+        # Extract 3 specific frames
+        duration = get_video_duration(filepath)
+        if duration <= 0:
+            duration = 60.0
+        
+        t1 = 7.0
+        t2 = duration / 2.0
+        t3 = max(0.0, duration - 11.0)
+        
+        if duration < 18:
+            t1 = duration * 0.2
+            t2 = duration * 0.5
+            t3 = duration * 0.8
+
+        timestamps = [t1, t2, t3]
+        frames_b64 = []
+        for t in timestamps:
+            try:
+                result = subprocess.run(
+                    ["ffmpeg", "-ss", str(t), "-i", filepath, "-frames:v", "1",
+                     "-vf", "scale=512:-1", "-f", "image2", "-q:v", "3", "pipe:1"],
+                    capture_output=True, timeout=30
+                )
+                if result.stdout and len(result.stdout) > 100:
+                    frames_b64.append(base64.b64encode(result.stdout).decode("ascii"))
+            except Exception as e:
+                LOG.warning("ffmpeg extract failed at %s: %s", t, e)
+        
+        if not frames_b64:
+             return jsonify(ok=False, error="ffmpeg_failed", message="Impossible d'extraire des images"), 500
+
+        prompt = (
+            "Analyze these video frames. Return ONLY a JSON array of maximum 5 descriptive tags "
+            "(single words, lowercase, English). Tags should describe: scene type, setting, "
+            "visible objects, people characteristics, mood, activity, colors. "
+            "Example: [\"outdoor\", \"beach\", \"sunset\", \"woman\", \"running\"]. "
+            "Return ONLY the JSON array, nothing else."
+        )
+
+        engine = get_ai_engine()
+        tags_raw = []
+
+        if engine == "ollama":
+            ollama_url = get_ollama_url().rstrip('/') + "/api/generate"
+            payload = json.dumps({
+                "model": get_ollama_model(),
+                "prompt": prompt,
+                "images": frames_b64,
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": 0.3
+                }
+            }).encode("utf-8")
+            
+            try:
+                req = urllib.request.Request(ollama_url, data=payload, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    ollama_resp = json.loads(resp.read().decode("utf-8"))
+                    text = ollama_resp.get("response", "")
+                    text = text.strip()
+                    if text.startswith("```"):
+                        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    tags_raw = json.loads(text)
+            except urllib.error.HTTPError as he:
+                body = he.read().decode(errors="replace")[:300]
+                LOG.warning("Ollama API error %s: %s", he.code, body)
+                return jsonify(ok=False, error="ollama_api_error", status=he.code, detail=body), 502
+            except Exception as e:
+                return jsonify(ok=False, error="ollama_request_failed", detail=str(e)), 502
+
+        else: # gemini
+            # Call Gemini API
+            api_key = get_gemini_key()
+            if not api_key:
+                return jsonify(ok=False, error="no_api_key", message="GEMINI_API_KEY non configurée"), 400
+                
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+            parts = [{"text": prompt}]
+            for b64 in frames_b64:
+                parts.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
+                
+            payload = json.dumps({
+                "contents": [{"parts": parts}],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 200
+                }
+            }).encode("utf-8")
+    
+            req = urllib.request.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    gemini_resp = json.loads(resp.read().decode("utf-8"))
+                    text = gemini_resp["candidates"][0]["content"]["parts"][0]["text"]
+                    text = text.strip()
+                    if text.startswith("```"):
+                        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    tags_raw = json.loads(text)
+            except urllib.error.HTTPError as he:
+                body = he.read().decode(errors="replace")[:300]
+                LOG.warning("Gemini API error %s: %s", he.code, body)
+                return jsonify(ok=False, error="gemini_api_error", status=he.code, detail=body), 502
+            except Exception as e:
+                return jsonify(ok=False, error="gemini_request_failed", detail=str(e)), 502
+
+        # Filter and canonicalize tags
+        banned = get_banned_tags()
+        tags = []
+        seen = set()
+        for t in tags_raw:
+            if not isinstance(t, str):
+                continue
+            ct = canon_tag(t, banned)
+            if ct and ct not in seen and len(ct) <= 40:
+                seen.add(ct)
+                tags.append(ct)
+            if len(tags) >= 5:
+                break
+
+        # Store tags in utags
+        if tags:
+            st = read_state()
+            ut = st.get("utags", {}) or {}
+            cur = set([canon_tag(x) for x in (ut.get(vid) or [])])
+            for t in tags:
+                cur.add(t)
+            cur.discard("")
+            ut[vid] = sorted(cur)[:20]
+            st["utags"] = ut
+            write_state(st)
+            _log_event("autotag", vid=vid, tags=tags)
+
+        return jsonify(ok=True, tags=tags, count=len(tags))
+
+    except Exception as e:
+        LOG.exception("autotag error")
+        return jsonify(ok=False, error=str(e)), 500
+
+# --- Gemini key settings API ---
+@app.route("/api/settings/gemini_key", methods=["GET"])
+def api_gemini_key_get():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    key = get_gemini_key()
+    st = read_state()
+    ui_key = (st.get("gemini_api_key") or "").strip()
+    source = "ui" if ui_key else ("env" if _GEMINI_API_KEY_ENV else "none")
+    masked = "" 
+    if key:
+        masked = key[:4] + "•" * max(0, len(key) - 8) + key[-4:] if len(key) > 8 else "••••"
+    return jsonify(ok=True, has_key=bool(key), source=source, masked_key=masked)
+
+@app.route("/api/settings/gemini_key", methods=["POST"])
+def api_gemini_key_set():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    data = request.get_json(force=True, silent=True) or {}
+    key = (data.get("key") or "").strip()
+    if not key:
+        return jsonify(ok=False, error="empty_key"), 400
+    set_gemini_key(key)
+    masked = key[:4] + "•" * max(0, len(key) - 8) + key[-4:] if len(key) > 8 else "••••"
+    return jsonify(ok=True, source="ui", masked_key=masked)
+
+@app.route("/api/settings/gemini_key", methods=["DELETE"])
+def api_gemini_key_delete():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    delete_gemini_key()
+    has_env = bool(_GEMINI_API_KEY_ENV)
+    return jsonify(ok=True, source="env" if has_env else "none", has_key=has_env)
+
+@app.route("/api/settings/ai_config", methods=["GET"])
+def api_ai_config_get():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    return jsonify(
+        ok=True,
+        engine=get_ai_engine(),
+        ollama_url=get_ollama_url(),
+        ollama_model=get_ollama_model()
+    )
+
+@app.route("/api/settings/ai_config", methods=["POST"])
+def api_ai_config_set():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    data = request.get_json(force=True, silent=True) or {}
+    if "engine" in data:
+        set_ai_engine(data["engine"])
+    if "ollama_url" in data:
+        set_ollama_url(data["ollama_url"])
+    if "ollama_model" in data:
+        set_ollama_model(data["ollama_model"])
+    return jsonify(ok=True)
 
 # --- Journal/helper & storage files ---
 SCAN_CACHE_FILE = os.path.join(DATA_DIR if 'DATA_DIR' in globals() else '/data', 'scan_cache.json')

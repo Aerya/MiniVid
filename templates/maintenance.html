@@ -161,6 +161,67 @@
         </div>
       </section>
     </div>
+
+    <!-- Section Clé API Gemini -->
+    <div style="margin-top:1.5rem;">
+      <section class="card">
+        <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
+          <h3 class="card-title" style="margin:0;">✨ Configuration IA (Auto-Tag)</h3>
+          <small id="gemini-source" class="text-muted" style="opacity:.8;"></small>
+        </header>
+        <div class="card-body">
+          <p style="margin:0 0 .75rem 0;opacity:.85;font-size:.9rem;">
+            L'IA permet l'auto-tagging de vos vidéos (3 frames extraites).
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
+               style="color:#8ab4f8;text-decoration:underline;display:inline-block;margin-top:4px;">
+              🔑 Créer une clé Google AI Studio
+            </a>
+          </p>
+
+          <!-- Configuration Ollama / Moteur -->
+          <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;background:rgba(0,0,0,0.15);padding:1rem;border-radius:.5rem;">
+            <div style="flex:1;min-width:180px;">
+              <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">Moteur IA :</label>
+              <select id="ai-engine-select" style="width:100%;padding:.4rem;border-radius:.3rem;background:var(--bg2);color:inherit;border:1px solid rgba(255,255,255,0.15);">
+                <option value="gemini">Google Gemini (Cloud)</option>
+                <option value="ollama">Ollama (Local / Non censuré)</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">URL Ollama :</label>
+              <input id="ollama-url-input" type="text" placeholder="http://127.0.0.1:11434"
+                     style="width:100%;padding:.4rem;border-radius:.3rem;background:var(--bg2);color:inherit;border:1px solid rgba(255,255,255,0.15);" />
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">Modèle Ollama Vision :</label>
+              <input id="ollama-model-input" type="text" placeholder="llava:latest"
+                     style="width:100%;padding:.4rem;border-radius:.3rem;background:var(--bg2);color:inherit;border:1px solid rgba(255,255,255,0.15);" />
+            </div>
+            <div style="display:flex;align-items:flex-end;">
+              <button id="ai-config-save" class="btn btn-secondary" style="padding:.4rem 1rem;">Mettre à jour</button>
+            </div>
+          </div>
+          
+          <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">Clé API Gemini (si moteur Gemini) :</label>
+
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+            <div style="position:relative;flex:1;min-width:220px;">
+              <input id="gemini-key-input" type="password" placeholder="AIza…"
+                     autocomplete="off" spellcheck="false"
+                     style="width:100%;padding:.5rem .7rem;padding-right:2.5rem;border:1px solid rgba(255,255,255,.15);border-radius:.5rem;background:rgba(255,255,255,.06);color:inherit;font-family:monospace;font-size:.9rem;" />
+              <button id="gemini-toggle-vis" type="button" title="Afficher / masquer"
+                      style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:2px 4px;color:inherit;opacity:.6;">
+                Voir
+              </button>
+            </div>
+            <button id="gemini-save" class="btn btn-primary" style="white-space:nowrap;">Enregistrer</button>
+            <button id="gemini-delete" class="btn btn-danger" style="white-space:nowrap;">Supprimer</button>
+          </div>
+
+          <div id="gemini-status" class="text-muted" style="margin-top:.5rem;font-size:.85rem;"></div>
+        </div>
+      </section>
+    </div>
   </main>
 
   <script>
@@ -340,10 +401,150 @@
       }
     }
 
+    // --- Gemini API key management ---
+    const geminiInput = document.getElementById('gemini-key-input');
+    const geminiStatus = document.getElementById('gemini-status');
+    const geminiSource = document.getElementById('gemini-source');
+    const geminiToggle = document.getElementById('gemini-toggle-vis');
+
+    function setGeminiStatus(txt, isError) {
+      if (geminiStatus) {
+        geminiStatus.textContent = txt;
+        geminiStatus.style.color = isError ? '#f87171' : '';
+      }
+    }
+
+    async function loadGeminiKey() {
+      try {
+        const r = await fetch('/api/settings/gemini_key', { credentials: 'same-origin' });
+        const j = await r.json();
+        if (j && j.ok) {
+          if (geminiInput) geminiInput.placeholder = j.has_key ? j.masked_key : 'AIza…';
+          const labels = { ui: '✅ Clé UI', env: '🔧 Clé env', none: '⚠️ Non configurée' };
+          if (geminiSource) geminiSource.textContent = labels[j.source] || '';
+          if (!j.has_key) setGeminiStatus('Aucune clé configurée. Saisissez-en une pour activer l\'auto-tag IA.', false);
+          else setGeminiStatus('Clé active — l\'auto-tag IA est disponible.', false);
+        }
+      } catch (e) {
+        setGeminiStatus('Erreur de chargement', true);
+      }
+    }
+
+    document.getElementById('gemini-save')?.addEventListener('click', async () => {
+      const key = (geminiInput?.value || '').trim();
+      if (!key) { setGeminiStatus('Veuillez saisir une clé.', true); return; }
+      setGeminiStatus('Enregistrement…', false);
+      try {
+        const r = await fetch('/api/settings/gemini_key', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key })
+        });
+        const j = await r.json();
+        if (j.ok) {
+          geminiInput.value = '';
+          setGeminiStatus('✅ Clé enregistrée avec succès !', false);
+          loadGeminiKey();
+        } else {
+          setGeminiStatus('Erreur : ' + (j.error || 'inconnue'), true);
+        }
+      } catch (e) {
+        setGeminiStatus('Erreur réseau : ' + e, true);
+      }
+    });
+
+    document.getElementById('gemini-delete')?.addEventListener('click', async () => {
+      if (!confirm('Supprimer la clé API Gemini enregistrée dans l\'interface ?')) return;
+      setGeminiStatus('Suppression…', false);
+      try {
+        const r = await fetch('/api/settings/gemini_key', {
+          method: 'DELETE', credentials: 'same-origin'
+        });
+        const j = await r.json();
+        if (j.ok) {
+          geminiInput.value = '';
+          setGeminiStatus('Clé supprimée.' + (j.has_key ? ' (fallback clé env active)' : ''), false);
+          loadGeminiKey();
+        } else {
+          setGeminiStatus('Erreur : ' + (j.error || 'inconnue'), true);
+        }
+      } catch (e) {
+        setGeminiStatus('Erreur réseau : ' + e, true);
+      }
+    });
+
+    // --- AI Config Management (Engine, Ollama) ---
+    async function loadAIConfig() {
+      try {
+        const r = await fetch('/api/settings/ai_config', { credentials: 'same-origin' });
+        const j = await r.json();
+        if (j && j.ok) {
+          const engSel = document.getElementById('ai-engine-select');
+          if (engSel) engSel.value = j.engine || 'gemini';
+          const urlInp = document.getElementById('ollama-url-input');
+          if (urlInp) urlInp.value = j.ollama_url || '';
+          const modInp = document.getElementById('ollama-model-input');
+          if (modInp) modInp.value = j.ollama_model || '';
+        }
+      } catch (e) {
+        setGeminiStatus('Erreur de chargement de la configuration IA', true);
+      }
+    }
+
+    document.getElementById('ai-config-save')?.addEventListener('click', async () => {
+      setGeminiStatus('Enregistrement configuration...', false);
+      const engine = document.getElementById('ai-engine-select')?.value || 'gemini';
+      const ollama_url = document.getElementById('ollama-url-input')?.value.trim();
+      const ollama_model = document.getElementById('ollama-model-input')?.value.trim();
+      
+      try {
+        const r = await fetch('/api/settings/ai_config', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ engine, ollama_url, ollama_model })
+        });
+        const j = await r.json();
+        if (j.ok) {
+          setGeminiStatus('✅ Configuration IA enregistrée !', false);
+        } else {
+          setGeminiStatus('Erreur config IA : ' + (j.error || 'inconnue'), true);
+        }
+      } catch (e) {
+        setGeminiStatus('Erreur réseau config IA : ' + e, true);
+      }
+    });
+
+    geminiToggle?.addEventListener('click', () => {
+      if (!geminiInput) return;
+      const show = geminiInput.type === 'password';
+      geminiInput.type = show ? 'text' : 'password';
+      geminiToggle.textContent = show ? 'Cacher' : 'Voir';
+    });
+
     // init
     (function () {
       pollProgress();
       loadJournal();
+      loadGeminiKey();
+      loadAIConfig();
+    })();
+  </script>
+
+  <script>
+    /* Theme toggle */
+    (function () {
+      const key = 'minivid_theme';
+      try {
+        const saved = localStorage.getItem(key) || 'dark';
+        if (saved === 'light') document.documentElement.classList.add('light');
+        document.addEventListener('click', function (e) {
+          const b = e.target.closest('#themeToggle');
+          if (!b) return;
+          const el = document.documentElement;
+          el.classList.toggle('light');
+          localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
+        });
+      } catch (e) { }
     })();
   </script>
 </body>

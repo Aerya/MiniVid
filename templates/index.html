@@ -181,6 +181,8 @@
         Favoris</a>
       <button type="submit">Appliquer</button>
       <button id="themeToggle" class="btn" title="Thème sombre/clair" aria-label="Basculer le thème">🌙</button>
+      <a href="/logout" class="btn" title="Déconnexion" aria-label="Déconnexion"
+        style="background:transparent;border:1px solid currentColor;border-radius:10px;padding:.25rem .5rem;text-decoration:none;color:inherit;font-size:.9rem;line-height:1">🚪</a>
     </form>
   </header>
 
@@ -401,6 +403,66 @@
           old.classList.toggle('on');
           old.textContent = (next ? '★' : '☆') + ' Favori';
         } catch (err) { alert('Erreur favori'); }
+      }
+    });
+
+    // --- Auto-tag Gemini ---
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.autotag-btn');
+      if (!btn) return;
+      e.preventDefault();
+      let vid = btn.dataset.id;
+      if (!vid) {
+        const card = btn.closest('[data-vid]');
+        if (card) vid = card.getAttribute('data-vid');
+      }
+      if (!vid || btn.classList.contains('loading')) return;
+
+      btn.classList.add('loading');
+      btn.textContent = '⏳';
+      try {
+        const resp = await fetch('/api/autotag', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vid })
+        });
+        const data = await resp.json();
+        if (data.ok && data.tags && data.tags.length) {
+          btn.classList.remove('loading');
+          btn.classList.add('done');
+          btn.textContent = '✓';
+          // Update tags on the card
+          const card = btn.closest('.card');
+          if (card) {
+            const tagsline = card.querySelector('.tagsline');
+            if (tagsline) {
+              // Remove "(pas de tag)" muted msg
+              const muted = tagsline.querySelector('.muted');
+              if (muted) muted.remove();
+              // Add new tags
+              data.tags.forEach(t => {
+                if (!tagsline.querySelector(`[data-tag="${t}"]`)) {
+                  const pill = document.createElement('a');
+                  pill.className = 'pill';
+                  pill.href = '#';
+                  pill.dataset.tag = t;
+                  pill.textContent = t;
+                  pill.addEventListener('click', (ev) => { ev.preventDefault(); toggleTag(t); });
+                  tagsline.appendChild(pill);
+                }
+              });
+            }
+          }
+          setTimeout(() => { btn.textContent = '✨'; btn.classList.remove('done'); }, 3000);
+        } else {
+          btn.classList.remove('loading');
+          btn.textContent = '✨';
+          alert(data.message || data.error || 'Erreur auto-tag');
+        }
+      } catch (err) {
+        btn.classList.remove('loading');
+        btn.textContent = '✨';
+        alert('Erreur réseau auto-tag');
       }
     });
 
