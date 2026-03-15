@@ -1012,16 +1012,91 @@ def _autotag_batch_worker(reset_existing: bool):
                 with AUTOTAG_BATCH_LOCK:
                     AUTOTAG_BATCH["done"] += 1
 
-                # Petite pause entre les appels pour ne pas saturer l'API
-                time.sleep(1.5)
+                # Pause entre requêtes pour respecter la limite Gemini (15 RPM max en gratuit)
+                time.sleep(5)
 
             except Exception as e:
-                LOG.warning("[autotag-batch] Erreur sur %s : %s", name, e)
-                _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": str(e)})
-                with AUTOTAG_BATCH_LOCK:
-                    AUTOTAG_BATCH["errors"] += 1
-                    AUTOTAG_BATCH["done"] += 1
-                time.sleep(2)
+                import urllib.error as _urlerr
+                is_429 = isinstance(e, _urlerr.HTTPError) and e.code == 429
+                if is_429:
+                    # Rate limit : attendre et réessayer (max 3 fois)
+                    retry_delays = [60, 120, 240]
+                    retried = False
+                    for delay in retry_delays:
+                        LOG.warning("[autotag-batch] Rate limit 429 sur %s — attente %ds avant retry…", name, delay)
+                        with AUTOTAG_BATCH_LOCK:
+                            AUTOTAG_BATCH["message"] = f"Rate limit — attente {delay}s avant reprise…"
+                        # Attendre par tranches de 2s pour pouvoir réagir à un arrêt
+                        for _ in range(delay // 2):
+                            if _AUTOTAG_STOP_EV.is_set():
+                                break
+                            time.sleep(2)
+                        if _AUTOTAG_STOP_EV.is_set():
+                            break
+                        # Retry : on remet la vidéo en tête de file en ré-itérant
+                        # (on break ici, la vidéo sera simplement comptée comme erreur
+                        #  après épuisement des retries)
+                        try:
+                            # Ré-essai simplifié : on refait juste l'appel API
+                            import urllib.request as _urlreq2
+                            if get_ai_engine() == "ollama":
+                                raise Exception("retry-ollama-not-supported")
+                            api_key2 = get_gemini_key()
+                            gemini_url2 = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key2}"
+                            parts2 = [{"text": prompt}] + [{"inline_data": {"mime_type": "image/jpeg", "data": b}} for b in frames_b64]
+                            payload2 = json.dumps({"contents": [{"parts": parts2}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 200}}).encode()
+                            req2 = _urlreq2.Request(gemini_url2, data=payload2, headers={"Content-Type": "application/json"})
+                            with _urlreq2.urlopen(req2, timeout=30) as resp2:
+                                resp_j2 = json.loads(resp2.read().decode())
+                                txt2 = resp_j2["candidates"][0]["content"]["parts"][0]["text"].strip()
+                                if txt2.startswith("```"): txt2 = txt2.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                                tags_raw = json.loads(txt2)
+                            # Succès du retry
+                            banned = get_banned_tags()
+                            tags = []
+                            seen = set()
+                            for t in tags_raw:
+                                if not isinstance(t, str): continue
+                                ct = canon_tag(t, banned)
+                                if ct and ct not in seen and len(ct) <= 40:
+                                    seen.add(ct); tags.append(ct)
+                                if len(tags) >= 5: break
+                            if tags:
+                                st2 = read_state()
+                                ut2 = st2.get("utags", {}) or {}
+                                cur = set(canon_tag(x) for x in (ut2.get(vid) or []))
+                                for t in tags: cur.add(t)
+                                cur.discard("")
+                                ut2[vid] = sorted(cur)[:20]
+                                st2["utags"] = ut2
+                                write_state(st2)
+                                _log_event("autotag", vid=vid, name=name, tags=tags)
+                            LOG.info("[autotag-batch] Retry OK : %s → %s", name, tags or "(aucun tag)")
+                            _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": tags, "error": None})
+                            with AUTOTAG_BATCH_LOCK:
+                                AUTOTAG_BATCH["done"] += 1
+                            retried = True
+                            time.sleep(5)
+                            break
+                        except Exception as retry_e:
+                            import urllib.error as _urlerr2
+                            if isinstance(retry_e, _urlerr2.HTTPError) and retry_e.code == 429:
+                                continue  # encore 429, prochain delay
+                            LOG.warning("[autotag-batch] Retry échoué sur %s : %s", name, retry_e)
+                            break
+                    if not retried and not _AUTOTAG_STOP_EV.is_set():
+                        LOG.warning("[autotag-batch] Abandon après retries : %s", name)
+                        _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": "429_rate_limit"})
+                        with AUTOTAG_BATCH_LOCK:
+                            AUTOTAG_BATCH["errors"] += 1
+                            AUTOTAG_BATCH["done"] += 1
+                else:
+                    LOG.warning("[autotag-batch] Erreur sur %s : %s", name, e)
+                    _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": str(e)})
+                    with AUTOTAG_BATCH_LOCK:
+                        AUTOTAG_BATCH["errors"] += 1
+                        AUTOTAG_BATCH["done"] += 1
+                    time.sleep(3)
 
         with AUTOTAG_BATCH_LOCK:
             AUTOTAG_BATCH["status"] = "done"
