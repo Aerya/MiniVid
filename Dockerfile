@@ -7,4 +7,4 @@ COPY templates /app/templates
 COPY static /app/static
 RUN pip install --no-cache-dir flask waitress
 EXPOSE 8080
-CMD ["waitress-serve","--port=8080","app:app"]
+CMD ["waitress-serve","--port=8080","--threads=16","app:app"]

@@ -599,6 +599,7 @@ def api_autotag():
         return jsonify(ok=False, error="auth"), 401
     api_key = get_gemini_key()
     if not api_key:
+        LOG.warning("autotag: aucune clé API configurée (GEMINI_API_KEY vide). Configurez-la dans /maintenance ou via la variable d'env.")
         return jsonify(ok=False, error="no_api_key", message="GEMINI_API_KEY non configurée"), 400
     try:
         import urllib.request
@@ -814,6 +815,308 @@ def api_ai_config_set():
     if "ollama_model" in data:
         set_ollama_model(data["ollama_model"])
     return jsonify(ok=True)
+
+# ============================================================
+# --- Batch Auto-Tag IA ---
+# ============================================================
+AUTOTAG_BATCH = {
+    "status": "idle",       # idle | running | paused | done | error
+    "total": 0,
+    "done": 0,
+    "skipped": 0,
+    "errors": 0,
+    "current": "",          # nom du fichier en cours
+    "message": "",
+    "started": 0,
+    "finished": 0,
+    "paused_at": 0,
+}
+AUTOTAG_BATCH_LOCK = threading.Lock()
+_AUTOTAG_PAUSE_EV = threading.Event()
+_AUTOTAG_PAUSE_EV.set()   # not paused initially
+_AUTOTAG_STOP_EV  = threading.Event()
+_AUTOTAG_THREAD   = None
+AUTOTAG_IA_LOG    = []     # [ {ts, vid, name, tags, error}, ... ] (max 200)
+AUTOTAG_IA_LOG_LOCK = threading.Lock()
+
+def _autotag_log(entry: dict):
+    with AUTOTAG_IA_LOG_LOCK:
+        AUTOTAG_IA_LOG.append(entry)
+        if len(AUTOTAG_IA_LOG) > 200:
+            AUTOTAG_IA_LOG.pop(0)
+
+def _autotag_batch_worker(reset_existing: bool):
+    global _AUTOTAG_THREAD
+    try:
+        state = read_state()
+        utags = state.get("utags", {}) or {}
+
+        # Identifier quelles vidéos ont besoin d'être taguées par IA
+        # On détecte les tags IA via un marqueur dans utags OU simplement
+        # toutes les vidéos qui n'ont pas encore de utags
+        all_vids = [v for v in MEDIA if isinstance(v, dict) and v.get("id") and v.get("kind") != "folder"]
+        if reset_existing:
+            to_tag = all_vids
+        else:
+            # Vidéos sans utags existants
+            to_tag = [v for v in all_vids if not utags.get(v["id"])]
+
+        with AUTOTAG_BATCH_LOCK:
+            AUTOTAG_BATCH.update({
+                "total": len(to_tag),
+                "done": 0,
+                "skipped": 0,
+                "errors": 0,
+                "current": "",
+                "message": f"Démarrage — {len(to_tag)} vidéo(s) à traiter",
+                "started": int(time.time()),
+                "finished": 0,
+            })
+
+        LOG.info("[autotag-batch] Démarrage : %d vidéos à tagger (reset_existing=%s)", len(to_tag), reset_existing)
+
+        for vid_item in to_tag:
+            # Vérifie l'arrêt
+            if _AUTOTAG_STOP_EV.is_set():
+                with AUTOTAG_BATCH_LOCK:
+                    AUTOTAG_BATCH["status"] = "idle"
+                    AUTOTAG_BATCH["message"] = "Arrêté manuellement"
+                    AUTOTAG_BATCH["finished"] = int(time.time())
+                LOG.info("[autotag-batch] Arrêt manuel.")
+                return
+
+            # Attend si en pause
+            while not _AUTOTAG_PAUSE_EV.is_set():
+                if _AUTOTAG_STOP_EV.is_set():
+                    break
+                time.sleep(0.5)
+
+            if _AUTOTAG_STOP_EV.is_set():
+                break
+
+            with AUTOTAG_BATCH_LOCK:
+                AUTOTAG_BATCH["status"] = "running"
+                AUTOTAG_BATCH["current"] = vid_item.get("name", vid_item["id"])
+                AUTOTAG_BATCH["message"] = f"Traitement : {vid_item.get('name','')}"
+
+            vid = vid_item["id"]
+            name = vid_item.get("name", vid)
+
+            try:
+                ridx, rel = id_to_parts(vid)
+                filepath = os.path.join(MEDIA_DIRS[ridx], rel) if ridx < len(MEDIA_DIRS) else None
+                if not filepath or not os.path.isfile(filepath):
+                    with AUTOTAG_BATCH_LOCK:
+                        AUTOTAG_BATCH["skipped"] += 1
+                        AUTOTAG_BATCH["done"] += 1
+                    _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": "file_not_found"})
+                    continue
+
+                # Extraire les frames
+                duration = get_video_duration(filepath)
+                if duration <= 0: duration = 60.0
+                t1 = 7.0
+                t2 = duration / 2.0
+                t3 = max(0.0, duration - 11.0)
+                if duration < 18:
+                    t1, t2, t3 = duration * 0.2, duration * 0.5, duration * 0.8
+
+                frames_b64 = []
+                for t in [t1, t2, t3]:
+                    try:
+                        r = subprocess.run(
+                            ["ffmpeg", "-ss", str(t), "-i", filepath, "-frames:v", "1",
+                             "-vf", "scale=512:-1", "-f", "image2", "-q:v", "3", "pipe:1"],
+                            capture_output=True, timeout=30
+                        )
+                        if r.stdout and len(r.stdout) > 100:
+                            frames_b64.append(base64.b64encode(r.stdout).decode("ascii"))
+                    except Exception:
+                        pass
+
+                if not frames_b64:
+                    with AUTOTAG_BATCH_LOCK:
+                        AUTOTAG_BATCH["skipped"] += 1
+                        AUTOTAG_BATCH["done"] += 1
+                    _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": "ffmpeg_failed"})
+                    continue
+
+                # Appel IA
+                import urllib.request as _urlreq
+                engine = get_ai_engine()
+                prompt = (
+                    "Analyze these video frames. Return ONLY a JSON array of maximum 5 descriptive tags "
+                    "(single words, lowercase, English). Tags should describe: scene type, setting, "
+                    "visible objects, people characteristics, mood, activity, colors. "
+                    "Example: [\"outdoor\", \"beach\", \"sunset\", \"woman\", \"running\"]. "
+                    "Return ONLY the JSON array, nothing else."
+                )
+                tags_raw = []
+
+                if engine == "ollama":
+                    ollama_url = get_ollama_url().rstrip('/') + "/api/generate"
+                    payload = json.dumps({
+                        "model": get_ollama_model(), "prompt": prompt,
+                        "images": frames_b64, "format": "json",
+                        "stream": False, "options": {"temperature": 0.3}
+                    }).encode("utf-8")
+                    req = _urlreq.Request(ollama_url, data=payload, headers={"Content-Type": "application/json"})
+                    with _urlreq.urlopen(req, timeout=120) as resp:
+                        txt = json.loads(resp.read().decode()).get("response", "").strip()
+                        if txt.startswith("```"): txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                        tags_raw = json.loads(txt)
+                else:  # gemini
+                    api_key = get_gemini_key()
+                    if not api_key:
+                        with AUTOTAG_BATCH_LOCK:
+                            AUTOTAG_BATCH["status"] = "error"
+                            AUTOTAG_BATCH["message"] = "Clé API manquante — batch interrompu"
+                            AUTOTAG_BATCH["finished"] = int(time.time())
+                        LOG.error("[autotag-batch] Clé API Gemini manquante, arrêt du batch.")
+                        return
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+                    parts = [{"text": prompt}] + [{"inline_data": {"mime_type": "image/jpeg", "data": b}} for b in frames_b64]
+                    payload = json.dumps({"contents": [{"parts": parts}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 200}}).encode()
+                    req = _urlreq.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
+                    with _urlreq.urlopen(req, timeout=30) as resp:
+                        resp_j = json.loads(resp.read().decode())
+                        txt = resp_j["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        if txt.startswith("```"): txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                        tags_raw = json.loads(txt)
+
+                # Filtrer et sauvegarder
+                banned = get_banned_tags()
+                tags = []
+                seen = set()
+                for t in tags_raw:
+                    if not isinstance(t, str): continue
+                    ct = canon_tag(t, banned)
+                    if ct and ct not in seen and len(ct) <= 40:
+                        seen.add(ct); tags.append(ct)
+                    if len(tags) >= 5: break
+
+                if tags:
+                    st2 = read_state()
+                    ut2 = st2.get("utags", {}) or {}
+                    cur = set(canon_tag(x) for x in (ut2.get(vid) or []))
+                    for t in tags: cur.add(t)
+                    cur.discard("")
+                    ut2[vid] = sorted(cur)[:20]
+                    st2["utags"] = ut2
+                    write_state(st2)
+                    _log_event("autotag", vid=vid, name=name, tags=tags)
+
+                LOG.info("[autotag-batch] %s → %s", name, tags or "(aucun tag)")
+                _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": tags, "error": None})
+
+                with AUTOTAG_BATCH_LOCK:
+                    AUTOTAG_BATCH["done"] += 1
+
+                # Petite pause entre les appels pour ne pas saturer l'API
+                time.sleep(1.5)
+
+            except Exception as e:
+                LOG.warning("[autotag-batch] Erreur sur %s : %s", name, e)
+                _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": str(e)})
+                with AUTOTAG_BATCH_LOCK:
+                    AUTOTAG_BATCH["errors"] += 1
+                    AUTOTAG_BATCH["done"] += 1
+                time.sleep(2)
+
+        with AUTOTAG_BATCH_LOCK:
+            AUTOTAG_BATCH["status"] = "done"
+            AUTOTAG_BATCH["current"] = ""
+            AUTOTAG_BATCH["message"] = f"Terminé : {AUTOTAG_BATCH['done']} traités, {AUTOTAG_BATCH['errors']} erreurs"
+            AUTOTAG_BATCH["finished"] = int(time.time())
+        LOG.info("[autotag-batch] Terminé.")
+
+    except Exception as e:
+        LOG.exception("[autotag-batch] Erreur critique : %s", e)
+        with AUTOTAG_BATCH_LOCK:
+            AUTOTAG_BATCH["status"] = "error"
+            AUTOTAG_BATCH["message"] = f"Erreur critique : {e}"
+            AUTOTAG_BATCH["finished"] = int(time.time())
+    finally:
+        _AUTOTAG_THREAD = None
+
+
+@app.route("/api/autotag/batch/status", methods=["GET"])
+def api_autotag_batch_status():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    with AUTOTAG_BATCH_LOCK:
+        s = dict(AUTOTAG_BATCH)
+    # Ajouter le log IA récent (les 20 derniers)
+    with AUTOTAG_IA_LOG_LOCK:
+        log = list(reversed(AUTOTAG_IA_LOG[-20:]))
+    return jsonify(ok=True, batch=s, log=log)
+
+
+@app.route("/api/autotag/batch/start", methods=["POST"])
+def api_autotag_batch_start():
+    global _AUTOTAG_THREAD
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    if not get_gemini_key() and get_ai_engine() != "ollama":
+        return jsonify(ok=False, error="no_api_key", message="Aucune clé API configurée"), 400
+    data = request.get_json(force=True, silent=True) or {}
+    reset_existing = bool(data.get("reset_existing", False))
+
+    with AUTOTAG_BATCH_LOCK:
+        if AUTOTAG_BATCH["status"] == "running":
+            return jsonify(ok=False, error="already_running"), 409
+        AUTOTAG_BATCH["status"] = "running"
+
+    _AUTOTAG_STOP_EV.clear()
+    _AUTOTAG_PAUSE_EV.set()
+
+    _AUTOTAG_THREAD = threading.Thread(
+        target=_autotag_batch_worker, args=(reset_existing,), daemon=True
+    )
+    _AUTOTAG_THREAD.start()
+    LOG.info("[autotag-batch] Démarré par l'utilisateur (reset_existing=%s)", reset_existing)
+    return jsonify(ok=True, status="running")
+
+
+@app.route("/api/autotag/batch/pause", methods=["POST"])
+def api_autotag_batch_pause():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    _AUTOTAG_PAUSE_EV.clear()
+    with AUTOTAG_BATCH_LOCK:
+        AUTOTAG_BATCH["status"] = "paused"
+        AUTOTAG_BATCH["paused_at"] = int(time.time())
+        AUTOTAG_BATCH["message"] = "En pause"
+    LOG.info("[autotag-batch] Mis en pause.")
+    return jsonify(ok=True, status="paused")
+
+
+@app.route("/api/autotag/batch/resume", methods=["POST"])
+def api_autotag_batch_resume():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    _AUTOTAG_PAUSE_EV.set()
+    with AUTOTAG_BATCH_LOCK:
+        AUTOTAG_BATCH["status"] = "running"
+        AUTOTAG_BATCH["message"] = "Reprise…"
+    LOG.info("[autotag-batch] Repris.")
+    return jsonify(ok=True, status="running")
+
+
+@app.route("/api/autotag/batch/stop", methods=["POST"])
+def api_autotag_batch_stop():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    _AUTOTAG_STOP_EV.set()
+    _AUTOTAG_PAUSE_EV.set()  # débloquer la pause pour que le thread puisse s'arrêter
+    with AUTOTAG_BATCH_LOCK:
+        AUTOTAG_BATCH["status"] = "idle"
+        AUTOTAG_BATCH["message"] = "Arrêté"
+        AUTOTAG_BATCH["finished"] = int(time.time())
+    LOG.info("[autotag-batch] Arrêt demandé.")
+    return jsonify(ok=True, status="idle")
+
+
 
 # --- Journal/helper & storage files ---
 SCAN_CACHE_FILE = os.path.join(DATA_DIR if 'DATA_DIR' in globals() else '/data', 'scan_cache.json')

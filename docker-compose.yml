@@ -21,6 +21,11 @@ services:
       MINI_PASS: ${MINI_PASS}
       # En console : openssl rand -hex 32
       SECRET_KEY: 
+      # Gemini auto-tagging (clé API Google — https://aistudio.google.com/apikey)
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # Ollama (alternative locale à Gemini)
+      # OLLAMA_URL: http://host.docker.internal:11434
+      # OLLAMA_MODEL: llava
       # Liste noire tags (les mots de moins de 3 lettres sont automatiquement bannis)
       MINI_BANNED_TAGS:  >
         and,the,source,video,videos,vid,vids,film,movie,part,
