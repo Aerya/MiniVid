@@ -199,7 +199,8 @@
     <a href="/maintenance" title="Maintenance">Maintenance</a>
   </nav>
 
-  <div class="tagbar">
+  <div class="tagbar" id="tagbar-popular">
+    <button class="tagbar-toggle" id="tagbarToggle" title="Afficher/masquer les tags">🏷️ Tags <span id="tagbarArrow">▾</span></button>
     <div class="taggroup" id="popular-tags">
       <strong>Tags populaires :</strong>
       {% for t,c in popular %}
@@ -256,6 +257,50 @@
       </div>
     </div>
   </footer>
+
+  <script>
+    // --- Tagbar toggle (mobile) ---
+    (function () {
+      var tagbar = document.getElementById('tagbar-popular');
+      var btn = document.getElementById('tagbarToggle');
+      var arrow = document.getElementById('tagbarArrow');
+      if (!tagbar || !btn) return;
+
+      var isMobile = window.matchMedia('(max-width: 600px)');
+      var storageKey = 'minivid_tagbar_open';
+
+      function setOpen(open) {
+        if (open) {
+          tagbar.classList.add('open');
+          if (arrow) arrow.textContent = '▴';
+          try { localStorage.setItem(storageKey, '1'); } catch(e) {}
+        } else {
+          tagbar.classList.remove('open');
+          if (arrow) arrow.textContent = '▾';
+          try { localStorage.setItem(storageKey, '0'); } catch(e) {}
+        }
+      }
+
+      function initMobile() {
+        if (isMobile.matches) {
+          // Sur mobile : replié par défaut, sauf si l'utilisateur l'avait ouvert
+          var saved = null;
+          try { saved = localStorage.getItem(storageKey); } catch(e) {}
+          setOpen(saved === '1');
+        } else {
+          // Sur desktop : toujours ouvert, bouton caché par CSS
+          tagbar.classList.add('open');
+        }
+      }
+
+      btn.addEventListener('click', function () {
+        setOpen(!tagbar.classList.contains('open'));
+      });
+
+      isMobile.addEventListener('change', initMobile);
+      initMobile();
+    })();
+  </script>
 
   <script>
     // --- Smart sort toggle ---

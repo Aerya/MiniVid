@@ -607,6 +607,33 @@ h3 {
   border-color: #b89300;
 }
 
+/* --- Tagbar collapse toggle (mobile) --- */
+.tagbar-toggle {
+  display: none; /* caché sur desktop */
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: var(--accent-light);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.tagbar-toggle:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--accent);
+}
+
+.tagbar.collapsed .taggroup {
+  display: none;
+}
+
 /* --- Auto-tag Gemini button --- */
 .autotag-btn {
   position: absolute;
@@ -1149,6 +1176,21 @@ video:focus {
   .tagbar {
     padding: 0.4rem 0.6rem;
     gap: 0.3rem;
+  }
+
+  /* Bouton toggle visible sur mobile */
+  .tagbar-toggle {
+    display: flex;
+  }
+
+  /* Par défaut sur mobile, le taggroup est caché (géré par JS) */
+  #tagbar-popular .taggroup {
+    display: none;
+  }
+
+  /* Quand le tagbar est ouvert */
+  #tagbar-popular.open .taggroup {
+    display: flex;
   }
 
   .tagbar .pill {
