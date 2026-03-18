@@ -306,11 +306,14 @@
     // --- Smart sort toggle ---
     const smartToggle = document.getElementById('smartSort');
     if (smartToggle) {
-      // Restore from localStorage if not set by URL
       const saved = localStorage.getItem('minivid_smart_sort');
       const urlParams = new URLSearchParams(location.search);
+
+      // Si le localStorage dit "on" mais ?smart n'est pas dans l'URL → rediriger
       if (!urlParams.has('smart') && saved === 'on') {
-        smartToggle.checked = true;
+        const url = new URL(location.href);
+        url.searchParams.set('smart', '1');
+        location.replace(url.toString());
       }
 
       smartToggle.addEventListener('change', () => {

@@ -5,9 +5,13 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 
 ---
 
-## 🚀 Nouveautés v2.0
+## 🚀 Nouveautés v2.1
 
 - **🎬 Vidéos similaires** : Affiche sous chaque vidéo une grille de vidéos partageant des tags communs (configurable : 1, 2 ou 3 tags minimum).
+
+---
+
+## 🚀 Nouveautés v2.0
 
 - **✨ Interface Moderne** : Design "Premium" avec police **Inter**, effets de **Glassmorphism** et animations fluides.
 - **🎥 Lecture Native (DIRECT)** : Priorité à la lecture sans transcodage pour les formats supportés par le navigateur (MKV/MP4).
