@@ -588,26 +588,51 @@ h3 {
   align-items: center;
   justify-content: center;
   padding: 0;
-  background: transparent;
-  border: none;
+  background: none !important;
+  border: none !important;
+  outline: none;
+  box-shadow: none !important;
+  border-radius: 0 !important;
   cursor: pointer;
-  opacity: .75;
+  opacity: .8;
   transition: opacity .15s, transform .15s;
 }
 .fav-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: #fff;
   stroke-width: 2;
+  stroke-linejoin: round;
   transition: fill .15s, stroke .15s;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.7));
 }
 .fav-btn.active svg {
   fill: #facc15;
   stroke: #facc15;
 }
-.fav-btn:hover { opacity: 1; transform: scale(1.15); }
+.fav-btn:hover { opacity: 1; transform: scale(1.2); }
+
+/* Bouton Favoris dans le menu en haut */
+.controls .favbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+.controls .favbtn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: fill .15s, stroke .15s;
+  flex-shrink: 0;
+}
+.controls .favbtn.active svg {
+  fill: #111;
+  stroke: #111;
+}
 
 /* --- Tagbar collapse toggle (mobile) --- */
 .tagbar-toggle {
