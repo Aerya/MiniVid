@@ -1221,9 +1221,8 @@ video:focus {
 }
 /* ========== Similar Videos ========== */
 .similar-section {
-  margin: 2rem auto 1rem;
-  max-width: 960px;
-  padding: 0 1rem;
+  margin: 2rem 0 1rem;   /* pleine largeur, pas de max-width */
+  padding: 0;
 }
 .similar-title {
   font-size: 1rem;
@@ -1231,18 +1230,22 @@ video:focus {
   margin: 0 0 .75rem;
   opacity: .9;
 }
-/* Grille similaires : vignettes plus petites, max de colonnes selon la largeur */
+/*
+  Grille similaires : pleine largeur, ~2 lignes sur PC.
+  On vise 6 colonnes sur grand écran → card-min ≈ (largeur_dispo / 6).
+  Sur un écran 1400px avec padding, ça donne ~220px → même taille que la grille principale.
+  Sur mobile on garde 2 colonnes minimum.
+*/
 .similar-section .grid {
-  --card-min: 150px;
-  --thumb-h: 90px;
-  gap: .5rem;
+  --card-min: 160px;
+  --thumb-h: 130px;
+  gap: .6rem;
 }
-@media (min-width: 600px)  { .similar-section .grid { --card-min: 140px; } }
-@media (min-width: 900px)  { .similar-section .grid { --card-min: 145px; } }
-@media (min-width: 1200px) { .similar-section .grid { --card-min: 150px; } }
-/* Texte adapté à la taille réduite */
-.similar-section .card h3    { font-size: .72rem; margin: .3rem .4rem .1rem; }
-.similar-section .card .meta { font-size: .65rem; margin: 0 .4rem .2rem; }
-.similar-section .card .tagsline { padding: 0 .4rem .3rem; gap: .2rem; }
-.similar-section .card .tagsline .pill { font-size: .6rem; padding: .1rem .35rem; }
-.similar-section .card .fav-btn { font-size: .75rem; top: auto; right: .3rem; bottom: auto; }
+@media (min-width: 700px)  { .similar-section .grid { --card-min: 180px; --thumb-h: 140px; } }
+@media (min-width: 1000px) { .similar-section .grid { --card-min: 200px; --thumb-h: 150px; } }
+@media (min-width: 1400px) { .similar-section .grid { --card-min: 220px; --thumb-h: 160px; } }
+/* Texte légèrement compact mais lisible */
+.similar-section .card h3    { font-size: .82rem; margin: .35rem .5rem .1rem; }
+.similar-section .card .meta { font-size: .7rem;  margin: 0 .5rem .25rem; }
+.similar-section .card .tagsline { padding: 0 .5rem .35rem; gap: .25rem; }
+.similar-section .card .tagsline .pill { font-size: .65rem; padding: .12rem .38rem; }
