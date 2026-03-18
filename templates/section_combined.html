@@ -8,9 +8,10 @@
     {% if it.played %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
   </a>
 
-  <!-- Étoile favori compacte -->
-  <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori"
-    data-id="{{ it.id }}">★</button>
+  <!-- Cœur favori -->
+  <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori" data-id="{{ it.id }}">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg>
+  </button>
 
 
   <h3 title="{{ it.name }}">{{ it.name }}</h3>

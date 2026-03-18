@@ -698,10 +698,10 @@ def smart_group_items(items, mode="date"):
     
     if mode == "date":
         groups = [
-            {"key": "today", "label": "📅 Aujourd'hui", "videos": []},
-            {"key": "week", "label": "📆 Cette semaine", "videos": []},
-            {"key": "month", "label": "📅 Ce mois", "videos": []},
-            {"key": "older", "label": "�? Plus ancien", "videos": []},
+            {"key": "today", "label": "Aujourd'hui", "videos": []},
+            {"key": "week", "label": "Cette semaine", "videos": []},
+            {"key": "month", "label": "Ce mois", "videos": []},
+            {"key": "older", "label": "Plus ancien", "videos": []},
         ]
         
         for item in items:
@@ -724,9 +724,9 @@ def smart_group_items(items, mode="date"):
     
     elif mode == "size":
         groups = [
-            {"key": "large", "label": "📦 Grande taille (>1 Go)", "videos": []},
-            {"key": "medium", "label": "�? Taille moyenne (100 Mo - 1 Go)", "videos": []},
-            {"key": "small", "label": "📄 Petite taille (<100 Mo)", "videos": []},
+            {"key": "large", "label": "Grande taille (>1 Go)", "videos": []},
+            {"key": "medium", "label": "Taille moyenne (100 Mo - 1 Go)", "videos": []},
+            {"key": "small", "label": "Petite taille (<100 Mo)", "videos": []},
         ]
         
         for item in items:

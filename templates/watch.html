@@ -212,7 +212,9 @@
         <button id="addtag" class="pill add">＋ Tag</button>
       </div>
       <div class="actions">
-        <button id="favbtn" class="fav {{ 'on' if fav else '' }}">{{ '★ Favori' if fav else '☆ Favori' }}</button>
+        <button id="favbtn" class="fav {{ 'on' if fav else '' }}">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z" fill="{{ 'currentColor' if fav else 'none' }}" stroke="currentColor" stroke-width="2"/></svg>Favori
+        </button>
         <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer Non lue' if played else 'Marquer Lue'
           }}</button>
         <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
@@ -297,7 +299,7 @@
           body: JSON.stringify({ vid: "{{ vid }}", fav: next })
         });
         favBtn.classList.toggle('on');
-        favBtn.textContent = next ? '★ Favori' : '☆ Favori';
+        favBtn.querySelector('svg path').setAttribute('fill', next ? 'currentColor' : 'none');
       } catch (e) { alert('Erreur favori'); }
     });
 
@@ -589,7 +591,7 @@
                   <div class="badge">${(v.ext||'').toUpperCase()}</div>
                   ${statusHtml}
                 </a>
-                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${v.id}">★</button>
+                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${v.id}"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg></button>
                 <h3 title="${safeName}">${safeName}</h3>
                 <p class="meta"><span>${formatSize(v.size)}</span></p>
                 <p class="tagsline">${tagsHtml}</p>
