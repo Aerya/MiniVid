@@ -22,6 +22,11 @@
       filter: invert(1) hue-rotate(180deg)
     }
 
+    /* Fix : ne pas inverser la vidéo en plein écran (mode clair) */
+    video:-webkit-full-screen { filter: none !important; }
+    video:-moz-full-screen     { filter: none !important; }
+    video:fullscreen           { filter: none !important; }
+
     #themeToggle {
       background: transparent;
       border: 1px solid currentColor;
@@ -120,8 +125,7 @@
     </div>
   </header>
 
-  <!-- Floating back button for mobile -->
-  <a class="floating-back" href="{{ back }}" title="Retour">←</a>
+
 
   <main class="watch">
     {% if unsupported %}
@@ -186,6 +190,13 @@
       <span class="playback-badge">{{ playback_method }}</span>
       {% endif %}
     </div>
+
+    <div class="zoom-bar">
+      <span>Zoom&nbsp;:</span>
+      <button class="zoom-btn active" data-zoom="1">1×</button>
+      <button class="zoom-btn" data-zoom="1.5">1.5×</button>
+      <button class="zoom-btn" data-zoom="2">2×</button>
+    </div>
     {% endif %}
 
     {% if res %}
@@ -207,6 +218,12 @@
         <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
       </div>
     </section>
+
+    <!-- Vidéos similaires -->
+    <section class="similar-section" id="similar-section" style="display:none;">
+      <h3 class="similar-title">Vidéos similaires</h3>
+      <div class="similar-grid" id="similar-grid"></div>
+    </section>
   </main>
 
   <!-- Keyboard shortcuts panel -->
@@ -227,7 +244,7 @@
 
   <footer class="footer">
     <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
-      <span>MiniVid v2.0</span>
+      <span>MiniVid v2.1</span>
       <div style="display: flex; align-items: center; gap: 8px;">
         <strong style="color: #667eea;">Aerya</strong>
         {% if not hide_credits %}
@@ -436,6 +453,29 @@
     })();
   </script>
 
+  <script>
+    /* Zoom bar */
+    (function () {
+      const wrap = document.querySelector('.player-wrap');
+      if (!wrap) return;
+      document.querySelectorAll('.zoom-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          document.querySelectorAll('.zoom-btn').forEach(function (b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          var z = parseFloat(btn.dataset.zoom) || 1;
+          if (z === 1) {
+            wrap.style.width = '';
+            wrap.style.maxWidth = '';
+          } else {
+            var base = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
+            wrap.style.width = (base * z) + 'px';
+            wrap.style.maxWidth = 'none';
+          }
+        });
+      });
+    })();
+  </script>
+
   <script>/*BACKTOP_FIX_LISTENER*/
     (function () {
       try {
@@ -504,6 +544,68 @@
           }
         }, { passive: false });
       } catch (e) { }
+    })();
+  </script>
+
+  <script>
+    /* Similar videos */
+    (function () {
+      const VID = '{{ vid }}';
+      const section = document.getElementById('similar-section');
+      const grid = document.getElementById('similar-grid');
+      if (!section || !grid) return;
+
+      async function loadSimilar() {
+        try {
+          const r = await fetch('/api/similar/' + VID, { credentials: 'same-origin' });
+          const j = await r.json();
+          if (!j || !j.ok || !j.videos || !j.videos.length) return;
+          section.style.display = '';
+          grid.innerHTML = j.videos.map(v => {
+            const tags = (v.tags || []).slice(0, 5).map(t =>
+              `<a class="pill" href="/browse?tag=${encodeURIComponent(t)}" style="font-size:.72rem;padding:.15rem .45rem;">${t}</a>`
+            ).join('');
+            const favCls = v.fav ? 'fav-btn active' : 'fav-btn';
+            const favLbl = v.fav ? '★' : '☆';
+            return `
+              <div class="similar-card">
+                <a href="/watch/${v.id}" class="similar-thumb">
+                  <img src="/thumb/${v.id}.jpg" alt="${v.name.replace(/"/g,'&quot;')}" loading="lazy"
+                       onerror="this.src='/static/placeholder.svg'">
+                  ${v.played ? '<span class="similar-played">✓</span>' : ''}
+                </a>
+                <div class="similar-info">
+                  <a href="/watch/${v.id}" class="similar-name" title="${v.name.replace(/"/g,'&quot;')}">${v.name}</a>
+                  <div class="similar-tags">${tags}</div>
+                  <button class="${favCls}" data-id="${v.id}" aria-label="Favori" title="Favori"
+                          style="background:none;border:none;cursor:pointer;font-size:1rem;padding:.1rem .3rem;color:inherit;opacity:.85;">
+                    ${favLbl}
+                  </button>
+                </div>
+              </div>`;
+          }).join('');
+
+          // Fav toggle on similar cards
+          grid.querySelectorAll('.fav-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              e.preventDefault();
+              const id = btn.dataset.id;
+              const next = !btn.classList.contains('active');
+              try {
+                await fetch('/api/fav', {
+                  method: 'POST', credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ vid: id, fav: next })
+                });
+                btn.classList.toggle('active', next);
+                btn.textContent = next ? '★' : '☆';
+              } catch(err) {}
+            });
+          });
+        } catch(e) {}
+      }
+
+      loadSimilar();
     })();
   </script>
 </body>

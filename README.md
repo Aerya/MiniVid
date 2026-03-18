@@ -1,17 +1,13 @@
 # 🎬 MiniVid
 
 MiniVid est une application web auto-hébergée légère qui permet de parcourir, organiser et lire vos vidéos locales depuis n’importe quel appareil.  
-Pensée pour être simple, rapide et efficace, elle combine navigation par dossiers, tags automatiques, favoris, et un lecteur intégré compatible avec les formats vidéo modernes.
+Pensée pour être simple, rapide et efficace, elle combine navigation par dossiers, tags automatiques, favoris, vidéos similaires, et un lecteur intégré compatible avec les formats vidéo modernes.
 
 ---
 
-## 🚀 Nouveautés v2.1
-
-- **🤖 Tagging IA (Gemini / Ollama)** : Génération automatique de tags (max. 5) à partir de plusieurs frames extraites de la vidéo (7s, milieu, 11s avant la fin).
-- **🔒 Support Ollama** : Utilisation d'un modèle IA local (ex: `llava`) pour contourner les filtres de contenu NSFW.
-- **🖼️ Multi-frames** : Analyse multi-image pour un tagging plus précis et contextuel.
-
 ## 🚀 Nouveautés v2.0
+
+- **🎬 Vidéos similaires** : Affiche sous chaque vidéo une grille de vidéos partageant des tags communs (configurable : 1, 2 ou 3 tags minimum).
 
 - **✨ Interface Moderne** : Design "Premium" avec police **Inter**, effets de **Glassmorphism** et animations fluides.
 - **🎥 Lecture Native (DIRECT)** : Priorité à la lecture sans transcodage pour les formats supportés par le navigateur (MKV/MP4).
@@ -33,7 +29,6 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 - Tags individuels par fichier  
 - Multi-sélection et recherche par tags  
 - Blacklist configurable pour supprimer les mots inutiles (`and`, `the`, `source`, etc.)
-- **🤖 Auto-tagging IA** via Google Gemini ou un modèle Ollama local (analyse multi-frames, max. 5 tags)
 
 ### 🔍 Recherche avancée
 - Par nom de fichier  
@@ -120,9 +115,6 @@ Pour découvrir MiniVid en images et lire la présentation complète, consultez 
 | **MINI_THUMB_OFFSET**            | `5`                               | Seconde du screenshot miniature                                            |
 | **MINI_THUMB_MAX**               | `30`                              | Offset max (si vidéo longue)                                               |
 | **MINI_FFPROBE_TIMEOUT**         | `10`                              | Timeout en secondes pour `ffprobe`/`ffmpeg`                                |
-| **GEMINI_API_KEY**               | *(vide)*                          | Clé API Google Gemini pour l'auto-tagging IA ([Obtenir une clé](https://aistudio.google.com/apikey)) |
-| **OLLAMA_URL**                   | *(vide)*                          | URL de votre instance Ollama (ex: `http://host:11434`) — alternative locale à Gemini |
-| **OLLAMA_MODEL**                 | `llava`                           | Modèle Ollama à utiliser pour le tagging (doit supporter la vision)        |
 
 ---
 
@@ -160,12 +152,6 @@ MINI_PASS=m1ch3l
 # Fréquence en secondes (3600 = 1h)
 INTERVAL=3600
 
-# Gemini API (auto-tagging IA — https://aistudio.google.com/apikey)
-GEMINI_API_KEY=
-
-# Ollama (alternative locale à Gemini, laisser vide si non utilisé)
-# OLLAMA_URL=http://host.docker.internal:11434
-# OLLAMA_MODEL=llava
 ```
 
 ### 2. Générer la SECRET_KEY en console

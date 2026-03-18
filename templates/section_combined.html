@@ -12,11 +12,6 @@
   <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori"
     data-id="{{ it.id }}">★</button>
 
-  {% if gemini_enabled %}
-  <!-- Auto-tag Gemini -->
-  <button class="autotag-btn" aria-label="Auto-tag IA" title="Auto-tag IA"
-    data-id="{{ it.id }}">✨</button>
-  {% endif %}
 
   <h3 title="{{ it.name }}">{{ it.name }}</h3>
   <p class="meta">

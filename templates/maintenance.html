@@ -108,7 +108,7 @@
 
   <header class="topbar">
     <a class="back-btn" id="btn-back" href="{{ back }}" title="Retour à la liste">
-      <span class="back-icon">←</span>
+      <span class="back-icon">&larr;</span>
       <span class="back-text">Retour</span>
     </a>
     <div class="brand">
@@ -121,7 +121,6 @@
   </header>
 
   <!-- Floating back button for mobile -->
-  <a class="floating-back" href="{{ back }}" title="Retour">←</a>
 
 
   <main class="container" style="padding:16px;">
@@ -162,112 +161,40 @@
       </section>
     </div>
 
-    <!-- Section IA Auto-Tag -->
+    <!-- Section Vidéos similaires -->
     <div style="margin-top:1.5rem;">
       <section class="card">
         <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
-          <h3 class="card-title" style="margin:0;">✨ Configuration IA (Auto-Tag)</h3>
-          <small id="gemini-source" class="text-muted" style="opacity:.8;"></small>
+          <h3 class="card-title" style="margin:0;">Vidéos similaires</h3>
+          <small id="similar-status-label" class="text-muted" style="opacity:.8;"></small>
         </header>
         <div class="card-body">
           <p style="margin:0 0 .75rem 0;opacity:.85;font-size:.9rem;">
-            L'IA analyse 3 images extraites de chaque vidéo pour générer jusqu'à 5 tags automatiques.
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
-               style="color:#8ab4f8;text-decoration:underline;display:inline-block;margin-top:4px;">
-              🔑 Créer une clé Google AI Studio
-            </a>
+            Affiche sous chaque vidéo une grille de vidéos ayant des tags en commun.
           </p>
-
-          <!-- Configuration Moteur / Ollama -->
-          <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;background:rgba(0,0,0,0.15);padding:1rem;border-radius:.5rem;">
-            <div style="flex:1;min-width:180px;">
-              <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">Moteur IA :</label>
-              <select id="ai-engine-select" style="width:100%;padding:.4rem;border-radius:.3rem;background:var(--bg2);color:inherit;border:1px solid rgba(255,255,255,0.15);">
-                <option value="gemini">Google Gemini (Cloud)</option>
-                <option value="ollama">Ollama (Local / Non censuré)</option>
-              </select>
-            </div>
-            <div style="flex:1;min-width:180px;">
-              <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">URL Ollama :</label>
-              <input id="ollama-url-input" type="text" placeholder="http://127.0.0.1:11434"
-                     style="width:100%;padding:.4rem;border-radius:.3rem;background:var(--bg2);color:inherit;border:1px solid rgba(255,255,255,0.15);" />
-            </div>
-            <div style="flex:1;min-width:180px;">
-              <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">Modèle Ollama Vision :</label>
-              <input id="ollama-model-input" type="text" placeholder="llava:latest"
-                     style="width:100%;padding:.4rem;border-radius:.3rem;background:var(--bg2);color:inherit;border:1px solid rgba(255,255,255,0.15);" />
-            </div>
-            <div style="display:flex;align-items:flex-end;">
-              <button id="ai-config-save" class="btn btn-secondary" style="padding:.4rem 1rem;">Mettre à jour</button>
-            </div>
-          </div>
-
-          <!-- Clé API Gemini -->
-          <label style="display:block;font-size:0.85rem;margin-bottom:.3rem;">Clé API Gemini (si moteur Gemini) :</label>
-          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-            <div style="position:relative;flex:1;min-width:220px;">
-              <input id="gemini-key-input" type="password" placeholder="AIza…"
-                     autocomplete="off" spellcheck="false"
-                     style="width:100%;padding:.5rem .7rem;padding-right:2.5rem;border:1px solid rgba(255,255,255,.15);border-radius:.5rem;background:rgba(255,255,255,.06);color:inherit;font-family:monospace;font-size:.9rem;" />
-              <button id="gemini-toggle-vis" type="button" title="Afficher / masquer"
-                      style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:0.9rem;padding:2px 4px;color:inherit;opacity:.6;">
-                Voir
-              </button>
-            </div>
-            <button id="gemini-save" class="btn btn-primary" style="white-space:nowrap;">Enregistrer</button>
-            <button id="gemini-delete" class="btn btn-danger" style="white-space:nowrap;">Supprimer</button>
-          </div>
-          <div id="gemini-status" class="text-muted" style="margin-top:.5rem;font-size:.85rem;"></div>
-        </div>
-      </section>
-    </div>
-
-    <!-- Dashboard batch IA -->
-    <div style="margin-top:1.5rem;">
-      <section class="card">
-        <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
-          <h3 class="card-title" style="margin:0;">🤖 Tagging IA en lot</h3>
-          <small id="batch-status-label" class="text-muted" style="opacity:.8;">Inactif</small>
-        </header>
-        <div class="card-body">
-
-          <!-- Progression -->
-          <div style="margin-bottom:1rem;">
-            <div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:.35rem;">
-              <span id="batch-message" style="opacity:.85;">Prêt.</span>
-              <span id="batch-counter" style="opacity:.7;"></span>
-            </div>
-            <div class="progress" style="height:8px;">
-              <div id="batch-bar" class="progress-bar" role="progressbar" style="width:0%;transition:width .4s;"></div>
-            </div>
-            <div id="batch-current" style="font-size:.8rem;opacity:.6;margin-top:.3rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
-          </div>
-
-          <!-- Contrôles -->
-          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
-            <button id="btn-batch-start" class="btn btn-primary" onclick="batchStart(false)">▶ Démarrer</button>
-            <button id="btn-batch-pause" class="btn btn-secondary" onclick="batchPause()" disabled>⏸ Pause</button>
-            <button id="btn-batch-resume" class="btn btn-secondary" onclick="batchResume()" style="display:none;">▶ Reprendre</button>
-            <button id="btn-batch-stop" class="btn btn-danger" onclick="batchStop()" disabled>⏹ Arrêter</button>
-            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;margin-left:.5rem;">
-              <input type="checkbox" id="batch-reset-cb" /> Re-tagger toutes (même déjà taguées)
+          <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.9rem;">
+              <input type="checkbox" id="similar-enabled" style="accent-color:#3b82f6;width:16px;height:16px;" />
+              Activer les vidéos similaires
             </label>
-          </div>
-
-          <!-- Journal IA dédié -->
-          <div>
-            <div style="font-size:.85rem;opacity:.65;margin-bottom:.4rem;border-top:1px solid rgba(255,255,255,.07);padding-top:.6rem;">
-              Journal IA — 20 dernières vidéos traitées
+            <div style="display:flex;align-items:center;gap:.75rem;">
+              <span style="font-size:.85rem;opacity:.8;">Tags communs minimum :</span>
+              <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-size:.9rem;">
+                <input type="radio" name="similar-min" value="1" style="accent-color:#3b82f6;" /> 1
+              </label>
+              <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-size:.9rem;">
+                <input type="radio" name="similar-min" value="2" style="accent-color:#3b82f6;" checked /> 2
+              </label>
+              <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-size:.9rem;">
+                <input type="radio" name="similar-min" value="3" style="accent-color:#3b82f6;" /> 3
+              </label>
             </div>
-            <div id="autotag-ia-log" style="max-height:320px;overflow-y:auto;">
-              <div class="text-muted" style="font-size:.85rem;">Aucune entrée.</div>
-            </div>
+            <button id="similar-save" class="btn btn-primary" style="padding:.4rem 1rem;">Enregistrer</button>
           </div>
-
+          <div id="similar-msg" style="margin-top:.5rem;font-size:.85rem;"></div>
         </div>
       </section>
     </div>
-  </main>
 
 
   <script>
@@ -447,300 +374,52 @@
       }
     }
 
-    // --- Gemini API key management ---
-    const geminiInput = document.getElementById('gemini-key-input');
-    const geminiStatus = document.getElementById('gemini-status');
-    const geminiSource = document.getElementById('gemini-source');
-    const geminiToggle = document.getElementById('gemini-toggle-vis');
-
-    function setGeminiStatus(txt, isError) {
-      if (geminiStatus) {
-        geminiStatus.textContent = txt;
-        geminiStatus.style.color = isError ? '#f87171' : '';
-      }
-    }
-
-    async function loadGeminiKey() {
-      try {
-        const r = await fetch('/api/settings/gemini_key', { credentials: 'same-origin' });
-        const j = await r.json();
-        if (j && j.ok) {
-          if (geminiInput) geminiInput.placeholder = j.has_key ? j.masked_key : 'AIza…';
-          const labels = { ui: '✅ Clé UI', env: '🔧 Clé env', none: '⚠️ Non configurée' };
-          if (geminiSource) geminiSource.textContent = labels[j.source] || '';
-          if (!j.has_key) setGeminiStatus('Aucune clé configurée. Saisissez-en une pour activer l\'auto-tag IA.', false);
-          else setGeminiStatus('Clé active — l\'auto-tag IA est disponible.', false);
-        }
-      } catch (e) {
-        setGeminiStatus('Erreur de chargement', true);
-      }
-    }
-
-    document.getElementById('gemini-save')?.addEventListener('click', async () => {
-      const key = (geminiInput?.value || '').trim();
-      if (!key) { setGeminiStatus('Veuillez saisir une clé.', true); return; }
-      setGeminiStatus('Enregistrement…', false);
-      try {
-        const r = await fetch('/api/settings/gemini_key', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key })
-        });
-        const j = await r.json();
-        if (j.ok) {
-          geminiInput.value = '';
-          setGeminiStatus('✅ Clé enregistrée avec succès !', false);
-          loadGeminiKey();
-        } else {
-          setGeminiStatus('Erreur : ' + (j.error || 'inconnue'), true);
-        }
-      } catch (e) {
-        setGeminiStatus('Erreur réseau : ' + e, true);
-      }
-    });
-
-    document.getElementById('gemini-delete')?.addEventListener('click', async () => {
-      if (!confirm('Supprimer la clé API Gemini enregistrée dans l\'interface ?')) return;
-      setGeminiStatus('Suppression…', false);
-      try {
-        const r = await fetch('/api/settings/gemini_key', {
-          method: 'DELETE', credentials: 'same-origin'
-        });
-        const j = await r.json();
-        if (j.ok) {
-          geminiInput.value = '';
-          setGeminiStatus('Clé supprimée.' + (j.has_key ? ' (fallback clé env active)' : ''), false);
-          loadGeminiKey();
-        } else {
-          setGeminiStatus('Erreur : ' + (j.error || 'inconnue'), true);
-        }
-      } catch (e) {
-        setGeminiStatus('Erreur réseau : ' + e, true);
-      }
-    });
-
-    // --- AI Config Management (Engine, Ollama) ---
-    async function loadAIConfig() {
-      try {
-        const r = await fetch('/api/settings/ai_config', { credentials: 'same-origin' });
-        const j = await r.json();
-        if (j && j.ok) {
-          const engSel = document.getElementById('ai-engine-select');
-          if (engSel) engSel.value = j.engine || 'gemini';
-          const urlInp = document.getElementById('ollama-url-input');
-          if (urlInp) urlInp.value = j.ollama_url || '';
-          const modInp = document.getElementById('ollama-model-input');
-          if (modInp) modInp.value = j.ollama_model || '';
-        }
-      } catch (e) {
-        setGeminiStatus('Erreur de chargement de la configuration IA', true);
-      }
-    }
-
-    document.getElementById('ai-config-save')?.addEventListener('click', async () => {
-      setGeminiStatus('Enregistrement configuration...', false);
-      const engine = document.getElementById('ai-engine-select')?.value || 'gemini';
-      const ollama_url = document.getElementById('ollama-url-input')?.value.trim();
-      const ollama_model = document.getElementById('ollama-model-input')?.value.trim();
-      
-      try {
-        const r = await fetch('/api/settings/ai_config', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ engine, ollama_url, ollama_model })
-        });
-        const j = await r.json();
-        if (j.ok) {
-          setGeminiStatus('✅ Configuration IA enregistrée !', false);
-        } else {
-          setGeminiStatus('Erreur config IA : ' + (j.error || 'inconnue'), true);
-        }
-      } catch (e) {
-        setGeminiStatus('Erreur réseau config IA : ' + e, true);
-      }
-    });
-
-    geminiToggle?.addEventListener('click', () => {
-      if (!geminiInput) return;
-      const show = geminiInput.type === 'password';
-      geminiInput.type = show ? 'text' : 'password';
-      geminiToggle.textContent = show ? 'Cacher' : 'Voir';
-    });
-
-    // --- Test auto-tag ---
-    document.getElementById('btn-test-autotag')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-test-autotag');
-      const resDiv = document.getElementById('autotag-test-result');
-      if (!resDiv || !btn) return;
-
-      btn.disabled = true;
-      btn.textContent = '⏳ Analyse en cours…';
-      resDiv.textContent = '';
-      resDiv.style.color = '';
-
-      try {
-        // Récupère le premier fichier vidéo disponible
-        const listR = await fetch('/api/items?limit=1', { credentials: 'same-origin' });
-        const listJ = await listR.json();
-        const items = listJ.items || listJ.videos || [];
-        if (!items.length) {
-          resDiv.textContent = '⚠️ Aucune vidéo dans la bibliothèque.';
-          resDiv.style.color = '#f87171';
-          return;
-        }
-        const vid = items[0].id;
-        const name = items[0].name || vid;
-
-        resDiv.textContent = `🎬 Test sur : ${name}`;
-
-        const r = await fetch('/api/autotag', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vid })
-        });
-        const j = await r.json();
-        if (j.ok && j.tags && j.tags.length) {
-          resDiv.innerHTML = `✅ Tags générés : <strong>${j.tags.join(', ')}</strong>`;
-          resDiv.style.color = '#4ade80';
-        } else {
-          const msg = j.message || j.detail || j.error || 'Échec inconnu';
-          resDiv.textContent = `❌ Erreur : ${msg}`;
-          resDiv.style.color = '#f87171';
-        }
-      } catch (e) {
-        resDiv.textContent = `❌ Erreur réseau : ${e}`;
-        resDiv.style.color = '#f87171';
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '✨ Tester l\'auto-tag IA';
-      }
-    });
-
-    // --- Batch auto-tag IA ---
-    let batchPollTimer = null;
-
-    const STATUS_LABELS = {
-      idle: 'Inactif', running: 'En cours…', paused: '⏸ En pause',
-      done: '✅ Terminé', error: '❌ Erreur'
-    };
-    const STATUS_COLORS = {
-      idle: '', running: '#60a5fa', paused: '#facc15',
-      done: '#4ade80', error: '#f87171'
-    };
-
-    function updateBatchUI(batch) {
-      const status = batch.status || 'idle';
-      const lbl = document.getElementById('batch-status-label');
-      const msg = document.getElementById('batch-message');
-      const bar = document.getElementById('batch-bar');
-      const ctr = document.getElementById('batch-counter');
-      const cur = document.getElementById('batch-current');
-      const btnStart  = document.getElementById('btn-batch-start');
-      const btnPause  = document.getElementById('btn-batch-pause');
-      const btnResume = document.getElementById('btn-batch-resume');
-      const btnStop   = document.getElementById('btn-batch-stop');
-
-      if (lbl) { lbl.textContent = STATUS_LABELS[status] || status; lbl.style.color = STATUS_COLORS[status] || ''; }
-      if (msg) msg.textContent = batch.message || 'Prêt.';
-      if (cur) cur.textContent = status === 'running' && batch.current ? `🎬 ${batch.current}` : '';
-
-      const total = batch.total || 0;
-      const done  = batch.done  || 0;
-      const pct   = total > 0 ? Math.round(100 * done / total) : 0;
-      if (bar) bar.style.width = pct + '%';
-      if (ctr) ctr.textContent = total > 0 ? `${done} / ${total}` : '';
-
-      const running = status === 'running';
-      const paused  = status === 'paused';
-      const active  = running || paused;
-
-      if (btnStart)  { btnStart.disabled  = active; }
-      if (btnPause)  { btnPause.disabled  = !running; btnPause.style.display  = paused ? 'none' : ''; }
-      if (btnResume) { btnResume.style.display = paused ? '' : 'none'; }
-      if (btnStop)   { btnStop.disabled   = !active; }
-    }
-
-    function renderBatchLog(log) {
-      const box = document.getElementById('autotag-ia-log');
-      if (!box) return;
-      if (!log || !log.length) {
-        box.innerHTML = '<div class="text-muted" style="font-size:.85rem;">Aucune entrée.</div>';
-        return;
-      }
-      const rows = log.map(e => {
-        const dt = new Date((e.ts || 0) * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const icon = e.error ? (e.error === 'file_not_found' || e.error === 'ffmpeg_failed' ? '⏭️' : '❌') : '✅';
-        const tagsHtml = (e.tags && e.tags.length)
-          ? e.tags.map(t => `<span style="background:rgba(99,102,241,.25);border-radius:3px;padding:1px 5px;font-size:.8rem;">${t}</span>`).join(' ')
-          : (e.error ? `<span style="color:#f87171;font-size:.8rem;">${e.error}</span>` : '<span style="opacity:.5;font-size:.8rem;">—</span>');
-        return `<div style="display:flex;gap:.5rem;align-items:flex-start;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.05);">
-          <span style="opacity:.5;white-space:nowrap;font-size:.8rem;">${dt}</span>
-          <span style="min-width:1.2rem;">${icon}</span>
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;" title="${(e.name||'').replace(/"/g,'&quot;')}">${e.name || e.vid || '—'}</span>
-          <span style="flex-shrink:0;display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;">${tagsHtml}</span>
-        </div>`;
-      }).join('');
-      box.innerHTML = rows;
-    }
-
-    async function pollBatchStatus() {
-      clearTimeout(batchPollTimer);
-      try {
-        const r = await fetch('/api/autotag/batch/status', { credentials: 'same-origin' });
-        const j = await r.json();
-        if (j && j.ok) {
-          updateBatchUI(j.batch || {});
-          renderBatchLog(j.log || []);
-          const s = (j.batch || {}).status || 'idle';
-          const active = s === 'running' || s === 'paused';
-          batchPollTimer = setTimeout(pollBatchStatus, active ? 2000 : 10000);
-        }
-      } catch (e) {
-        batchPollTimer = setTimeout(pollBatchStatus, 8000);
-      }
-    }
-
-    async function batchStart(resetExisting) {
-      const cb = document.getElementById('batch-reset-cb');
-      const reset = cb ? cb.checked : !!resetExisting;
-      try {
-        const r = await fetch('/api/autotag/batch/start', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reset_existing: reset })
-        });
-        const j = await r.json();
-        if (!j.ok) { alert('Erreur : ' + (j.message || j.error || 'inconnue')); return; }
-        clearTimeout(batchPollTimer);
-        pollBatchStatus();
-      } catch (e) { alert('Erreur réseau : ' + e); }
-    }
-
-    async function batchPause() {
-      await fetch('/api/autotag/batch/pause', { method: 'POST', credentials: 'same-origin' });
-      pollBatchStatus();
-    }
-
-    async function batchResume() {
-      await fetch('/api/autotag/batch/resume', { method: 'POST', credentials: 'same-origin' });
-      clearTimeout(batchPollTimer);
-      pollBatchStatus();
-    }
-
-    async function batchStop() {
-      if (!confirm('Arrêter le tagging IA en cours ?')) return;
-      await fetch('/api/autotag/batch/stop', { method: 'POST', credentials: 'same-origin' });
-      pollBatchStatus();
-    }
-
     // init
     (function () {
       pollProgress();
       loadJournal();
-      loadGeminiKey();
-      loadAIConfig();
-      pollBatchStatus();
+      loadSimilarConfig();
     })();
+
+    // --- Vidéos similaires ---
+    async function loadSimilarConfig() {
+      try {
+        const r = await fetch('/api/settings/similar', { credentials: 'same-origin' });
+        const j = await r.json();
+        if (j && j.ok) {
+          const cb = document.getElementById('similar-enabled');
+          if (cb) cb.checked = !!j.enabled;
+          const radios = document.querySelectorAll('input[name="similar-min"]');
+          radios.forEach(r => { if (r.value == String(j.min_tags)) r.checked = true; });
+          const lbl = document.getElementById('similar-status-label');
+          if (lbl) lbl.textContent = j.enabled ? '✅ Activé' : 'Désactivé';
+        }
+      } catch(e) {}
+    }
+
+    document.getElementById('similar-save')?.addEventListener('click', async () => {
+      const enabled = document.getElementById('similar-enabled')?.checked || false;
+      const minEl = document.querySelector('input[name="similar-min"]:checked');
+      const min_tags = minEl ? parseInt(minEl.value) : 2;
+      const msg = document.getElementById('similar-msg');
+      try {
+        const r = await fetch('/api/settings/similar', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, min_tags })
+        });
+        const j = await r.json();
+        if (j.ok) {
+          if (msg) { msg.textContent = '✅ Configuration enregistrée !'; msg.style.color = '#4ade80'; }
+          const lbl = document.getElementById('similar-status-label');
+          if (lbl) lbl.textContent = enabled ? '✅ Activé' : 'Désactivé';
+        } else {
+          if (msg) { msg.textContent = 'Erreur : ' + (j.error || 'inconnue'); msg.style.color = '#f87171'; }
+        }
+      } catch(e) {
+        if (msg) { msg.textContent = 'Erreur réseau : ' + e; msg.style.color = '#f87171'; }
+      }
+    });
 
   </script>
 
@@ -757,10 +436,16 @@
           const el = document.documentElement;
           el.classList.toggle('light');
           localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
+          b.textContent = el.classList.contains('light') ? '☀️' : '🌙';
+        });
+        // Sync icon on load
+        window.addEventListener('DOMContentLoaded', function() {
+          const btn = document.getElementById('themeToggle');
+          if (btn) btn.textContent = document.documentElement.classList.contains('light') ? '☀️' : '🌙';
         });
       } catch (e) { }
     })();
   </script>
-</body>
 
+</body>
 </html>

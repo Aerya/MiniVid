@@ -123,7 +123,7 @@ LOG.info("Template dir: %s | Static dir: %s", TPL_DIR, ST_DIR)
 # Inject hide_credits into all templates
 @app.context_processor
 def inject_footer_config():
-    return dict(hide_credits=HIDE_FOOTER_CREDITS, gemini_enabled=bool(get_gemini_key()))
+    return dict(hide_credits=HIDE_FOOTER_CREDITS)
 
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')
@@ -532,665 +532,85 @@ def api_banned_clear():
     clear_banned_tags()
     return jsonify(ok=True, source="env", tags=sorted(list(_env_banned_tags())))
 
-# --- Gemini auto-tagging ---
-_GEMINI_API_KEY_ENV = (os.environ.get("GEMINI_API_KEY") or "").strip()
 
-def get_gemini_key():
-    """Retourne la clé Gemini : priorité state.json, fallback env."""
+# --- Similar videos ---
+def get_similar_config():
     st = read_state()
-    ui_key = (st.get("gemini_api_key") or "").strip()
-    if ui_key:
-        return ui_key
-    return _GEMINI_API_KEY_ENV
+    return {
+        "enabled": bool(st.get("similar_enabled", False)),
+        "min_tags": int(st.get("similar_min_tags", 2))
+    }
 
-def set_gemini_key(key):
-    """Enregistre la clé Gemini dans state.json."""
+def set_similar_config(enabled, min_tags):
     st = read_state()
-    st["gemini_api_key"] = (key or "").strip()
+    st["similar_enabled"] = bool(enabled)
+    st["similar_min_tags"] = max(1, min(3, int(min_tags)))
     write_state(st)
 
-def delete_gemini_key():
-    """Supprime la clé Gemini du state.json (retour au fallback env)."""
-    st = read_state()
-    st.pop("gemini_api_key", None)
-    write_state(st)
-
-def get_ai_engine():
-    st = read_state()
-    return st.get("ai_engine", "gemini")
-
-def set_ai_engine(engine):
-    st = read_state()
-    st["ai_engine"] = (engine or "").strip()
-    write_state(st)
-
-def get_ollama_url():
-    st = read_state()
-    return st.get("ollama_url", "http://127.0.0.1:11434").strip()
-
-def set_ollama_url(url):
-    st = read_state()
-    st["ollama_url"] = (url or "").strip()
-    write_state(st)
-
-def get_ollama_model():
-    st = read_state()
-    return st.get("ollama_model", "llava:latest").strip()
-
-def set_ollama_model(model):
-    st = read_state()
-    st["ollama_model"] = (model or "").strip()
-    write_state(st)
-
-def get_video_duration(filepath):
-    try:
-        result = subprocess.run([
-            "ffprobe", "-v", "error", "-show_entries",
-            "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filepath
-        ], capture_output=True, text=True, timeout=10)
-        return float(result.stdout.strip())
-    except Exception as e:
-        LOG.warning("ffprobe failed: %s", e)
-        return 0.0
-
-@app.route("/api/autotag", methods=["POST"])
-def api_autotag():
+@app.route("/api/settings/similar", methods=["GET"])
+def api_similar_config_get():
     if not auth_required():
         return jsonify(ok=False, error="auth"), 401
-    api_key = get_gemini_key()
-    if not api_key:
-        LOG.warning("autotag: aucune clé API configurée (GEMINI_API_KEY vide). Configurez-la dans /maintenance ou via la variable d'env.")
-        return jsonify(ok=False, error="no_api_key", message="GEMINI_API_KEY non configurée"), 400
-    try:
-        import urllib.request
-        data = request.get_json(force=True, silent=True) or {}
-        vid = (data.get("vid") or "").strip()
-        if not vid:
-            return jsonify(ok=False, error="missing_vid"), 400
+    return jsonify(ok=True, **get_similar_config())
 
-        # Resolve file path
-        try:
-            ridx, rel = id_to_parts(vid)
-        except Exception:
-            return jsonify(ok=False, error="invalid_vid"), 400
-        if ridx >= len(MEDIA_DIRS):
-            return jsonify(ok=False, error="root_not_found"), 404
-        filepath = os.path.join(MEDIA_DIRS[ridx], rel)
-        if not os.path.isfile(filepath):
-            return jsonify(ok=False, error="file_not_found"), 404
-
-        # Extract 3 specific frames
-        duration = get_video_duration(filepath)
-        if duration <= 0:
-            duration = 60.0
-        
-        t1 = 7.0
-        t2 = duration / 2.0
-        t3 = max(0.0, duration - 11.0)
-        
-        if duration < 18:
-            t1 = duration * 0.2
-            t2 = duration * 0.5
-            t3 = duration * 0.8
-
-        timestamps = [t1, t2, t3]
-        frames_b64 = []
-        for t in timestamps:
-            try:
-                result = subprocess.run(
-                    ["ffmpeg", "-ss", str(t), "-i", filepath, "-frames:v", "1",
-                     "-vf", "scale=512:-1", "-f", "image2", "-q:v", "3", "pipe:1"],
-                    capture_output=True, timeout=30
-                )
-                if result.stdout and len(result.stdout) > 100:
-                    frames_b64.append(base64.b64encode(result.stdout).decode("ascii"))
-            except Exception as e:
-                LOG.warning("ffmpeg extract failed at %s: %s", t, e)
-        
-        if not frames_b64:
-             return jsonify(ok=False, error="ffmpeg_failed", message="Impossible d'extraire des images"), 500
-
-        prompt = (
-            "Analyze these video frames. Return ONLY a JSON array of maximum 5 descriptive tags "
-            "(single words, lowercase, English). Tags should describe: scene type, setting, "
-            "visible objects, people characteristics, mood, activity, colors. "
-            "Example: [\"outdoor\", \"beach\", \"sunset\", \"woman\", \"running\"]. "
-            "Return ONLY the JSON array, nothing else."
-        )
-
-        engine = get_ai_engine()
-        tags_raw = []
-
-        if engine == "ollama":
-            ollama_url = get_ollama_url().rstrip('/') + "/api/generate"
-            payload = json.dumps({
-                "model": get_ollama_model(),
-                "prompt": prompt,
-                "images": frames_b64,
-                "format": "json",
-                "stream": False,
-                "options": {
-                    "temperature": 0.3
-                }
-            }).encode("utf-8")
-            
-            try:
-                req = urllib.request.Request(ollama_url, data=payload, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    ollama_resp = json.loads(resp.read().decode("utf-8"))
-                    text = ollama_resp.get("response", "")
-                    text = text.strip()
-                    if text.startswith("```"):
-                        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                    tags_raw = json.loads(text)
-            except urllib.error.HTTPError as he:
-                body = he.read().decode(errors="replace")[:300]
-                LOG.warning("Ollama API error %s: %s", he.code, body)
-                return jsonify(ok=False, error="ollama_api_error", status=he.code, detail=body), 502
-            except Exception as e:
-                return jsonify(ok=False, error="ollama_request_failed", detail=str(e)), 502
-
-        else: # gemini
-            # Call Gemini API
-            api_key = get_gemini_key()
-            if not api_key:
-                return jsonify(ok=False, error="no_api_key", message="GEMINI_API_KEY non configurée"), 400
-                
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-            parts = [{"text": prompt}]
-            for b64 in frames_b64:
-                parts.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
-                
-            payload = json.dumps({
-                "contents": [{"parts": parts}],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "maxOutputTokens": 200
-                }
-            }).encode("utf-8")
-    
-            req = urllib.request.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    gemini_resp = json.loads(resp.read().decode("utf-8"))
-                    text = gemini_resp["candidates"][0]["content"]["parts"][0]["text"]
-                    text = text.strip()
-                    if text.startswith("```"):
-                        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                    tags_raw = json.loads(text)
-            except urllib.error.HTTPError as he:
-                body = he.read().decode(errors="replace")[:300]
-                LOG.warning("Gemini API error %s: %s", he.code, body)
-                return jsonify(ok=False, error="gemini_api_error", status=he.code, detail=body), 502
-            except Exception as e:
-                return jsonify(ok=False, error="gemini_request_failed", detail=str(e)), 502
-
-        # Filter and canonicalize tags
-        banned = get_banned_tags()
-        tags = []
-        seen = set()
-        for t in tags_raw:
-            if not isinstance(t, str):
-                continue
-            ct = canon_tag(t, banned)
-            if ct and ct not in seen and len(ct) <= 40:
-                seen.add(ct)
-                tags.append(ct)
-            if len(tags) >= 5:
-                break
-
-        # Store tags in utags
-        if tags:
-            st = read_state()
-            ut = st.get("utags", {}) or {}
-            cur = set([canon_tag(x) for x in (ut.get(vid) or [])])
-            for t in tags:
-                cur.add(t)
-            cur.discard("")
-            ut[vid] = sorted(cur)[:20]
-            st["utags"] = ut
-            write_state(st)
-            _log_event("autotag", vid=vid, tags=tags)
-
-        return jsonify(ok=True, tags=tags, count=len(tags))
-
-    except Exception as e:
-        LOG.exception("autotag error")
-        return jsonify(ok=False, error=str(e)), 500
-
-# --- Gemini key settings API ---
-@app.route("/api/settings/gemini_key", methods=["GET"])
-def api_gemini_key_get():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    key = get_gemini_key()
-    st = read_state()
-    ui_key = (st.get("gemini_api_key") or "").strip()
-    source = "ui" if ui_key else ("env" if _GEMINI_API_KEY_ENV else "none")
-    masked = "" 
-    if key:
-        masked = key[:4] + "•" * max(0, len(key) - 8) + key[-4:] if len(key) > 8 else "••••"
-    return jsonify(ok=True, has_key=bool(key), source=source, masked_key=masked)
-
-@app.route("/api/settings/gemini_key", methods=["POST"])
-def api_gemini_key_set():
+@app.route("/api/settings/similar", methods=["POST"])
+def api_similar_config_set():
     if not auth_required():
         return jsonify(ok=False, error="auth"), 401
     data = request.get_json(force=True, silent=True) or {}
-    key = (data.get("key") or "").strip()
-    if not key:
-        return jsonify(ok=False, error="empty_key"), 400
-    set_gemini_key(key)
-    masked = key[:4] + "•" * max(0, len(key) - 8) + key[-4:] if len(key) > 8 else "••••"
-    return jsonify(ok=True, source="ui", masked_key=masked)
+    set_similar_config(data.get("enabled", False), data.get("min_tags", 2))
+    return jsonify(ok=True, **get_similar_config())
 
-@app.route("/api/settings/gemini_key", methods=["DELETE"])
-def api_gemini_key_delete():
+@app.route("/api/similar/<vid>", methods=["GET"])
+def api_similar(vid):
     if not auth_required():
         return jsonify(ok=False, error="auth"), 401
-    delete_gemini_key()
-    has_env = bool(_GEMINI_API_KEY_ENV)
-    return jsonify(ok=True, source="env" if has_env else "none", has_key=has_env)
+    cfg = get_similar_config()
+    if not cfg["enabled"]:
+        return jsonify(ok=True, videos=[])
+    min_tags = cfg["min_tags"]
 
-@app.route("/api/settings/ai_config", methods=["GET"])
-def api_ai_config_get():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    return jsonify(
-        ok=True,
-        engine=get_ai_engine(),
-        ollama_url=get_ollama_url(),
-        ollama_model=get_ollama_model()
-    )
+    st = read_state()
+    utags_map = st.get("utags", {}) or {}
+    fav_map = st.get("fav", {}) or {}
+    played_map = st.get("played", {}) or {}
 
-@app.route("/api/settings/ai_config", methods=["POST"])
-def api_ai_config_set():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    data = request.get_json(force=True, silent=True) or {}
-    if "engine" in data:
-        set_ai_engine(data["engine"])
-    if "ollama_url" in data:
-        set_ollama_url(data["ollama_url"])
-    if "ollama_model" in data:
-        set_ollama_model(data["ollama_model"])
-    return jsonify(ok=True)
+    # Tags of the reference video
+    ref_item = next((v for v in MEDIA if isinstance(v, dict) and v.get("id") == vid), None)
+    if not ref_item:
+        return jsonify(ok=True, videos=[])
 
-# ============================================================
-# --- Batch Auto-Tag IA ---
-# ============================================================
-AUTOTAG_BATCH = {
-    "status": "idle",       # idle | running | paused | done | error
-    "total": 0,
-    "done": 0,
-    "skipped": 0,
-    "errors": 0,
-    "current": "",          # nom du fichier en cours
-    "message": "",
-    "started": 0,
-    "finished": 0,
-    "paused_at": 0,
-}
-AUTOTAG_BATCH_LOCK = threading.Lock()
-_AUTOTAG_PAUSE_EV = threading.Event()
-_AUTOTAG_PAUSE_EV.set()   # not paused initially
-_AUTOTAG_STOP_EV  = threading.Event()
-_AUTOTAG_THREAD   = None
-AUTOTAG_IA_LOG    = []     # [ {ts, vid, name, tags, error}, ... ] (max 200)
-AUTOTAG_IA_LOG_LOCK = threading.Lock()
+    ref_tags = set(canon_tag(t) for t in (ref_item.get("tags") or []))
+    ref_tags |= set(canon_tag(t) for t in (utags_map.get(vid) or []))
+    ref_tags = {t for t in ref_tags if t}
 
-def _autotag_log(entry: dict):
-    with AUTOTAG_IA_LOG_LOCK:
-        AUTOTAG_IA_LOG.append(entry)
-        if len(AUTOTAG_IA_LOG) > 200:
-            AUTOTAG_IA_LOG.pop(0)
+    if not ref_tags:
+        return jsonify(ok=True, videos=[])
 
-def _autotag_batch_worker(reset_existing: bool):
-    global _AUTOTAG_THREAD
-    try:
-        state = read_state()
-        utags = state.get("utags", {}) or {}
-
-        # Identifier quelles vidéos ont besoin d'être taguées par IA
-        # On détecte les tags IA via un marqueur dans utags OU simplement
-        # toutes les vidéos qui n'ont pas encore de utags
-        all_vids = [v for v in MEDIA if isinstance(v, dict) and v.get("id") and v.get("kind") != "folder"]
-        if reset_existing:
-            to_tag = all_vids
-        else:
-            # Vidéos sans utags existants
-            to_tag = [v for v in all_vids if not utags.get(v["id"])]
-
-        with AUTOTAG_BATCH_LOCK:
-            AUTOTAG_BATCH.update({
-                "total": len(to_tag),
-                "done": 0,
-                "skipped": 0,
-                "errors": 0,
-                "current": "",
-                "message": f"Démarrage — {len(to_tag)} vidéo(s) à traiter",
-                "started": int(time.time()),
-                "finished": 0,
+    results = []
+    for item in MEDIA:
+        if not isinstance(item, dict) or item.get("id") == vid or item.get("kind") == "folder":
+            continue
+        iid = item["id"]
+        itags = set(canon_tag(t) for t in (item.get("tags") or []))
+        itags |= set(canon_tag(t) for t in (utags_map.get(iid) or []))
+        itags = {t for t in itags if t}
+        common = ref_tags & itags
+        if len(common) >= min_tags:
+            results.append({
+                "id": iid,
+                "name": item.get("name", ""),
+                "ext": item.get("ext", ""),
+                "res": item.get("res", ""),
+                "size": item.get("size", 0),
+                "tags": sorted(itags)[:8],
+                "fav": bool(fav_map.get(iid)),
+                "played": bool(played_map.get(iid)),
+                "common": len(common),
             })
 
-        LOG.info("[autotag-batch] Démarrage : %d vidéos à tagger (reset_existing=%s)", len(to_tag), reset_existing)
-
-        for vid_item in to_tag:
-            # Vérifie l'arrêt
-            if _AUTOTAG_STOP_EV.is_set():
-                with AUTOTAG_BATCH_LOCK:
-                    AUTOTAG_BATCH["status"] = "idle"
-                    AUTOTAG_BATCH["message"] = "Arrêté manuellement"
-                    AUTOTAG_BATCH["finished"] = int(time.time())
-                LOG.info("[autotag-batch] Arrêt manuel.")
-                return
-
-            # Attend si en pause
-            while not _AUTOTAG_PAUSE_EV.is_set():
-                if _AUTOTAG_STOP_EV.is_set():
-                    break
-                time.sleep(0.5)
-
-            if _AUTOTAG_STOP_EV.is_set():
-                break
-
-            with AUTOTAG_BATCH_LOCK:
-                AUTOTAG_BATCH["status"] = "running"
-                AUTOTAG_BATCH["current"] = vid_item.get("name", vid_item["id"])
-                AUTOTAG_BATCH["message"] = f"Traitement : {vid_item.get('name','')}"
-
-            vid = vid_item["id"]
-            name = vid_item.get("name", vid)
-
-            try:
-                ridx, rel = id_to_parts(vid)
-                filepath = os.path.join(MEDIA_DIRS[ridx], rel) if ridx < len(MEDIA_DIRS) else None
-                if not filepath or not os.path.isfile(filepath):
-                    with AUTOTAG_BATCH_LOCK:
-                        AUTOTAG_BATCH["skipped"] += 1
-                        AUTOTAG_BATCH["done"] += 1
-                    _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": "file_not_found"})
-                    continue
-
-                # Extraire les frames
-                duration = get_video_duration(filepath)
-                if duration <= 0: duration = 60.0
-                t1 = 7.0
-                t2 = duration / 2.0
-                t3 = max(0.0, duration - 11.0)
-                if duration < 18:
-                    t1, t2, t3 = duration * 0.2, duration * 0.5, duration * 0.8
-
-                frames_b64 = []
-                for t in [t1, t2, t3]:
-                    try:
-                        r = subprocess.run(
-                            ["ffmpeg", "-ss", str(t), "-i", filepath, "-frames:v", "1",
-                             "-vf", "scale=512:-1", "-f", "image2", "-q:v", "3", "pipe:1"],
-                            capture_output=True, timeout=30
-                        )
-                        if r.stdout and len(r.stdout) > 100:
-                            frames_b64.append(base64.b64encode(r.stdout).decode("ascii"))
-                    except Exception:
-                        pass
-
-                if not frames_b64:
-                    with AUTOTAG_BATCH_LOCK:
-                        AUTOTAG_BATCH["skipped"] += 1
-                        AUTOTAG_BATCH["done"] += 1
-                    _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": "ffmpeg_failed"})
-                    continue
-
-                # Appel IA
-                import urllib.request as _urlreq
-                engine = get_ai_engine()
-                prompt = (
-                    "Analyze these video frames. Return ONLY a JSON array of maximum 5 descriptive tags "
-                    "(single words, lowercase, English). Tags should describe: scene type, setting, "
-                    "visible objects, people characteristics, mood, activity, colors. "
-                    "Example: [\"outdoor\", \"beach\", \"sunset\", \"woman\", \"running\"]. "
-                    "Return ONLY the JSON array, nothing else."
-                )
-                tags_raw = []
-
-                if engine == "ollama":
-                    ollama_url = get_ollama_url().rstrip('/') + "/api/generate"
-                    payload = json.dumps({
-                        "model": get_ollama_model(), "prompt": prompt,
-                        "images": frames_b64, "format": "json",
-                        "stream": False, "options": {"temperature": 0.3}
-                    }).encode("utf-8")
-                    req = _urlreq.Request(ollama_url, data=payload, headers={"Content-Type": "application/json"})
-                    with _urlreq.urlopen(req, timeout=120) as resp:
-                        txt = json.loads(resp.read().decode()).get("response", "").strip()
-                        if txt.startswith("```"): txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                        tags_raw = json.loads(txt)
-                else:  # gemini
-                    api_key = get_gemini_key()
-                    if not api_key:
-                        with AUTOTAG_BATCH_LOCK:
-                            AUTOTAG_BATCH["status"] = "error"
-                            AUTOTAG_BATCH["message"] = "Clé API manquante — batch interrompu"
-                            AUTOTAG_BATCH["finished"] = int(time.time())
-                        LOG.error("[autotag-batch] Clé API Gemini manquante, arrêt du batch.")
-                        return
-                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-                    parts = [{"text": prompt}] + [{"inline_data": {"mime_type": "image/jpeg", "data": b}} for b in frames_b64]
-                    payload = json.dumps({"contents": [{"parts": parts}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 200}}).encode()
-                    req = _urlreq.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
-                    with _urlreq.urlopen(req, timeout=30) as resp:
-                        resp_j = json.loads(resp.read().decode())
-                        txt = resp_j["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        if txt.startswith("```"): txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                        tags_raw = json.loads(txt)
-
-                # Filtrer et sauvegarder
-                banned = get_banned_tags()
-                tags = []
-                seen = set()
-                for t in tags_raw:
-                    if not isinstance(t, str): continue
-                    ct = canon_tag(t, banned)
-                    if ct and ct not in seen and len(ct) <= 40:
-                        seen.add(ct); tags.append(ct)
-                    if len(tags) >= 5: break
-
-                if tags:
-                    st2 = read_state()
-                    ut2 = st2.get("utags", {}) or {}
-                    cur = set(canon_tag(x) for x in (ut2.get(vid) or []))
-                    for t in tags: cur.add(t)
-                    cur.discard("")
-                    ut2[vid] = sorted(cur)[:20]
-                    st2["utags"] = ut2
-                    write_state(st2)
-                    _log_event("autotag", vid=vid, name=name, tags=tags)
-
-                LOG.info("[autotag-batch] %s → %s", name, tags or "(aucun tag)")
-                _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": tags, "error": None})
-
-                with AUTOTAG_BATCH_LOCK:
-                    AUTOTAG_BATCH["done"] += 1
-
-                # Pause entre requêtes pour respecter la limite Gemini (15 RPM max en gratuit)
-                time.sleep(5)
-
-            except Exception as e:
-                import urllib.error as _urlerr
-                is_429 = isinstance(e, _urlerr.HTTPError) and e.code == 429
-                if is_429:
-                    # Rate limit : attendre et réessayer (max 3 fois)
-                    retry_delays = [60, 120, 240]
-                    retried = False
-                    for delay in retry_delays:
-                        LOG.warning("[autotag-batch] Rate limit 429 sur %s — attente %ds avant retry…", name, delay)
-                        with AUTOTAG_BATCH_LOCK:
-                            AUTOTAG_BATCH["message"] = f"Rate limit — attente {delay}s avant reprise…"
-                        # Attendre par tranches de 2s pour pouvoir réagir à un arrêt
-                        for _ in range(delay // 2):
-                            if _AUTOTAG_STOP_EV.is_set():
-                                break
-                            time.sleep(2)
-                        if _AUTOTAG_STOP_EV.is_set():
-                            break
-                        # Retry : on remet la vidéo en tête de file en ré-itérant
-                        # (on break ici, la vidéo sera simplement comptée comme erreur
-                        #  après épuisement des retries)
-                        try:
-                            # Ré-essai simplifié : on refait juste l'appel API
-                            import urllib.request as _urlreq2
-                            if get_ai_engine() == "ollama":
-                                raise Exception("retry-ollama-not-supported")
-                            api_key2 = get_gemini_key()
-                            gemini_url2 = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key2}"
-                            parts2 = [{"text": prompt}] + [{"inline_data": {"mime_type": "image/jpeg", "data": b}} for b in frames_b64]
-                            payload2 = json.dumps({"contents": [{"parts": parts2}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 200}}).encode()
-                            req2 = _urlreq2.Request(gemini_url2, data=payload2, headers={"Content-Type": "application/json"})
-                            with _urlreq2.urlopen(req2, timeout=30) as resp2:
-                                resp_j2 = json.loads(resp2.read().decode())
-                                txt2 = resp_j2["candidates"][0]["content"]["parts"][0]["text"].strip()
-                                if txt2.startswith("```"): txt2 = txt2.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                                tags_raw = json.loads(txt2)
-                            # Succès du retry
-                            banned = get_banned_tags()
-                            tags = []
-                            seen = set()
-                            for t in tags_raw:
-                                if not isinstance(t, str): continue
-                                ct = canon_tag(t, banned)
-                                if ct and ct not in seen and len(ct) <= 40:
-                                    seen.add(ct); tags.append(ct)
-                                if len(tags) >= 5: break
-                            if tags:
-                                st2 = read_state()
-                                ut2 = st2.get("utags", {}) or {}
-                                cur = set(canon_tag(x) for x in (ut2.get(vid) or []))
-                                for t in tags: cur.add(t)
-                                cur.discard("")
-                                ut2[vid] = sorted(cur)[:20]
-                                st2["utags"] = ut2
-                                write_state(st2)
-                                _log_event("autotag", vid=vid, name=name, tags=tags)
-                            LOG.info("[autotag-batch] Retry OK : %s → %s", name, tags or "(aucun tag)")
-                            _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": tags, "error": None})
-                            with AUTOTAG_BATCH_LOCK:
-                                AUTOTAG_BATCH["done"] += 1
-                            retried = True
-                            time.sleep(5)
-                            break
-                        except Exception as retry_e:
-                            import urllib.error as _urlerr2
-                            if isinstance(retry_e, _urlerr2.HTTPError) and retry_e.code == 429:
-                                continue  # encore 429, prochain delay
-                            LOG.warning("[autotag-batch] Retry échoué sur %s : %s", name, retry_e)
-                            break
-                    if not retried and not _AUTOTAG_STOP_EV.is_set():
-                        LOG.warning("[autotag-batch] Abandon après retries : %s", name)
-                        _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": "429_rate_limit"})
-                        with AUTOTAG_BATCH_LOCK:
-                            AUTOTAG_BATCH["errors"] += 1
-                            AUTOTAG_BATCH["done"] += 1
-                else:
-                    LOG.warning("[autotag-batch] Erreur sur %s : %s", name, e)
-                    _autotag_log({"ts": int(time.time()), "vid": vid, "name": name, "tags": [], "error": str(e)})
-                    with AUTOTAG_BATCH_LOCK:
-                        AUTOTAG_BATCH["errors"] += 1
-                        AUTOTAG_BATCH["done"] += 1
-                    time.sleep(3)
-
-        with AUTOTAG_BATCH_LOCK:
-            AUTOTAG_BATCH["status"] = "done"
-            AUTOTAG_BATCH["current"] = ""
-            AUTOTAG_BATCH["message"] = f"Terminé : {AUTOTAG_BATCH['done']} traités, {AUTOTAG_BATCH['errors']} erreurs"
-            AUTOTAG_BATCH["finished"] = int(time.time())
-        LOG.info("[autotag-batch] Terminé.")
-
-    except Exception as e:
-        LOG.exception("[autotag-batch] Erreur critique : %s", e)
-        with AUTOTAG_BATCH_LOCK:
-            AUTOTAG_BATCH["status"] = "error"
-            AUTOTAG_BATCH["message"] = f"Erreur critique : {e}"
-            AUTOTAG_BATCH["finished"] = int(time.time())
-    finally:
-        _AUTOTAG_THREAD = None
-
-
-@app.route("/api/autotag/batch/status", methods=["GET"])
-def api_autotag_batch_status():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    with AUTOTAG_BATCH_LOCK:
-        s = dict(AUTOTAG_BATCH)
-    # Ajouter le log IA récent (les 20 derniers)
-    with AUTOTAG_IA_LOG_LOCK:
-        log = list(reversed(AUTOTAG_IA_LOG[-20:]))
-    return jsonify(ok=True, batch=s, log=log)
-
-
-@app.route("/api/autotag/batch/start", methods=["POST"])
-def api_autotag_batch_start():
-    global _AUTOTAG_THREAD
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    if not get_gemini_key() and get_ai_engine() != "ollama":
-        return jsonify(ok=False, error="no_api_key", message="Aucune clé API configurée"), 400
-    data = request.get_json(force=True, silent=True) or {}
-    reset_existing = bool(data.get("reset_existing", False))
-
-    with AUTOTAG_BATCH_LOCK:
-        if AUTOTAG_BATCH["status"] == "running":
-            return jsonify(ok=False, error="already_running"), 409
-        AUTOTAG_BATCH["status"] = "running"
-
-    _AUTOTAG_STOP_EV.clear()
-    _AUTOTAG_PAUSE_EV.set()
-
-    _AUTOTAG_THREAD = threading.Thread(
-        target=_autotag_batch_worker, args=(reset_existing,), daemon=True
-    )
-    _AUTOTAG_THREAD.start()
-    LOG.info("[autotag-batch] Démarré par l'utilisateur (reset_existing=%s)", reset_existing)
-    return jsonify(ok=True, status="running")
-
-
-@app.route("/api/autotag/batch/pause", methods=["POST"])
-def api_autotag_batch_pause():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    _AUTOTAG_PAUSE_EV.clear()
-    with AUTOTAG_BATCH_LOCK:
-        AUTOTAG_BATCH["status"] = "paused"
-        AUTOTAG_BATCH["paused_at"] = int(time.time())
-        AUTOTAG_BATCH["message"] = "En pause"
-    LOG.info("[autotag-batch] Mis en pause.")
-    return jsonify(ok=True, status="paused")
-
-
-@app.route("/api/autotag/batch/resume", methods=["POST"])
-def api_autotag_batch_resume():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    _AUTOTAG_PAUSE_EV.set()
-    with AUTOTAG_BATCH_LOCK:
-        AUTOTAG_BATCH["status"] = "running"
-        AUTOTAG_BATCH["message"] = "Reprise…"
-    LOG.info("[autotag-batch] Repris.")
-    return jsonify(ok=True, status="running")
-
-
-@app.route("/api/autotag/batch/stop", methods=["POST"])
-def api_autotag_batch_stop():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    _AUTOTAG_STOP_EV.set()
-    _AUTOTAG_PAUSE_EV.set()  # débloquer la pause pour que le thread puisse s'arrêter
-    with AUTOTAG_BATCH_LOCK:
-        AUTOTAG_BATCH["status"] = "idle"
-        AUTOTAG_BATCH["message"] = "Arrêté"
-        AUTOTAG_BATCH["finished"] = int(time.time())
-    LOG.info("[autotag-batch] Arrêt demandé.")
-    return jsonify(ok=True, status="idle")
-
+    results.sort(key=lambda x: -x["common"])
+    return jsonify(ok=True, videos=results[:24])
 
 
 # --- Journal/helper & storage files ---
@@ -1281,7 +701,7 @@ def smart_group_items(items, mode="date"):
             {"key": "today", "label": "📅 Aujourd'hui", "videos": []},
             {"key": "week", "label": "📆 Cette semaine", "videos": []},
             {"key": "month", "label": "📅 Ce mois", "videos": []},
-            {"key": "older", "label": "📁 Plus ancien", "videos": []},
+            {"key": "older", "label": "�? Plus ancien", "videos": []},
         ]
         
         for item in items:
@@ -1305,7 +725,7 @@ def smart_group_items(items, mode="date"):
     elif mode == "size":
         groups = [
             {"key": "large", "label": "📦 Grande taille (>1 Go)", "videos": []},
-            {"key": "medium", "label": "📁 Taille moyenne (100 Mo - 1 Go)", "videos": []},
+            {"key": "medium", "label": "�? Taille moyenne (100 Mo - 1 Go)", "videos": []},
             {"key": "small", "label": "📄 Petite taille (<100 Mo)", "videos": []},
         ]
         
