@@ -222,7 +222,7 @@
     <!-- Vidéos similaires -->
     <section class="similar-section" id="similar-section" style="display:none;">
       <h3 class="similar-title">Vidéos similaires</h3>
-      <div class="similar-grid" id="similar-grid"></div>
+      <div class="grid" id="similar-grid"></div>
     </section>
   </main>
 
@@ -555,6 +555,12 @@
       const grid = document.getElementById('similar-grid');
       if (!section || !grid) return;
 
+      function formatSize(n) {
+        if (!n) return '';
+        if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' Go';
+        return (n / 1048576).toFixed(1) + ' Mo';
+      }
+
       async function loadSimilar() {
         try {
           const r = await fetch('/api/similar/' + VID, { credentials: 'same-origin' });
@@ -562,27 +568,39 @@
           if (!j || !j.ok || !j.videos || !j.videos.length) return;
           section.style.display = '';
           grid.innerHTML = j.videos.map(v => {
-            const favCls = v.fav ? 'similar-fav-overlay active' : 'similar-fav-overlay';
-            const favLbl = v.fav ? '★' : '☆';
             const safeName = v.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const playedCls = v.played ? 'played' : 'unplayed';
+            const favCls = v.fav ? 'fav-btn active' : 'fav-btn';
+            const statusHtml = v.played
+              ? '<div class="status">Lue</div>'
+              : '<div class="status un">Non lue</div>';
+            const tags = (v.tags || []).slice(0, 5).map(t =>
+              `<a class="pill" href="/browse?tag=${encodeURIComponent(t)}">${t}</a>`
+            ).join('');
+            const tagsHtml = tags
+              ? tags
+              : '<span class="muted">(pas de tag)</span>';
             return `
-              <div class="similar-card">
-                <a href="/watch/${v.id}" class="similar-thumb" data-title="${safeName}" title="${safeName}">
-                  <img src="/thumb/${v.id}.jpg" alt="${safeName}" loading="lazy"
+              <article class="card ${playedCls}" data-vid="${v.id}">
+                <a class="thumb" href="/watch/${v.id}">
+                  <img loading="lazy" src="/thumb/${v.id}.jpg"
+                       alt="preview"
                        onerror="this.src='/static/placeholder.svg'">
-                  ${v.played ? '<span class="similar-played">✓</span>' : ''}
+                  <div class="badge">${(v.ext||'').toUpperCase()}</div>
+                  ${statusHtml}
                 </a>
-                <button class="${favCls}" data-id="${v.id}" aria-label="Favori" title="Favori">
-                  ${favLbl}
-                </button>
-                <div class="similar-info"></div>
-              </div>`;
+                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${v.id}">★</button>
+                <h3 title="${safeName}">${safeName}</h3>
+                <p class="meta"><span>${formatSize(v.size)}</span></p>
+                <p class="tagsline">${tagsHtml}</p>
+              </article>`;
           }).join('');
 
           // Fav toggle on similar cards
-          grid.querySelectorAll('.similar-fav-overlay').forEach(btn => {
+          grid.querySelectorAll('.fav-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
               e.preventDefault();
+              e.stopPropagation();
               const id = btn.dataset.id;
               const next = !btn.classList.contains('active');
               try {
@@ -592,7 +610,6 @@
                   body: JSON.stringify({ vid: id, fav: next })
                 });
                 btn.classList.toggle('active', next);
-                btn.textContent = next ? '★' : '☆';
               } catch(err) {}
             });
           });
