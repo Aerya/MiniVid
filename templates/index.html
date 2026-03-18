@@ -140,27 +140,29 @@
       <input type="hidden" name="dir" value="{{ dirq_q or '' }}" />
       <input type="text" name="q" value="{{ q }}" placeholder="Rechercher…" />
       <label for="read" class="lbl">Tri</label>
-      <select name="sort">
+      <select name="sort" onchange="this.form.submit()">
         <option value="name" {{ 'selected' if sort=='name' else '' }}>Nom</option>
         <option value="date" {{ 'selected' if sort=='date' else '' }}>Récentes</option>
         <option value="size" {{ 'selected' if sort=='size' else '' }}>Taille</option>
+        <option value="res_desc" {{ 'selected' if sort=='res_desc' else '' }}>Résolution ↓</option>
+        <option value="res_asc" {{ 'selected' if sort=='res_asc' else '' }}>Résolution ↑</option>
         <option value="status_unread" {{ 'selected' if sort=='status_unread' else '' }}>Non lues d'abord</option>
         <option value="status_read" {{ 'selected' if sort=='status_read' else '' }}>Lues d'abord</option>
       </select>
       <label for="read" class="lbl">Affichage</label>
-      <select name="read" id="read">
+      <select name="read" id="read" onchange="this.form.submit()">
         <option value="all" {{ 'selected' if readf=='all' else '' }}>Toutes</option>
         <option value="unread" {{ 'selected' if readf=='unread' else '' }}>Non lues</option>
         <option value="read" {{ 'selected' if readf=='read' else '' }}>Lues</option>
       </select>
-      <select name="per" id="per">
+      <select name="per" id="per" onchange="this.form.submit()">
         <option value="all" {{ 'selected' if per in ['all','0',''] else '' }}>Tout</option>
         <option value="12" {{ 'selected' if per=='12' else '' }}>12</option>
         <option value="24" {{ 'selected' if per=='24' else '' }}>24</option>
         <option value="48" {{ 'selected' if per=='48' else '' }}>48</option>
         <option value="96" {{ 'selected' if per=='96' else '' }}>96</option>
       </select>
-      <select name="mix" id="mix">
+      <select name="mix" id="mix" onchange="this.form.submit()">
         <option value="all" {{ 'selected' if mix=='all' else '' }}>Tout mélangé</option>
         <option value="folders_first" {{ 'selected' if mix=='folders_first' else '' }}>Dossiers puis vidéos</option>
         <option value="videos_first" {{ 'selected' if mix=='videos_first' else '' }}>Vidéos puis dossiers</option>
@@ -179,7 +181,7 @@
       <a class="favbtn {{ 'active' if fav_only else '' }}"
         href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&smart={{ '1' if smart else '0' }}">★
         Favoris</a>
-      <button type="submit">Appliquer</button>
+
       <button id="themeToggle" class="btn" title="Thème sombre/clair" aria-label="Basculer le thème">🌙</button>
       <a href="/logout" class="btn" title="Déconnexion" aria-label="Déconnexion"
         style="background:transparent;border:1px solid currentColor;border-radius:10px;padding:.25rem .5rem;text-decoration:none;color:inherit;font-size:.9rem;line-height:1">🔓</a>

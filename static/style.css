@@ -1219,6 +1219,38 @@ video:focus {
     font-size: 0.78rem;
   }
 }
+/* ========== Toolbar info + live search ========== */
+.toolbar-info {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+  margin-bottom: .75rem;
+  padding: .35rem 0;
+}
+.count-display {
+  font-size: .82rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+#live-search {
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .4rem .7rem;
+  font-size: .875rem;
+  transition: border-color .2s, box-shadow .2s;
+  flex: 1;
+  min-width: 140px;
+  max-width: 320px;
+}
+#live-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+}
+
 /* ========== Similar Videos ========== */
 .similar-section {
   margin: 2rem 0 1rem;   /* pleine largeur, pas de max-width */
