@@ -1204,3 +1204,18 @@ video:focus {
   margin: 0 0 .75rem;
   opacity: .9;
 }
+/* Grille similaires : vignettes plus petites, max de colonnes selon la largeur */
+.similar-section .grid {
+  --card-min: 150px;
+  --thumb-h: 90px;
+  gap: .5rem;
+}
+@media (min-width: 600px)  { .similar-section .grid { --card-min: 140px; } }
+@media (min-width: 900px)  { .similar-section .grid { --card-min: 145px; } }
+@media (min-width: 1200px) { .similar-section .grid { --card-min: 150px; } }
+/* Texte adapté à la taille réduite */
+.similar-section .card h3    { font-size: .72rem; margin: .3rem .4rem .1rem; }
+.similar-section .card .meta { font-size: .65rem; margin: 0 .4rem .2rem; }
+.similar-section .card .tagsline { padding: 0 .4rem .3rem; gap: .2rem; }
+.similar-section .card .tagsline .pill { font-size: .6rem; padding: .1rem .35rem; }
+.similar-section .card .fav-btn { font-size: .75rem; top: auto; right: .3rem; bottom: auto; }
