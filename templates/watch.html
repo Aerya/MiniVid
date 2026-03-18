@@ -562,31 +562,25 @@
           if (!j || !j.ok || !j.videos || !j.videos.length) return;
           section.style.display = '';
           grid.innerHTML = j.videos.map(v => {
-            const tags = (v.tags || []).slice(0, 5).map(t =>
-              `<a class="pill" href="/browse?tag=${encodeURIComponent(t)}" style="font-size:.72rem;padding:.15rem .45rem;">${t}</a>`
-            ).join('');
-            const favCls = v.fav ? 'fav-btn active' : 'fav-btn';
+            const favCls = v.fav ? 'similar-fav-overlay active' : 'similar-fav-overlay';
             const favLbl = v.fav ? '★' : '☆';
+            const safeName = v.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             return `
               <div class="similar-card">
-                <a href="/watch/${v.id}" class="similar-thumb">
-                  <img src="/thumb/${v.id}.jpg" alt="${v.name.replace(/"/g,'&quot;')}" loading="lazy"
+                <a href="/watch/${v.id}" class="similar-thumb" data-title="${safeName}" title="${safeName}">
+                  <img src="/thumb/${v.id}.jpg" alt="${safeName}" loading="lazy"
                        onerror="this.src='/static/placeholder.svg'">
                   ${v.played ? '<span class="similar-played">✓</span>' : ''}
                 </a>
-                <div class="similar-info">
-                  <a href="/watch/${v.id}" class="similar-name" title="${v.name.replace(/"/g,'&quot;')}">${v.name}</a>
-                  <div class="similar-tags">${tags}</div>
-                  <button class="${favCls}" data-id="${v.id}" aria-label="Favori" title="Favori"
-                          style="background:none;border:none;cursor:pointer;font-size:1rem;padding:.1rem .3rem;color:inherit;opacity:.85;">
-                    ${favLbl}
-                  </button>
-                </div>
+                <button class="${favCls}" data-id="${v.id}" aria-label="Favori" title="Favori">
+                  ${favLbl}
+                </button>
+                <div class="similar-info"></div>
               </div>`;
           }).join('');
 
           // Fav toggle on similar cards
-          grid.querySelectorAll('.fav-btn').forEach(btn => {
+          grid.querySelectorAll('.similar-fav-overlay').forEach(btn => {
             btn.addEventListener('click', async (e) => {
               e.preventDefault();
               const id = btn.dataset.id;

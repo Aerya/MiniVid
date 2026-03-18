@@ -1201,24 +1201,26 @@ video:focus {
 .similar-title {
   font-size: 1rem;
   font-weight: 600;
-  margin: 0 0 .85rem;
+  margin: 0 0 .75rem;
   opacity: .9;
 }
 .similar-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
 }
 .similar-card {
   background: var(--bg2);
   border: 1px solid var(--border);
-  border-radius: .6rem;
+  border-radius: .45rem;
   overflow: hidden;
-  transition: transform .18s ease, box-shadow .18s ease;
+  transition: transform .15s ease, box-shadow .15s ease;
+  position: relative;
 }
 .similar-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  box-shadow: 0 5px 16px rgba(0,0,0,.5);
+  z-index: 2;
 }
 .similar-thumb {
   display: block;
@@ -1231,33 +1233,62 @@ video:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform .25s ease;
+  transition: transform .22s ease;
 }
-.similar-card:hover .similar-thumb img { transform: scale(1.04); }
+.similar-card:hover .similar-thumb img { transform: scale(1.06); }
+/* Badge lu */
 .similar-played {
   position: absolute;
-  top: 4px;
-  right: 5px;
-  background: rgba(34,197,94,.85);
+  top: 3px;
+  right: 4px;
+  background: rgba(34,197,94,.88);
+  color: #fff;
+  font-size: .6rem;
+  border-radius: 3px;
+  padding: 1px 3px;
+  pointer-events: none;
+}
+/* Bouton fav en overlay, visible au hover */
+.similar-fav-overlay {
+  position: absolute;
+  bottom: 3px;
+  left: 4px;
+  background: rgba(0,0,0,.55);
+  border: none;
+  border-radius: 4px;
+  color: #facc15;
+  font-size: .8rem;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s ease;
+  backdrop-filter: blur(2px);
+}
+.similar-card:hover .similar-fav-overlay { opacity: 1; }
+.similar-fav-overlay.active { opacity: 1; color: #facc15; }
+/* Tooltip nom : bande en bas au hover */
+.similar-thumb::after {
+  content: attr(data-title);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.82));
   color: #fff;
   font-size: .65rem;
-  border-radius: 3px;
-  padding: 1px 4px;
-}
-.similar-info { padding: .4rem .5rem .45rem; }
-.similar-name {
-  display: block;
-  font-size: .75rem;
-  font-weight: 500;
-  color: var(--text-main);
-  text-decoration: none;
+  line-height: 1.25;
+  padding: .5rem .35rem .22rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: .3rem;
+  opacity: 0;
+  transition: opacity .18s ease;
+  pointer-events: none;
 }
-.similar-name:hover { color: #60a5fa; }
-.similar-tags { display: flex; flex-wrap: wrap; gap: 3px; min-height: 18px; }
+.similar-card:hover .similar-thumb::after { opacity: 1; }
+/* Supprimer l'ancienne zone info */
+.similar-info { display: none; }
 @media (max-width: 600px) {
-  .similar-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+  .similar-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 5px; }
 }
