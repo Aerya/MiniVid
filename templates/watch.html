@@ -22,10 +22,21 @@
       filter: invert(1) hue-rotate(180deg)
     }
 
-    /* Fix : ne pas inverser la vidéo en plein écran (mode clair) */
-    video:-webkit-full-screen { filter: none !important; }
-    video:-moz-full-screen     { filter: none !important; }
-    video:fullscreen           { filter: none !important; }
+    /* Fix : ne pas inverser en plein écran (mode clair) */
+    /* Couvre la vidéo elle-même et tout conteneur qui passerait en fullscreen */
+    video:-webkit-full-screen,
+    video:-moz-full-screen,
+    video:fullscreen,
+    :-webkit-full-screen,
+    :-moz-full-screen,
+    :fullscreen               { filter: none !important; }
+    /* Enfants dans le fullscreen : annuler aussi le re-invert des images/canvas */
+    :-webkit-full-screen img,
+    :-webkit-full-screen video,
+    :-moz-full-screen img,
+    :-moz-full-screen video,
+    :fullscreen img,
+    :fullscreen video          { filter: none !important; }
 
     #themeToggle {
       background: transparent;
