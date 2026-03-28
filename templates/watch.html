@@ -23,20 +23,23 @@
     }
 
     /* Fix : ne pas inverser en plein écran (mode clair) */
-    /* Couvre la vidéo elle-même et tout conteneur qui passerait en fullscreen */
-    video:-webkit-full-screen,
-    video:-moz-full-screen,
-    video:fullscreen,
-    :-webkit-full-screen,
-    :-moz-full-screen,
-    :fullscreen               { filter: none !important; }
-    /* Enfants dans le fullscreen : annuler aussi le re-invert des images/canvas */
-    :-webkit-full-screen img,
-    :-webkit-full-screen video,
-    :-moz-full-screen img,
-    :-moz-full-screen video,
-    :fullscreen img,
-    :fullscreen video          { filter: none !important; }
+    /* En mode light, html a filter:invert(1). Le fullscreen hérite de ce filtre.
+       Il faut donc conserver le double-invert sur la vidéo (= annule le parent),
+       et mettre none sur tout autre élément fullscreen non-vidéo. */
+    html.light video:-webkit-full-screen,
+    html.light video:-moz-full-screen,
+    html.light video:fullscreen       { filter: invert(1) hue-rotate(180deg) !important; }
+
+    html.light :-webkit-full-screen:not(video),
+    html.light :-moz-full-screen:not(video),
+    html.light :fullscreen:not(video) { filter: none !important; }
+
+    html.light :-webkit-full-screen img,
+    html.light :-webkit-full-screen video,
+    html.light :-moz-full-screen img,
+    html.light :-moz-full-screen video,
+    html.light :fullscreen img,
+    html.light :fullscreen video       { filter: invert(1) hue-rotate(180deg) !important; }
 
     #themeToggle {
       background: transparent;
