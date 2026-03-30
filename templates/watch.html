@@ -366,6 +366,27 @@
           localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
         });
       } catch (e) { }
+
+      // Fix mode clair + plein écran : le filtre invert() du html ne s'applique
+      // plus une fois que l'élément sort du flux normal. On force filter:none sur
+      // la vidéo à l'entrée en fullscreen, et on restaure à la sortie.
+      (function () {
+        function applyFSFix() {
+          const v = document.getElementById('v');
+          if (!v) return;
+          const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+          const isLight = document.documentElement.classList.contains('light');
+          v.style.filter = (isFS && isLight) ? 'none' : '';
+        }
+        ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(function (ev) {
+          document.addEventListener(ev, applyFSFix);
+        });
+        // Aussi si le thème change pendant le fullscreen
+        document.getElementById('themeToggle') && document.getElementById('themeToggle').addEventListener('click', function () {
+          setTimeout(applyFSFix, 0);
+        });
+      })();
+
     })();
     document.addEventListener('DOMContentLoaded', function () {
       const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').trim().toLowerCase() === 'accueil');
