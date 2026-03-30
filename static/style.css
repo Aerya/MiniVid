@@ -953,7 +953,7 @@ video:focus {
   justify-content: center;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  margin-top: 1.4rem;
   font-size: 0.9rem;
   color: var(--text-dim);
 }

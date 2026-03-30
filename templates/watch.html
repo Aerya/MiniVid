@@ -200,7 +200,7 @@
       {% endif %}
 
       {% endif %}
-      {% if playback_method %}
+      {% if playback_method and playback_method != 'direct' %}
       <span class="playback-badge">{{ playback_method }}</span>
       {% endif %}
     </div>

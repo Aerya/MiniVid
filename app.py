@@ -24,7 +24,7 @@ def ratelimited(key, per=1.0):
     _RATE_LIMIT[key] = now
     return False
 
-import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time
+import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil
 from datetime import datetime
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for
@@ -1194,46 +1194,100 @@ def play(vid):
         return redirect(url_for("stream", vid=vid))
     return redirect(url_for("remux", vid=vid))
 
-def _probe_streams(path):
+# --- Cache ffprobe (évite de relancer ffprobe à chaque segment) ---
+_probe_cache: dict = {}
+_probe_lock  = threading.Lock()
+
+def _probe_all(path):
+    """Un seul appel ffprobe par fichier, mis en cache par mtime."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0
+    with _probe_lock:
+        cached = _probe_cache.get(path)
+        if cached and cached["mtime"] == mtime:
+            return cached
     try:
         p = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,codec_type,width,height:format=format_name", "-of", "json", path],
-            capture_output=True, text=True, timeout=int(os.environ.get("MINI_FFPROBE_TIMEOUT","10"))
+            ["ffprobe", "-v", "error",
+             "-show_entries", "stream=codec_name,codec_type,width,height:format=format_name,duration",
+             "-of", "json", path],
+            capture_output=True, text=True,
+            timeout=int(os.environ.get("MINI_FFPROBE_TIMEOUT", "15"))
         )
         if p.returncode == 0 and p.stdout:
-            jd = json.loads(p.stdout)
-            v = next((s for s in jd.get("streams",[]) if s.get("codec_type")=="video"), {})
-            a = next((s for s in jd.get("streams",[]) if s.get("codec_type")=="audio"), {})
-            fmt = jd.get("format", {}).get("format_name", "")
-            return fmt, v.get("codec_name",""), a.get("codec_name",""), v.get("width"), v.get("height")
+            jd   = json.loads(p.stdout)
+            vs   = next((s for s in jd.get("streams", []) if s.get("codec_type") == "video"), {})
+            as_  = next((s for s in jd.get("streams", []) if s.get("codec_type") == "audio"), {})
+            fmt  = jd.get("format", {}).get("format_name", "")
+            dur  = jd.get("format", {}).get("duration")
+            result = {
+                "mtime":    mtime,
+                "fmt":      fmt,
+                "vcodec":   vs.get("codec_name", ""),
+                "acodec":   as_.get("codec_name", ""),
+                "w":        vs.get("width"),
+                "h":        vs.get("height"),
+                "duration": float(dur) if dur else 0.0,
+            }
+            with _probe_lock:
+                _probe_cache[path] = result
+            return result
     except Exception as e:
         LOG.warning("ffprobe failed: %s", e)
-    return "", "", "", None, None
+    result = {"mtime": mtime, "fmt": "", "vcodec": "", "acodec": "", "w": None, "h": None, "duration": 0.0}
+    with _probe_lock:
+        _probe_cache[path] = result
+    return result
+
+def _probe_streams(path):
+    r = _probe_all(path)
+    return r["fmt"], r["vcodec"], r["acodec"], r["w"], r["h"]
 
 def _get_duration(path):
-    """Obtient la durée d'une vidéo en secondes."""
-    try:
-        p = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path],
-            capture_output=True, text=True, timeout=int(os.environ.get("MINI_FFPROBE_TIMEOUT", "10"))
-        )
-        if p.returncode == 0 and p.stdout:
-            jd = json.loads(p.stdout)
-            dur = jd.get("format", {}).get("duration")
-            if dur:
-                return float(dur)
-    except Exception as e:
-        LOG.warning("ffprobe duration failed: %s", e)
-    return 0
+    return _probe_all(path)["duration"]
 
 def _is_h264(path):
-    """Vérifie si la vidéo est en H.264."""
-    _, vcodec, _, _, _ = _probe_streams(path)
-    return vcodec in ("h264", "avc1")
+    return _probe_all(path)["vcodec"] in ("h264", "avc1")
 
-# --- HLS Streaming pour Firefox ---
-HLS_SEGMENT_DIR = os.path.join(THUMB_DIR, "hls")
+# --- HLS Streaming ---
+HLS_SEGMENT_DIR      = os.path.join(THUMB_DIR, "hls")
+HLS_SEGMENT_DURATION = int(os.environ.get("MINI_HLS_SEGMENT_DURATION", "10"))   # secondes par segment
+HLS_CACHE_MAX_AGE_H  = int(os.environ.get("MINI_HLS_CACHE_MAX_AGE_H",  "24"))   # durée de rétention du cache
 os.makedirs(HLS_SEGMENT_DIR, exist_ok=True)
+
+# Pré-génération : ensemble des (vid, seg) en cours pour éviter les doublons
+_seg_building: set = set()
+_seg_build_lock = threading.Lock()
+
+def _hls_cache_cleanup():
+    """Supprime périodiquement les segments HLS non accédés depuis HLS_CACHE_MAX_AGE_H heures."""
+    while True:
+        try:
+            time.sleep(1800)  # toutes les 30 minutes
+            cutoff = time.time() - HLS_CACHE_MAX_AGE_H * 3600
+            if not os.path.isdir(HLS_SEGMENT_DIR):
+                continue
+            for vid_dir in os.listdir(HLS_SEGMENT_DIR):
+                full_d = os.path.join(HLS_SEGMENT_DIR, vid_dir)
+                if not os.path.isdir(full_d):
+                    continue
+                try:
+                    files = os.listdir(full_d)
+                    last_access = max(
+                        (os.path.getmtime(os.path.join(full_d, f)) for f in files),
+                        default=os.path.getmtime(full_d)
+                    )
+                    if last_access < cutoff:
+                        shutil.rmtree(full_d, ignore_errors=True)
+                        LOG.info("HLS cache expiré supprimé : %s", vid_dir)
+                except Exception as ex:
+                    LOG.debug("HLS cleanup error %s: %s", vid_dir, ex)
+        except Exception as e:
+            LOG.warning("HLS cleanup thread error: %s", e)
+
+threading.Thread(target=_hls_cache_cleanup, daemon=True, name="hls-cleanup").start()
 
 def check_nvenc():
     """Détecte si l'accélération matérielle NVENC est disponible."""
@@ -1266,32 +1320,82 @@ def hls_playlist(vid):
     if not os.path.exists(full):
         abort(404)
     
-    # Déterminer la durée
     duration = _get_duration(full)
     if duration <= 0:
         duration = 3600  # fallback 1h
-    segment_duration = 6  # secondes par segment
-    
-    # Générer le m3u8
-    playlist = "#EXTM3U\n#EXT-X-VERSION:3\n"
-    playlist += f"#EXT-X-TARGETDURATION:{segment_duration}\n"
+    seg_dur = HLS_SEGMENT_DURATION
+
+    playlist  = "#EXTM3U\n#EXT-X-VERSION:3\n"
+    playlist += f"#EXT-X-TARGETDURATION:{seg_dur}\n"
     playlist += "#EXT-X-MEDIA-SEQUENCE:0\n"
-    
-    num_segments = int(duration / segment_duration) + 1
+
+    num_segments = int(duration / seg_dur) + 1
     for i in range(num_segments):
-        seg_dur = min(segment_duration, duration - i * segment_duration)
-        if seg_dur > 0:
-            playlist += f"#EXTINF:{seg_dur:.3f},\n"
+        d = min(seg_dur, duration - i * seg_dur)
+        if d > 0:
+            playlist += f"#EXTINF:{d:.3f},\n"
             playlist += f"/hls/{vid}/segment_{i}.ts\n"
-    
+
     playlist += "#EXT-X-ENDLIST\n"
-    
-    from flask import Response
     return Response(playlist, mimetype="application/vnd.apple.mpegurl")
+
+def _vcodec_args(full):
+    """Retourne les arguments ffmpeg pour le codec vidéo selon la source et le matériel."""
+    info = _probe_all(full)
+    if info["vcodec"] in ("h264", "avc1"):
+        return ["-c:v", "copy"]
+    if HAS_NVENC:
+        return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-cq", "23"]
+    return ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
+
+def _build_segment_file(full, cache_path, seg_index):
+    """Lance ffmpeg pour générer un segment .ts, retourne True si succès."""
+    start_time = seg_index * HLS_SEGMENT_DURATION
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-ss", str(start_time), "-i", full,
+        "-t", str(HLS_SEGMENT_DURATION),
+        "-avoid_negative_ts", "1",
+    ] + _vcodec_args(full) + [
+        "-c:a", "aac", "-ac", "2", "-b:a", "128k",
+        "-f", "mpegts", cache_path
+    ]
+    try:
+        subprocess.run(cmd, check=True, timeout=60)
+        return True
+    except Exception as e:
+        LOG.error("HLS segment %d error: %s", seg_index, e)
+        try:
+            os.remove(cache_path)
+        except OSError:
+            pass
+        return False
+
+def _prebuild_segment(vid, ridx, rel, seg_index):
+    """Génère un segment en arrière-plan (pré-chargement)."""
+    key = (vid, seg_index)
+    with _seg_build_lock:
+        if key in _seg_building:
+            return
+        _seg_building.add(key)
+    try:
+        v_cache_dir = os.path.join(HLS_SEGMENT_DIR, vid)
+        cache_path  = os.path.join(v_cache_dir, f"seg_{seg_index}.ts")
+        if os.path.exists(cache_path):
+            return
+        full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
+        if not os.path.exists(full):
+            return
+        _build_segment_file(full, cache_path, seg_index)
+    except Exception as e:
+        LOG.debug("Pre-build seg %d for %s: %s", seg_index, vid, e)
+    finally:
+        with _seg_build_lock:
+            _seg_building.discard(key)
 
 @app.route("/hls/<vid>/segment_<int:seg>.ts")
 def hls_segment(vid, seg):
-    """Génère un segment TS à la volée avec mise en cache."""
+    """Génère un segment TS à la volée avec mise en cache et pré-chargement des suivants."""
     if not auth_required():
         return redirect(url_for("login"))
     try:
@@ -1300,48 +1404,31 @@ def hls_segment(vid, seg):
         abort(404)
     if ridx < 0 or ridx >= len(MEDIA_DIRS):
         abort(404)
-    
-    # Dossier de cache par vidéo pour éviter les collisions
+
     v_cache_dir = os.path.join(HLS_SEGMENT_DIR, vid)
     os.makedirs(v_cache_dir, exist_ok=True)
     cache_path = os.path.join(v_cache_dir, f"seg_{seg}.ts")
-    
+
     if os.path.exists(cache_path):
+        # Pré-générer les 2 segments suivants en arrière-plan
+        for nxt in (seg + 1, seg + 2):
+            t = threading.Thread(target=_prebuild_segment, args=(vid, ridx, rel, nxt), daemon=True)
+            t.start()
         return send_file(cache_path, mimetype="video/mp2t")
 
     full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
     if not os.path.exists(full):
         abort(404)
-    
-    segment_duration = 6
-    start_time = seg * segment_duration
-    
-    # Stratégie de transcodage
-    is_h264 = _is_h264(full)
-    if is_h264:
-        vcodec_args = ["-c:v", "copy"]
-    elif HAS_NVENC:
-        vcodec_args = ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-cq", "23"]
-    else:
-        vcodec_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
-    
-    # Commande FFmpeg optimisée
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-ss", str(start_time), "-i", full,
-        "-t", str(segment_duration),
-        "-avoid_negative_ts", "1",
-    ] + vcodec_args + [
-        "-c:a", "aac", "-b:a", "160k",
-        "-f", "mpegts", cache_path
-    ]
-    
-    try:
-        subprocess.run(cmd, check=True, timeout=30)
-        return send_file(cache_path, mimetype="video/mp2t")
-    except Exception as e:
-        LOG.error("HLS segment error: %s", e)
+
+    if not _build_segment_file(full, cache_path, seg):
         abort(500)
+
+    # Pré-générer les 2 segments suivants en arrière-plan
+    for nxt in (seg + 1, seg + 2):
+        t = threading.Thread(target=_prebuild_segment, args=(vid, ridx, rel, nxt), daemon=True)
+        t.start()
+
+    return send_file(cache_path, mimetype="video/mp2t")
 
 def _get_best_playback_url(vid, full, ext, ua):
     """Retourne la meilleure URL et méthode selon le navigateur et les codecs."""
@@ -1627,7 +1714,6 @@ def api_maintenance_purge_thumbs():
         # Purger aussi le cache HLS
         hls_cnt = 0
         if os.path.isdir(HLS_SEGMENT_DIR):
-            import shutil
             for d in os.listdir(HLS_SEGMENT_DIR):
                 full_d = os.path.join(HLS_SEGMENT_DIR, d)
                 if os.path.isdir(full_d):
