@@ -763,7 +763,8 @@ def browse():
     tags_param = strip_surrogates((request.args.get("tags") or "").strip())
     sel_tags = [t.strip() for t in tags_param.split(",") if t.strip()]
     listq= strip_surrogates((request.args.get("list") or "").strip())
-    fav_only = (request.args.get("fav") or "0") in ("1","true","yes")
+    fav_only  = (request.args.get("fav")   or "0") in ("1","true","yes")
+    multi_only = (request.args.get("multi") or "0") in ("1","true","yes")
     rootq_raw = request.args.get("root")
     dir_in = request.args.get("dir") or ""
     try:
@@ -823,7 +824,8 @@ def browse():
     if dirq:
         items = [i for i in items if (i["dir"] or "") == dirq or (i["dir"] or "").startswith(dirq + "/")]
     if q:
-        ql = q.lower(); items = [i for i in items if ql in i["name"].lower()]
+        ql = q.lower()
+        items = [i for i in items if ql in i["name"].lower() or ql in (i.get("dir", "") or "").lower()]
     if tag:
         items = [i for i in items if tag.lower() in [t.lower() for t in i.get("tags",[])] or tag.lower() in [t.lower() for t in (state.get("utags",{}).get(i["id"],[]) or [])]]
     if utag:
@@ -880,6 +882,12 @@ def browse():
                 "is_single": is_single,
                 "size": 0
             })
+
+    if multi_only:
+        # Garder uniquement les dossiers avec ≥ 2 vidéos
+        folders = [f for f in folders if f["count"] >= 2]
+        # Ne pas afficher de vidéos individuelles, l'utilisateur cherche des collections
+        items = []
 
     if readf == "read":
         items = [i for i in items if i.get("played")]
@@ -1024,7 +1032,7 @@ def browse():
     return render_template("index.html", sel_tags=sel_tags, popular=popular,
         utags=state.get("utags",{}),
         grid=combined_page, folder_total=len([x for x in combined if x['kind']=='folder']), video_total=len([x for x in combined if x['kind']=='video']), total_items=total_items,upopular=upopular, lists=[],
-        q=q, tag=tag, utag=utag, listq=listq, fav_only=fav_only,
+        q=q, tag=tag, utag=utag, listq=listq, fav_only=fav_only, multi_only=multi_only,
         sort=sort, dirq_q=dirq_q, crumbs=crumbs, parent_url=parent_url,
         rootq=rootq_raw, root_index=root_index, roots=roots, auth=AUTH_ENABLED, user=session.get("user"),
         per=per, page=page, pages=pages, readf=readf, mix=mix,

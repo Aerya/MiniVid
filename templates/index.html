@@ -138,6 +138,7 @@
     <form class="controls" action="/browse" method="get">
       <input type="hidden" name="root" value="{{ rootq or '' }}" />
       <input type="hidden" name="dir" value="{{ dirq_q or '' }}" />
+      <input type="hidden" name="multi" value="{{ '1' if multi_only else '0' }}" />
       <input type="text" name="q" value="{{ q }}" placeholder="Rechercher…" />
       <label for="read" class="lbl">Tri</label>
       <select name="sort" onchange="this.form.submit()">
@@ -179,8 +180,11 @@
         <span>Grouper par date</span>
       </label>
       <a class="favbtn {{ 'active' if fav_only else '' }}"
-        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&smart={{ '1' if smart else '0' }}">★
+        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&multi={{ '1' if multi_only else '0' }}&smart={{ '1' if smart else '0' }}">★
         Favoris</a>
+      <a class="favbtn {{ 'active' if multi_only else '' }}"
+        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ '1' if fav_only else '0' }}&multi={{ 0 if multi_only else 1 }}&smart={{ '1' if smart else '0' }}">📁
+        Collections</a>
 
       <button id="themeToggle" class="btn" title="Thème sombre/clair" aria-label="Basculer le thème">🌙</button>
       <a href="/logout" class="btn" title="Déconnexion" aria-label="Déconnexion"
@@ -190,10 +194,10 @@
 
   <nav class="roots">
     {% if parent_url %}<a class="backbtn" href="{{ parent_url }}">← Dossier parent</a>{% endif %}
-    <a href="/browse?mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}"
+    <a href="/browse?mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&multi={{ '1' if multi_only else '0' }}"
       class="{{ 'active' if not root_index and rootq!='0' else '' }}">Global</a>
     {% for r in roots %}
-    <a href="/browse?root={{ r.idx }}&mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}"
+    <a href="/browse?root={{ r.idx }}&mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&multi={{ '1' if multi_only else '0' }}"
       class="{{ 'active' if root_index==r.idx else '' }}">{{ r.name }}</a>
     {% endfor %}
     {% if crumbs and root_index is not none %}<span class="crumbs">/ {% for c in crumbs %}<a href="{{ c.url }}">{{
