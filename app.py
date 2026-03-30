@@ -703,13 +703,12 @@ def smart_group_items(items, mode="date"):
             {"key": "month", "label": "Ce mois", "videos": []},
             {"key": "older", "label": "Plus ancien", "videos": []},
         ]
-        
+
         for item in items:
-            if item.get("kind") == "folder":
-                continue  # Les dossiers ne sont pas groupés
-            mtime = item.get("mtime", 0)
+            # Dossiers : on utilise leur mtime réel (stocké dans "latest")
+            mtime = item.get("latest", 0) if item.get("kind") == "folder" else item.get("mtime", 0)
             age = now - mtime
-            
+
             if age < day:
                 groups[0]["videos"].append(item)
             elif age < 7 * day:
@@ -718,8 +717,7 @@ def smart_group_items(items, mode="date"):
                 groups[2]["videos"].append(item)
             else:
                 groups[3]["videos"].append(item)
-        
-        # Ne retourner que les groupes non vides
+
         return [g for g in groups if g["videos"]]
     
     elif mode == "size":
@@ -859,7 +857,18 @@ def browse():
                 buckets.setdefault(chid, []).append(it)
         
         for name_raw, vids in buckets.items():
-            latest = max(v["mtime"] for v in vids) if vids else 0
+            # Mtime réel du dossier sur le disque (pas le max du contenu)
+            latest = 0
+            try:
+                root_i = vids[0]["root"] if vids else 0
+                folder_fs_path = os.path.join(
+                    MEDIA_DIRS[root_i],
+                    (dirq + os.sep if dirq else "") + name_raw
+                )
+                latest = os.path.getmtime(folder_fs_path)
+            except Exception:
+                # Fallback : max mtime des vidéos
+                latest = max(v["mtime"] for v in vids) if vids else 0
             # Feature 1: Read status
             total_count = len(vids)
             read_count = sum(1 for v in vids if v.get("played"))

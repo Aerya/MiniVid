@@ -69,16 +69,6 @@
 </section>
 {% endfor %}
 
-{# Afficher les dossiers séparément en haut si smart mode #}
-{% set folders_only = grid | selectattr('kind', 'equalto', 'folder') | list %}
-{% if folders_only %}
-<h2 class="group-header">📁 Dossiers <small>({{ folders_only|length }})</small></h2>
-<section class="grid">
-  {% for it in folders_only %}
-  {{ render_folder_card(it) }}
-  {% endfor %}
-</section>
-{% endif %}
 {% else %}
 {# Affichage classique #}
 <section class="grid">
