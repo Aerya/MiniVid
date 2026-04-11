@@ -27,7 +27,7 @@ def ratelimited(key, per=1.0):
 import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil
 from datetime import datetime
 from urllib.parse import quote_from_bytes, unquote_to_bytes
-from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for
+from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for, Response
 
 APP_NAME = "MiniVid"
 DEF_EXT = ".mp4,.webm,.mkv,.avi,.flv,.m2ts"
