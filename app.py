@@ -1201,7 +1201,9 @@ def play(vid):
     ext = os.path.splitext(full)[1].lower().lstrip('.')
     mode = PLAYBACK
     ua = (request.headers.get("User-Agent") or "").lower()
-    if mode == "direct" and FIREFOX_FALLBACK and ("firefox" in ua) and ext in ("mkv","m2ts","avi","flv"):
+    if mode == "direct" and ext in ("avi","flv","m2ts"):
+        return redirect(url_for("remux", vid=vid))
+    if mode == "direct" and FIREFOX_FALLBACK and ("firefox" in ua) and ext == "mkv":
         return redirect(url_for("remux", vid=vid))
     if mode == "direct":
         return redirect(url_for("stream", vid=vid))
@@ -1455,10 +1457,14 @@ def _get_best_playback_url(vid, full, ext, ua):
     
     # Codecs jugés "natifs" (H.264 + AAC/MP3)
     can_copy = vcodec in ("h264", "avc1") and acodec in ("aac", "mp3", "mp4a", "mpga")
-    
-    # On tente le direct pour MP4/MKV si les codecs sont bons, sauf sur Firefox 
-    # où le MKV est trop capricieux sans HLS.
+
+    # Conteneurs non supportés nativement par les navigateurs (peu importe les codecs)
+    non_native_container = ext in ("avi", "flv", "m2ts")
+
     if can_copy:
+        if non_native_container:
+            # Le remux convertit le conteneur en MP4 à la volée sans retranscodage
+            return url_for("remux", vid=vid), "remux"
         if not ff_like:
             return url_for("stream", vid=vid), "direct"
         else:
@@ -1466,11 +1472,11 @@ def _get_best_playback_url(vid, full, ext, ua):
             if ext == "mp4":
                 return url_for("stream", vid=vid), "direct"
             return url_for("hls_playlist", vid=vid), "hls"
-            
+
     if ALLOW_TRANSCODE:
         # Transcodage nécessaire : HLS avec cache et GPU
         return url_for("hls_playlist", vid=vid), "hls"
-    
+
     return None, "unsupported"
 
 def _gen_ffmpeg(cmd):
