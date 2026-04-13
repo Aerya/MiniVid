@@ -1507,11 +1507,17 @@ def remux(vid):
     if not os.path.exists(full):
         abort(404)
     _, vcodec, acodec, w, h = _probe_streams(full)
+    src_ext = os.path.splitext(full)[1].lower().lstrip('.')
     out_args = ["-movflags","+frag_keyframe+empty_moov","-f","mp4","-"]
     base_cmd = ["ffmpeg","-loglevel","error","-nostdin","-y","-i", full]
     if vcodec in ("h264","avc1"):
         vpart = ["-c:v","copy"]
-        apart = ["-c:a","copy"] if acodec in ("aac","mp3","mp2","mp4a","mpga") else ["-c:a","aac","-b:a","160k"]
+        # Les conteneurs AVI/FLV ont souvent du MP3/MP2 qui ne passe pas bien
+        # en MP4 fragmenté → on force AAC qui est garanti compatible navigateur
+        if src_ext in ("avi","flv","m2ts") or acodec not in ("aac","mp4a"):
+            apart = ["-c:a","aac","-b:a","160k"]
+        else:
+            apart = ["-c:a","copy"]
         cmd = base_cmd + vpart + apart + out_args
     else:
         if not ALLOW_TRANSCODE:
