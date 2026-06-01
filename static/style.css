@@ -590,7 +590,7 @@ a.thumb,
 }
 
 .player-wrap.zoomed {
-  margin-inline: 0;
+  margin-inline: auto;
   border-radius: 0;
   overflow: visible;
 }
