@@ -300,38 +300,69 @@
       const wrap = document.querySelector('.player-wrap');
       const video = document.getElementById('v');
       if (!wrap) return;
-      let baseWidth = 0;
-      function getBaseWidth() {
-        if (!baseWidth) {
-          const rect = wrap.getBoundingClientRect();
-          const parentWidth = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
-          baseWidth = Math.max(320, Math.round(rect.width || parentWidth || window.innerWidth));
-        }
-        return baseWidth;
+
+      function resetWrap() {
+        wrap.style.width = '';
+        wrap.style.inlineSize = '';
+        wrap.style.maxWidth = '';
+        if (video) video.style.width = '';
+        wrap.classList.remove('zoomed');
       }
+
+      function measureBaseWidth() {
+        const hadZoom = wrap.classList.contains('zoomed');
+        const prev = { w: wrap.style.width, i: wrap.style.inlineSize, m: wrap.style.maxWidth, c: hadZoom };
+        wrap.style.width = '';
+        wrap.style.inlineSize = '';
+        wrap.style.maxWidth = '';
+        wrap.classList.remove('zoomed');
+        // Force reflow then read natural width
+        const natural = wrap.getBoundingClientRect().width;
+        if (prev.c) {
+          wrap.style.width = prev.w;
+          wrap.style.inlineSize = prev.i;
+          wrap.style.maxWidth = prev.m;
+          wrap.classList.add('zoomed');
+        }
+        return Math.max(320, Math.round(natural));
+      }
+
+      function applyZoom(z) {
+        if (z === 1) {
+          resetWrap();
+          return;
+        }
+        const base = measureBaseWidth();
+        const width = Math.round(base * z);
+        wrap.style.width = width + 'px';
+        wrap.style.inlineSize = width + 'px';
+        wrap.style.maxWidth = 'none';
+        if (video) video.style.width = '100%';
+        wrap.classList.add('zoomed');
+        // Bring the player back into view (it may overflow .watch to the right)
+        requestAnimationFrame(() => {
+          wrap.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+        });
+      }
+
       document.querySelectorAll('.zoom-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.zoom-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           const z = parseFloat(btn.dataset.zoom) || 1;
-          if (z === 1) {
-            wrap.style.width = '';
-            wrap.style.inlineSize = '';
-            wrap.style.maxWidth = '';
-            if (video) video.style.width = '';
-            wrap.classList.remove('zoomed');
-          } else {
-            const width = Math.round(getBaseWidth() * z);
-            wrap.style.width = width + 'px';
-            wrap.style.inlineSize = width + 'px';
-            wrap.style.maxWidth = 'none';
-            if (video) video.style.width = '100%';
-            wrap.classList.add('zoomed');
-          }
+          applyZoom(z);
         });
       });
+
+      let resizeTimer = 0;
       window.addEventListener('resize', () => {
-        if (!wrap.classList.contains('zoomed')) baseWidth = 0;
+        if (!wrap.classList.contains('zoomed')) return;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const activeBtn = document.querySelector('.zoom-btn.active');
+          const z = activeBtn ? (parseFloat(activeBtn.dataset.zoom) || 1) : 1;
+          applyZoom(z);
+        }, 120);
       }, { passive: true });
     })();
 

@@ -564,16 +564,17 @@ a.thumb,
   max-width: 1380px;
   margin: 0 auto;
   overflow-x: auto;
+  scroll-padding-inline: 1rem;
 }
 
 .player-wrap {
   position: relative;
-  overflow: hidden;
   margin: 0 auto;
   background: #000;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  overflow: hidden;
   transition: width .25s ease, max-width .25s ease;
 }
 
@@ -583,8 +584,14 @@ a.thumb,
   max-height: 78vh;
 }
 
+.player-wrap.zoomed {
+  margin-inline: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
 .player-wrap.zoomed video {
-  max-height: none;
+  max-height: 90vh;
 }
 
 .zoom-bar,
