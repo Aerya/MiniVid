@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
 
 <head>
   <meta charset="utf-8" />
@@ -8,121 +8,12 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css" />
-
   <style>
-    /*THEME_TOGGLE*/
-    html.light {
-      filter: invert(1) hue-rotate(180deg)
-    }
-
-    html.light img,
-    html.light video,
-    html.light canvas,
-    html.light iframe,
-    html.light picture {
-      filter: invert(1) hue-rotate(180deg)
-    }
-
-    #themeToggle {
-      background: transparent;
-      border: 1px solid currentColor;
-      border-radius: 10px;
-      padding: .25rem .5rem;
-      margin-left: .5rem;
-      line-height: 1
-    }
-
-    /* gaps adoucis : le gros du compactage est désormais dans style.css */
-    .tagbar .taggroup {
-      gap: .5rem .65rem
-    }
-
-    .tagsline {
-      gap: .45rem .6rem
-    }
-
-    .tagbar .pill small,
-    .tagsline .pill small {
-      margin-left: .25rem
-    }
-
-    .tagbar .pill {
-      line-height: 1.15
-    }
-
-    .tagsline .pill {
-      line-height: 1.15
-    }
-  </style>
-
-  <style>
-    .backtop {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      z-index: 999;
-      display: none;
-      border: 1px solid currentColor;
-      border-radius: 999px;
-      padding: .5rem .6rem;
-      background: rgba(0, 0, 0, .35);
-      backdrop-filter: blur(2px);
-      cursor: pointer
-    }
-
-    html.light .backtop {
-      background: rgba(255, 255, 255, .65)
-    }
-
-    .backtop.show {
-      display: inline-flex
-    }
-  </style>
-  <style>
-    #backTop {
-      display: inline-flex !important
-    }
-  </style>
-
-  <style>
-    /* Progress bar overlay on cards */
-    .card-progress {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 4px;
-      background: rgba(255, 255, 255, .25);
-    }
-
-    .card-progress>i {
-      display: block;
-      height: 100%;
-      background: linear-gradient(90deg, #22c55e, #3b82f6);
-      width: 0%
-    }
-
-    /* Grid size variable */
     :root {
-      --card-scale: 1;
-    }
-
-    .grid,
-    .cards {
-      --gap: 12px
-    }
-
-    .card {
-      transform: scale(var(--card-scale));
-      transform-origin: top left
-    }
-
-    /* A11y */
-    :focus-visible {
-      outline: 2px solid #3b82f6;
-      outline-offset: 2px;
+      --thumb-h: {{ ui_prefs.get('thumb_px', 240) | int }}px;
+      --card-min: {{ [200, ((ui_prefs.get('thumb_px', 240) | int) * 1.08) | int] | max }}px;
     }
   </style>
 </head>
@@ -131,31 +22,36 @@
   <div id="___topanchor"></div>
 
   <header class="topbar">
-    <div class="brand">
-      <img src="/static/logo.svg" alt="logo" height="28" />
+    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
+      <img src="/static/logo.svg" alt="" height="30" />
       <strong>MiniVid</strong>
-    </div>
+    </a>
+
     <form class="controls" action="/browse" method="get">
       <input type="hidden" name="root" value="{{ rootq or '' }}" />
       <input type="hidden" name="dir" value="{{ dirq_q or '' }}" />
       <input type="hidden" name="multi" value="{{ '1' if multi_only else '0' }}" />
-      <input type="text" name="q" value="{{ q }}" placeholder="Rechercher…" />
-      <label for="read" class="lbl">Tri</label>
-      <select name="sort" onchange="this.form.submit()">
-        <option value="name" {{ 'selected' if sort=='name' else '' }}>Nom</option>
+      <input type="search" name="q" value="{{ q }}" placeholder="Rechercher une vidéo, un dossier..." />
+
+      <label for="sort" class="lbl">Tri</label>
+      <select name="sort" id="sort" onchange="this.form.submit()">
         <option value="date" {{ 'selected' if sort=='date' else '' }}>Récentes</option>
+        <option value="name" {{ 'selected' if sort=='name' else '' }}>Nom</option>
         <option value="size" {{ 'selected' if sort=='size' else '' }}>Taille</option>
         <option value="res_desc" {{ 'selected' if sort=='res_desc' else '' }}>Résolution ↓</option>
         <option value="res_asc" {{ 'selected' if sort=='res_asc' else '' }}>Résolution ↑</option>
-        <option value="status_unread" {{ 'selected' if sort=='status_unread' else '' }}>Non lues d'abord</option>
-        <option value="status_read" {{ 'selected' if sort=='status_read' else '' }}>Lues d'abord</option>
+        <option value="status_unread" {{ 'selected' if sort=='status_unread' else '' }}>Non lues</option>
+        <option value="status_read" {{ 'selected' if sort=='status_read' else '' }}>Lues</option>
       </select>
+
       <label for="read" class="lbl">Affichage</label>
       <select name="read" id="read" onchange="this.form.submit()">
         <option value="all" {{ 'selected' if readf=='all' else '' }}>Toutes</option>
         <option value="unread" {{ 'selected' if readf=='unread' else '' }}>Non lues</option>
         <option value="read" {{ 'selected' if readf=='read' else '' }}>Lues</option>
       </select>
+
+      <label for="per" class="lbl">Par page</label>
       <select name="per" id="per" onchange="this.form.submit()">
         <option value="all" {{ 'selected' if per in ['all','0',''] else '' }}>Tout</option>
         <option value="12" {{ 'selected' if per=='12' else '' }}>12</option>
@@ -163,68 +59,73 @@
         <option value="48" {{ 'selected' if per=='48' else '' }}>48</option>
         <option value="96" {{ 'selected' if per=='96' else '' }}>96</option>
       </select>
+
+      <label for="mix" class="lbl">Mélange</label>
       <select name="mix" id="mix" onchange="this.form.submit()">
-        <option value="all" {{ 'selected' if mix=='all' else '' }}>Tout mélangé</option>
-        <option value="folders_first" {{ 'selected' if mix=='folders_first' else '' }}>Dossiers puis vidéos</option>
-        <option value="videos_first" {{ 'selected' if mix=='videos_first' else '' }}>Vidéos puis dossiers</option>
+        <option value="all" {{ 'selected' if mix=='all' else '' }}>Tout</option>
+        <option value="folders_first" {{ 'selected' if mix=='folders_first' else '' }}>Dossiers d'abord</option>
+        <option value="videos_first" {{ 'selected' if mix=='videos_first' else '' }}>Vidéos d'abord</option>
       </select>
+
       <label for="thumb" class="lbl">Vignettes</label>
       <select name="thumb" id="thumb">
-        <option value="200">Petite</option>
-        <option value="240" selected>Moyenne</option>
-        <option value="300">Grande</option>
+        <option value="190">Compact</option>
+        <option value="240">Confort</option>
+        <option value="300">Large</option>
       </select>
 
       <label class="smart-toggle" title="Grouper par période">
-        <input type="checkbox" id="smartSort" name="smart" {{ 'checked' if smart else '' }} />
-        <span>Grouper par date</span>
+        <input type="checkbox" id="smartSort" name="smart" value="1" {{ 'checked' if smart else '' }} />
+        <span>Groupes</span>
       </label>
-      <a class="favbtn {{ 'active' if fav_only else '' }}"
-        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&multi={{ '1' if multi_only else '0' }}&smart={{ '1' if smart else '0' }}">★
-        Favoris</a>
-      <a class="favbtn {{ 'active' if multi_only else '' }}"
-        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ '1' if fav_only else '0' }}&multi={{ 0 if multi_only else 1 }}&smart={{ '1' if smart else '0' }}">📁
-        Collections</a>
 
-      <button id="themeToggle" class="btn" title="Thème sombre/clair" aria-label="Basculer le thème">🌙</button>
-      <a href="/logout" class="btn" title="Déconnexion" aria-label="Déconnexion"
-        style="background:transparent;border:1px solid currentColor;border-radius:10px;padding:.25rem .5rem;text-decoration:none;color:inherit;font-size:.9rem;line-height:1">🔓</a>
+      <a class="favbtn {{ 'active' if fav_only else '' }}"
+        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&multi={{ '1' if multi_only else '0' }}&smart={{ '1' if smart else '0' }}">Favoris</a>
+      <a class="favbtn {{ 'active' if multi_only else '' }}"
+        href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ '1' if fav_only else '0' }}&multi={{ 0 if multi_only else 1 }}&smart={{ '1' if smart else '0' }}">Collections</a>
     </form>
+
+    <div class="header-right">
+      <button id="themeToggle" class="icon-btn" title="Thème clair/sombre" aria-label="Thème clair/sombre">☾</button>
+      <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
+      {% if auth %}
+      <a href="/logout" class="icon-btn" title="Déconnexion" aria-label="Déconnexion">⎋</a>
+      {% endif %}
+    </div>
   </header>
 
   <nav class="roots">
-    {% if parent_url %}<a class="backbtn" href="{{ parent_url }}">← Dossier parent</a>{% endif %}
+    {% if parent_url %}<a class="backbtn" href="{{ parent_url }}">← Parent</a>{% endif %}
     <a href="/browse?mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&multi={{ '1' if multi_only else '0' }}"
       class="{{ 'active' if not root_index and rootq!='0' else '' }}">Global</a>
     {% for r in roots %}
     <a href="/browse?root={{ r.idx }}&mix={{ mix }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&multi={{ '1' if multi_only else '0' }}"
       class="{{ 'active' if root_index==r.idx else '' }}">{{ r.name }}</a>
     {% endfor %}
-    {% if crumbs and root_index is not none %}<span class="crumbs">/ {% for c in crumbs %}<a href="{{ c.url }}">{{
-        c.label }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</span>{% endif %}
-    <a href="/maintenance" title="Maintenance">Maintenance</a>
+    {% if crumbs and root_index is not none %}
+    <span class="crumbs">/ {% for c in crumbs %}<a href="{{ c.url }}">{{ c.label }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</span>
+    {% endif %}
   </nav>
 
-  <div class="tagbar" id="tagbar-popular">
-    <button class="tagbar-toggle" id="tagbarToggle" title="Afficher/masquer les tags">🏷️ Tags <span id="tagbarArrow">▾</span></button>
+  <div class="tagbar open" id="tagbar-popular">
+    <button class="tagbar-toggle" id="tagbarToggle" title="Afficher ou masquer les tags">Tags <span id="tagbarArrow">⌄</span></button>
     <div class="taggroup" id="popular-tags">
-      <strong>Tags populaires :</strong>
+      <strong>Tags populaires</strong>
       {% for t,c in popular %}
-      <a class="pill" href="/browse?tag={{ t|e }}" data-tag="{{ t }}">{{ t }} <small>({{ c }})</small></a>
+      <a class="pill" href="/browse?tag={{ t|e }}" data-tag="{{ t }}">{{ t }} <small>{{ c }}</small></a>
       <button class="x" data-tag="{{ t }}" title="Masquer">×</button>
       {% else %}
-      <span class="muted">(aucun)</span>
+      <span class="muted">Aucun tag</span>
       {% endfor %}
     </div>
   </div>
+
   <div id="selfilter" class="tagbar selected">
-    <strong>Tags sélectionnés :</strong>
+    <strong>Tags sélectionnés</strong>
     <span id="selwrap"></span>
   </div>
 
-  {% set sel_tags = ((request.args.get('tags','') or '').split(',')) | reject('equalto','') | list %}
   <main>
-    {# La grille + cartes viennent d’un partial ; les cartes doivent contenir data-vid et le bouton .fav-btn #}
     {% include 'section_combined.html' %}
 
     {% if pages > 1 %}
@@ -233,475 +134,248 @@
       '&utag=' ~ (utag or '') ~ '&list=' ~ (listq or '') ~ '&fav=' ~ (1 if fav_only else 0) ~ '&sort=' ~ sort ~ '&read='
       ~ readf ~ '&per=' ~ per ~ '&mix=' ~ mix %}
       <a class="pbtn {{ 'disabled' if page==1 else '' }}" href="/browse?{{ qbase }}&page={{ page-1 }}">← Précédent</a>
-      <span class="pcounter">Page {{ page }} / {{ pages }} ({{ total_items }} éléments)</span>
+      <span class="pcounter">Page {{ page }} / {{ pages }} · {{ total_items }} élément(s)</span>
       <a class="pbtn {{ 'disabled' if page==pages else '' }}" href="/browse?{{ qbase }}&page={{ page+1 }}">Suivant →</a>
     </nav>
     {% endif %}
   </main>
 
   <footer class="footer">
-    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+    <div style="display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;">
       <span>MiniVid v2.1</span>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <strong style="color: #667eea;">Aerya</strong>
-        {% if not hide_credits %}
-        <img src="https://upandclear.org/wp-content/uploads/2024/06/Logo.detoure1.png.webp" alt="Aerya"
-          style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
-        {% endif %}
-      </div>
-      <div style="display: flex; align-items: center; gap: 15px;">
-        <a href="https://github.com/Aerya/MiniVid" target="_blank"
-          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">GitHub</a>
-        {% if not hide_credits %}
-        <a href="https://upandclear.org/" target="_blank"
-          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">Blog</a>
-        <a href="https://ko-fi.com/upandclear" target="_blank"
-          style="display: flex; align-items: center; gap: 4px; text-decoration: none;"><img
-            src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/ko-fi.webp" alt="Ko-fi"
-            style="width: 18px; height: 18px;"> ❤️</a>
-        {% endif %}
-      </div>
+      <strong>Aerya</strong>
+      <a href="https://github.com/Aerya/MiniVid" target="_blank" rel="noreferrer">GitHub</a>
+      {% if not hide_credits %}
+      <a href="https://upandclear.org/" target="_blank" rel="noreferrer">Blog</a>
+      <a href="https://ko-fi.com/upandclear" target="_blank" rel="noreferrer">Ko-fi</a>
+      {% endif %}
     </div>
   </footer>
 
-  <script>
-    // --- Tagbar toggle (mobile) ---
-    (function () {
-      var tagbar = document.getElementById('tagbar-popular');
-      var btn = document.getElementById('tagbarToggle');
-      var arrow = document.getElementById('tagbarArrow');
-      if (!tagbar || !btn) return;
-
-      var isMobile = window.matchMedia('(max-width: 600px)');
-      var storageKey = 'minivid_tagbar_open';
-
-      function setOpen(open) {
-        if (open) {
-          tagbar.classList.add('open');
-          if (arrow) arrow.textContent = '▴';
-          try { localStorage.setItem(storageKey, '1'); } catch(e) {}
-        } else {
-          tagbar.classList.remove('open');
-          if (arrow) arrow.textContent = '▾';
-          try { localStorage.setItem(storageKey, '0'); } catch(e) {}
-        }
-      }
-
-      function initMobile() {
-        if (isMobile.matches) {
-          // Sur mobile : replié par défaut, sauf si l'utilisateur l'avait ouvert
-          var saved = null;
-          try { saved = localStorage.getItem(storageKey); } catch(e) {}
-          setOpen(saved === '1');
-        } else {
-          // Sur desktop : toujours ouvert, bouton caché par CSS
-          tagbar.classList.add('open');
-        }
-      }
-
-      btn.addEventListener('click', function () {
-        setOpen(!tagbar.classList.contains('open'));
-      });
-
-      isMobile.addEventListener('change', initMobile);
-      initMobile();
-    })();
-  </script>
+  <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page">↑</button>
 
   <script>
-    // --- Smart sort toggle ---
-    const smartToggle = document.getElementById('smartSort');
-    if (smartToggle) {
-      const saved = localStorage.getItem('minivid_smart_sort');
-      const urlParams = new URLSearchParams(location.search);
-
-      // Si le localStorage dit "on" mais ?smart n'est pas dans l'URL → rediriger
-      if (!urlParams.has('smart') && saved === 'on') {
-        const url = new URL(location.href);
-        url.searchParams.set('smart', '1');
-        location.replace(url.toString());
-      }
-
-      smartToggle.addEventListener('change', () => {
-        localStorage.setItem('minivid_smart_sort', smartToggle.checked ? 'on' : 'off');
-        const url = new URL(location.href);
-        url.searchParams.set('smart', smartToggle.checked ? '1' : '0');
-        location.href = url.toString();
-      });
+    const PREFS = {{ ui_prefs | tojson }};
+    async function savePrefs(patch) {
+      try {
+        await fetch('/api/preferences', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
+      } catch (_) {}
     }
 
-    // --- Lazy loading with Intersection Observer ---
-    (function () {
-      const lazyImages = document.querySelectorAll('img.lazy-thumb, img[data-src]');
-      if ('IntersectionObserver' in window) {
-        const observer = new IntersectionObserver((entries) => {
-          entries.forEach(entry => {
-            if (entry.isIntersecting) {
-              const img = entry.target;
-              const src = img.dataset.src || img.src;
-              if (img.dataset.src) {
-                img.src = img.dataset.src;
-                img.removeAttribute('data-src');
-              }
-              img.onload = () => img.classList.add('loaded');
-              observer.unobserve(img);
-            }
-          });
-        }, { rootMargin: '200px' });
+    function applyThumbSize(px) {
+      const val = parseInt(px, 10) || 240;
+      document.documentElement.style.setProperty('--thumb-h', val + 'px');
+      document.documentElement.style.setProperty('--card-min', Math.max(200, Math.floor(val * 1.08)) + 'px');
+    }
 
-        lazyImages.forEach(img => {
-          if (!img.dataset.src && img.src) {
-            img.dataset.src = img.src;
-            img.src = '/static/placeholder.svg';
-          }
-          observer.observe(img);
+    (function initPrefs() {
+      const thumb = document.getElementById('thumb');
+      if (thumb) {
+        thumb.value = String(PREFS.thumb_px || 240);
+        applyThumbSize(thumb.value);
+        thumb.addEventListener('change', () => {
+          applyThumbSize(thumb.value);
+          savePrefs({ thumb_px: parseInt(thumb.value, 10) || 240 });
         });
-      } else {
-        // Fallback for older browsers
-        lazyImages.forEach(img => img.classList.add('loaded'));
+      }
+
+      ['per', 'read', 'mix'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => savePrefs({ [id]: el.value }));
+      });
+
+      const smart = document.getElementById('smartSort');
+      if (smart) {
+        smart.addEventListener('change', () => {
+          savePrefs({ smart: smart.checked });
+          const url = new URL(location.href);
+          url.searchParams.set('smart', smart.checked ? '1' : '0');
+          location.href = url.toString();
+        });
       }
     })();
 
-    // --- Preload video on hover ---
-    document.querySelectorAll('.card[data-vid]').forEach(card => {
-      let preloadTimer;
-      card.addEventListener('mouseenter', () => {
-        preloadTimer = setTimeout(() => {
-          const vid = card.dataset.vid;
-          if (vid && !document.querySelector(`link[href*="${vid}"]`)) {
-            const link = document.createElement('link');
-            link.rel = 'prefetch';
-            link.href = `/stream/${vid}`;
-            document.head.appendChild(link);
-          }
-        }, 400);
+    (function themeToggle() {
+      const btn = document.getElementById('themeToggle');
+      function sync() { if (btn) btn.textContent = document.documentElement.classList.contains('light') ? '☀' : '☾'; }
+      sync();
+      btn?.addEventListener('click', () => {
+        const isLight = document.documentElement.classList.toggle('light');
+        savePrefs({ theme: isLight ? 'light' : 'dark' });
+        sync();
       });
-      card.addEventListener('mouseleave', () => clearTimeout(preloadTimer));
-    });
+    })();
 
-    ['per', 'read', 'mix'].forEach(id => {
-      const el = document.getElementById(id);
-      const k = 'minivid_' + id;
-      const v = localStorage.getItem(k); if (v && el) el.value = v;
-      if (el) el.addEventListener('change', () => localStorage.setItem(k, el.value));
-    });
+    (function tagbarToggle() {
+      const tagbar = document.getElementById('tagbar-popular');
+      const btn = document.getElementById('tagbarToggle');
+      const arrow = document.getElementById('tagbarArrow');
+      btn?.addEventListener('click', () => {
+        tagbar.classList.toggle('open');
+        if (arrow) arrow.textContent = tagbar.classList.contains('open') ? '⌃' : '⌄';
+      });
+    })();
 
-    localStorage.setItem('minivid_last_browse', location.pathname + location.search);
-    history.scrollRestoration = 'manual';
-    const scrollKey = 'minivid_scroll:' + location.pathname + location.search;
-    window.addEventListener('pageshow', () => {
-      const y = sessionStorage.getItem(scrollKey);
-      if (y) { requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10) || 0)); }
-    });
-    function saveScroll() { sessionStorage.setItem(scrollKey, String(window.scrollY)); }
-    document.querySelectorAll('a.thumb, .controls a, .controls button, .roots a, .pager a, .tagbar a').forEach(el => {
-      el.addEventListener('click', saveScroll, { capture: true });
-    });
-  </script>
+    (function lazyThumbs() {
+      const lazyImages = document.querySelectorAll('img.lazy-thumb, img[data-src]');
+      if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const img = entry.target;
+            if (img.dataset.src) {
+              img.src = img.dataset.src;
+              img.removeAttribute('data-src');
+            }
+            img.onload = () => img.classList.add('loaded');
+            observer.unobserve(img);
+          });
+        }, { rootMargin: '220px' });
+        lazyImages.forEach(img => observer.observe(img));
+      } else {
+        lazyImages.forEach(img => {
+          if (img.dataset.src) img.src = img.dataset.src;
+          img.classList.add('loaded');
+        });
+      }
+    })();
 
-  <script>
-    document.querySelectorAll('.tagbar button.x').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
+    document.addEventListener('click', async (e) => {
+      const hide = e.target.closest('.tagbar button.x');
+      if (hide) {
         e.preventDefault();
-        const t = btn.dataset.tag;
+        const t = hide.dataset.tag;
         try {
           await fetch('/api/prefs', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body:
-              JSON.stringify({ hide_tags_add: [t] })
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hide_tags_add: [t] })
           });
-          btn.previousElementSibling.remove();
-          btn.remove();
-        } catch (err) { alert('Erreur masquage tag'); }
-      });
-    });
+          hide.previousElementSibling?.remove();
+          hide.remove();
+        } catch (_) { alert('Erreur lors du masquage du tag'); }
+        return;
+      }
 
-    /* Handler favori — nouvelle étoile .fav-btn (overlay) + rétro-compat .favbtn-grid */
-    document.addEventListener('click', async (e) => {
       const star = e.target.closest('.fav-btn');
       if (star) {
         e.preventDefault();
-        // récupère l’ID depuis le bouton ou l’ancêtre .card
         let vid = star.dataset.id || star.dataset.vid;
-        if (!vid) {
-          const card = star.closest('[data-vid]');
-          if (card) vid = card.getAttribute('data-vid');
-        }
+        if (!vid) vid = star.closest('[data-vid]')?.getAttribute('data-vid');
         if (!vid) return;
-
         const next = !star.classList.contains('active');
         try {
           await fetch('/api/fav', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ vid, fav: next })
           });
           star.classList.toggle('active', next);
           star.setAttribute('aria-pressed', next ? 'true' : 'false');
-        } catch (err) { alert('Erreur favori'); }
-        return;
-      }
-
-      // ancien bouton dans la grille (texte) — conservé par sécurité
-      const old = e.target.closest('.favbtn-grid');
-      if (old) {
-        e.preventDefault();
-        const vid = old.dataset.vid;
-        const next = !old.classList.contains('on');
-        try {
-          await fetch('/api/fav', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-              vid, fav:
-                next
-            })
-          });
-          old.classList.toggle('on');
-          old.textContent = (next ? '★' : '☆') + ' Favori';
-        } catch (err) { alert('Erreur favori'); }
+        } catch (_) { alert('Erreur favori'); }
       }
     });
 
-    // --- Auto-tag Gemini ---
-    document.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.autotag-btn');
-      if (!btn) return;
-      e.preventDefault();
-      let vid = btn.dataset.id;
-      if (!vid) {
-        const card = btn.closest('[data-vid]');
-        if (card) vid = card.getAttribute('data-vid');
-      }
-      if (!vid || btn.classList.contains('loading')) return;
-
-      btn.classList.add('loading');
-      btn.textContent = '⏳';
-      try {
-        const resp = await fetch('/api/autotag', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vid })
-        });
-        const data = await resp.json();
-        if (data.ok && data.tags && data.tags.length) {
-          btn.classList.remove('loading');
-          btn.classList.add('done');
-          btn.textContent = '✓';
-          // Update tags on the card
-          const card = btn.closest('.card');
-          if (card) {
-            const tagsline = card.querySelector('.tagsline');
-            if (tagsline) {
-              // Remove "(pas de tag)" muted msg
-              const muted = tagsline.querySelector('.muted');
-              if (muted) muted.remove();
-              // Add new tags
-              data.tags.forEach(t => {
-                if (!tagsline.querySelector(`[data-tag="${t}"]`)) {
-                  const pill = document.createElement('a');
-                  pill.className = 'pill';
-                  pill.href = '#';
-                  pill.dataset.tag = t;
-                  pill.textContent = t;
-                  pill.addEventListener('click', (ev) => { ev.preventDefault(); toggleTag(t); });
-                  tagsline.appendChild(pill);
-                }
-              });
-            }
-          }
-          setTimeout(() => { btn.textContent = '✨'; btn.classList.remove('done'); }, 3000);
-        } else {
-          btn.classList.remove('loading');
-          btn.textContent = '✨';
-          alert(data.message || data.error || 'Erreur auto-tag');
-        }
-      } catch (err) {
-        btn.classList.remove('loading');
-        btn.textContent = '✨';
-        alert('Erreur réseau auto-tag');
-      }
-    });
-
-    // --- Multi-tags ---
     function parseQS() { return new URLSearchParams(location.search); }
-    function getSelState() {
+    function selectedTags() {
       const p = parseQS();
       const multi = (p.get('tags') || '').split(',').map(s => s.trim()).filter(Boolean);
       const singleTag = (p.get('tag') || '').trim();
       const singleUtag = (p.get('utag') || '').trim();
       return { multi, singleTag, singleUtag };
     }
-    function setSelTags(arr) {
+    function setTags(arr) {
       const p = parseQS();
       if (arr.length) p.set('tags', arr.join(',')); else p.delete('tags');
       p.delete('tag'); p.delete('utag');
       location.search = p.toString();
     }
-    function clearAllTags() {
-      const p = parseQS();
-      p.delete('tags'); p.delete('tag'); p.delete('utag');
-      location.search = p.toString();
-    }
-    function removeSingle(kind) {
-      const p = parseQS();
-      p.delete(kind);
-      location.search = p.toString();
-    }
     function toggleTag(t) {
-      const state = getSelState();
+      const state = selectedTags();
       const arr = state.multi.slice();
       if (state.singleTag) arr.push(state.singleTag);
       if (state.singleUtag) arr.push(state.singleUtag);
-      const set = new Set(arr.map(x => x.toLowerCase()));
-      if (set.has(t.toLowerCase())) {
-        const out = arr.filter(x => x.toLowerCase() !== t.toLowerCase());
-        setSelTags(out);
-      } else {
-        arr.push(t);
-        setSelTags(arr);
-      }
+      const has = arr.some(x => x.toLowerCase() === t.toLowerCase());
+      setTags(has ? arr.filter(x => x.toLowerCase() !== t.toLowerCase()) : [...arr, t]);
     }
-    function renderSelTags() {
+    function renderSelectedTags() {
       const wrap = document.getElementById('selwrap');
       const bar = document.getElementById('selfilter');
-      const state = getSelState();
-      if (!wrap) return;
-      wrap.innerHTML = '';
-
+      if (!wrap || !bar) return;
+      const state = selectedTags();
       const pills = [];
-      if (state.singleTag) { pills.push({ label: state.singleTag, remove: () => removeSingle('tag') }); }
-      if (state.singleUtag) { pills.push({ label: state.singleUtag, remove: () => removeSingle('utag') }); }
-      state.multi.forEach(t => pills.push({ label: t, remove: () => toggleTag(t) }));
-
+      if (state.singleTag) pills.push(state.singleTag);
+      if (state.singleUtag) pills.push(state.singleUtag);
+      state.multi.forEach(t => pills.push(t));
+      wrap.innerHTML = '';
       if (!pills.length) { bar.style.display = 'none'; return; }
       bar.style.display = 'flex';
-      pills.forEach(p => {
-        const a = document.createElement('a'); a.className = 'pill on'; a.href = '#'; a.textContent = p.label;
-        a.addEventListener('click', (e) => { e.preventDefault(); toggleTag(p.label); });
-        const x = document.createElement('button'); x.textContent = '×'; x.className = 'x';
-        x.addEventListener('click', (e) => { e.preventDefault(); p.remove(); });
-        const span = document.createElement('span'); span.className = 'selpill'; span.appendChild(a); span.appendChild(x);
+      [...new Set(pills)].forEach(t => {
+        const span = document.createElement('span');
+        span.className = 'selpill';
+        const a = document.createElement('a');
+        a.className = 'pill on';
+        a.href = '#';
+        a.textContent = t;
+        a.addEventListener('click', ev => { ev.preventDefault(); toggleTag(t); });
+        const x = document.createElement('button');
+        x.className = 'x';
+        x.textContent = '×';
+        x.addEventListener('click', ev => { ev.preventDefault(); toggleTag(t); });
+        span.append(a, x);
         wrap.appendChild(span);
       });
     }
     document.querySelectorAll('.tagbar a.pill, .tagsline a.pill').forEach(a => {
-      a.addEventListener('click', (e) => {
+      a.addEventListener('click', e => {
         const t = a.dataset.tag;
         if (!t) return;
         e.preventDefault();
         toggleTag(t);
       });
     });
-    renderSelTags();
+    renderSelectedTags();
 
-    // --- Taille vignettes ---
-    (function () {
-      const sel = document.getElementById('thumb');
-      const k = 'minivid_thumb_px';
-      function apply(px) {
-        const root = document.documentElement;
-        root.style.setProperty('--thumb-h', px + 'px');
-        const min = Math.max(200, Math.floor(px * 1.1));
-        root.style.setProperty('--card-min', min + 'px');
-      }
-      const saved = localStorage.getItem(k);
-      if (saved) { apply(parseInt(saved, 10) || 240); if (sel) sel.value = String(parseInt(saved, 10) || 240); }
-      if (sel) {
-        sel.addEventListener('change', () => {
-          const px = parseInt(sel.value, 10) || 240;
-          localStorage.setItem(k, String(px));
-          apply(px);
-        });
-      }
-    })();
-  </script>
-
-  <script>
-    /* Theme toggle */
-    (function () {
-      const key = 'minivid_theme';
-      try {
-        const saved = localStorage.getItem(key) || 'dark';
-        if (saved === 'light') document.documentElement.classList.add('light');
-        document.addEventListener('click', function (e) {
-          const b = e.target.closest('#themeToggle');
-          if (!b) return;
-          const el = document.documentElement;
-          el.classList.toggle('light');
-          localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
-        });
-      } catch (e) { }
+    (function cardProgress() {
+      document.querySelectorAll('.card[data-progress]').forEach(card => {
+        const t = parseFloat(card.dataset.progress || '0') || 0;
+        const d = parseFloat(card.dataset.duration || '0') || 0;
+        const pct = d > 0 ? Math.max(0, Math.min(100, Math.round(100 * t / d))) : 0;
+        if (!pct) return;
+        const bar = document.createElement('div');
+        bar.className = 'card-progress';
+        const fill = document.createElement('i');
+        fill.style.width = pct + '%';
+        bar.appendChild(fill);
+        card.appendChild(bar);
+      });
     })();
 
-    /* Raccourci logo -> Accueil si présent */
-    document.addEventListener('DOMContentLoaded', function () {
-      const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').trim().toLowerCase() === 'accueil');
-      const logo = Array.from(document.querySelectorAll('header a, header .brand a, header .logo a')).find(a => (a.textContent || '').trim().toLowerCase() === 'minivid');
-      if (home && logo) { logo.setAttribute('href', home.getAttribute('href')); }
+    localStorage.setItem('minivid_last_browse', location.pathname + location.search);
+    const scrollKey = 'minivid_scroll:' + location.pathname + location.search;
+    window.addEventListener('pageshow', () => {
+      const y = sessionStorage.getItem(scrollKey);
+      if (y) requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10) || 0));
     });
-  </script>
+    function saveScroll() { sessionStorage.setItem(scrollKey, String(window.scrollY)); }
+    document.querySelectorAll('a.thumb, .roots a, .pager a, .tagbar a').forEach(el => {
+      el.addEventListener('click', saveScroll, { capture: true });
+    });
 
-  <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page"
-    onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!=='undefined'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
-
-  <script>
-    (function () {
-      var btn = document.getElementById('backTop');
+    (function backTop() {
+      const btn = document.getElementById('backTop');
       if (!btn) return;
-      function toggle() { (window.scrollY > 200 ? btn.classList.add : btn.classList.remove)('show'); }
+      function toggle() { btn.classList.toggle('show', window.scrollY > 280); }
       window.addEventListener('scroll', toggle, { passive: true });
+      btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
       toggle();
-      btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    })();
-  </script>
-
-  <script>/*BACKTOP_FIX_LISTENER*/
-    (function () {
-      try {
-        var btn = document.getElementById('backTop');
-        if (!btn) return;
-        function __goTop__(e) {
-          try {
-            var el = document.scrollingElement || document.documentElement || document.body;
-            if (el && el.scrollTo) { el.scrollTo({ top: 0, behavior: 'smooth' }); }
-            else { window.scrollTo(0, 0); }
-          } catch (_) { window.scrollTo(0, 0); }
-          if (e) { e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
-          return false;
-        }
-        btn.addEventListener('click', __goTop__, true);
-        btn.onclick = __goTop__;
-      } catch (_) { }
-    })();
-  </script>
-
-  <script>
-    /* __THUMB_PROGRESS__ */
-    (function () {
-      try {
-        var cards = document.querySelectorAll('[data-vid], a[href*="/watch/"]');
-        cards.forEach(function (el) {
-          var vid = el.getAttribute('data-vid');
-          if (!vid && el.getAttribute('href')) {
-            var m = el.getAttribute('href').match(/\/watch\/(\w+)/); if (m) vid = m[1];
-          }
-          if (!vid) return;
-          var t = 0, d = 0;
-          try { t = parseFloat(localStorage.getItem('progress::' + vid)) || 0; } catch (e) { }
-          var rootCard = el.closest('.card') || el;
-          var dur = rootCard && rootCard.getAttribute('data-duration');
-          if (dur) { d = parseFloat(dur) || 0; }
-          var pct = (d > 0 && t > 0) ? Math.max(0, Math.min(100, Math.round(100 * t / d))) : 0;
-          if (pct > 0) {
-            var c = rootCard.querySelector('.card-progress');
-            if (!c) {
-              c = document.createElement('div'); c.className = 'card-progress';
-              var i = document.createElement('i'); c.appendChild(i);
-              rootCard.style.position = rootCard.style.position || 'relative';
-              rootCard.appendChild(c);
-            }
-            c.firstChild.style.width = pct + '%';
-          }
-        });
-      } catch (e) { }
     })();
   </script>
 </body>

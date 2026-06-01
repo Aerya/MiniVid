@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
 
 <head>
   <meta charset="utf-8" />
@@ -7,145 +7,37 @@
   <title>MiniVid — {{ name }}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css" />
-
-  <style>
-    /*THEME_TOGGLE*/
-    html.light {
-      filter: invert(1) hue-rotate(180deg)
-    }
-
-    html.light img,
-    html.light video,
-    html.light canvas,
-    html.light iframe,
-    html.light picture {
-      filter: invert(1) hue-rotate(180deg)
-    }
-
-    /* Fix plein écran mode clair :
-       En fullscreen, le navigateur sort l'élément du flux normal — le filtre invert()
-       de html.light ne s'applique plus. On remet donc tout à filter:none. */
-    html.light :-webkit-full-screen,
-    html.light :-moz-full-screen,
-    html.light :fullscreen,
-    html.light :-webkit-full-screen *,
-    html.light :-moz-full-screen *,
-    html.light :fullscreen * { filter: none !important; }
-
-    #themeToggle {
-      background: transparent;
-      border: 1px solid currentColor;
-      border-radius: 10px;
-      padding: .25rem .5rem;
-      margin-left: .5rem;
-      line-height: 1
-    }
-
-    .tagsline {
-      gap: .45rem .6rem
-    }
-
-    .tagsline .pill small {
-      margin-left: .25rem
-    }
-  </style>
-
-  <style>
-    .backtop {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      z-index: 999;
-      display: none;
-      border: 1px solid currentColor;
-      border-radius: 999px;
-      padding: .5rem .6rem;
-      background: rgba(0, 0, 0, .35);
-      backdrop-filter: blur(2px);
-      cursor: pointer
-    }
-
-    html.light .backtop {
-      background: rgba(255, 255, 255, .65)
-    }
-
-    .backtop.show {
-      display: inline-flex
-    }
-  </style>
-
-  <style>
-    .fsbtn {
-      position: absolute;
-      right: 14px;
-      top: 14px;
-      padding: .35rem .5rem;
-      border: 1px solid currentColor;
-      border-radius: .5rem;
-      background: rgba(0, 0, 0, .35);
-      backdrop-filter: blur(2px);
-      cursor: pointer;
-      z-index: 5
-    }
-
-    html.light .fsbtn {
-      background: rgba(255, 255, 255, .65)
-    }
-
-    .player,
-    .watch,
-    .viewer {
-      position: relative
-    }
-  </style>
-  <style>
-    #backTop {
-      display: inline-flex !important
-    }
-  </style>
-
-  <style>
-    /* A11y focus ring */
-    :focus-visible {
-      outline: 2px solid #3b82f6;
-      outline-offset: 2px;
-    }
-  </style>
 </head>
 
 <body class="watchpage" data-vid="{{ vid }}">
   <div id="___topanchor"></div>
 
   <header class="topbar">
-    <a class="back-btn" href="{{ back }}" title="Retour à la liste">
+    <a class="back-btn" id="btn-back" href="{{ back }}" title="Retour à la liste">
       <span class="back-icon">←</span>
       <span class="back-text">Retour</span>
     </a>
-    <div class="brand">
-      <img src="/static/logo.svg" alt="logo" height="28" />
+    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
+      <img src="/static/logo.svg" alt="" height="30" />
       <strong>MiniVid</strong>
-    </div>
+    </a>
     <div class="header-right">
-      <button id="themeToggle" class="btn" title="Thème sombre/clair">🌙</button>
+      <button id="themeToggle" class="icon-btn" title="Thème clair/sombre" aria-label="Thème clair/sombre">☾</button>
+      <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
     </div>
   </header>
-
-
 
   <main class="watch">
     {% if unsupported %}
     <div class="fallback">
-      <p><strong>Ce navigateur ne peut pas lire directement ce type de fichier (<code>.{{ ext }}</code>) et le
-          transcodage est désactivé.</strong></p>
-      <p>Activez <code>MINI_TRANSCODE=1</code> pour permettre un remux/transcodage à la volée, ou utilisez un navigateur
-        basé Chromium.</p>
-      <a class="dlbtn" href="/download/{{ vid }}">📥 Télécharger le fichier</a>
+      <p><strong>Ce navigateur ne peut pas lire directement ce fichier .{{ ext }} et le transcodage est désactivé.</strong></p>
+      <p>Activez <code>MINI_TRANSCODE=1</code> pour autoriser le remux/transcodage à la volée, ou utilisez un navigateur Chromium.</p>
+      <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
     </div>
     {% else %}
     <div class="player-wrap">
       {% if playback_method == 'hls' %}
-      <video id="v" playsinline webkit-playsinline controls autoplay
-        style="width:100%;height:auto;max-height:80vh;"></video>
+      <video id="v" playsinline webkit-playsinline controls autoplay></video>
       <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
       <script>
         const video = document.getElementById('v');
@@ -161,22 +53,18 @@
         }
       </script>
       {% else %}
-      <video id="v" playsinline webkit-playsinline controls autoplay style="width:100%;height:auto;max-height:80vh;">
+      <video id="v" playsinline webkit-playsinline controls autoplay>
         <source id="vsource" src="{{ play_url }}" />
       </video>
 
       {% if playback_method == 'direct' and can_hls %}
-      <!-- Fallback automatique vers HLS si le direct échoue -->
       <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
       <script>
         const video = document.getElementById('v');
         const hlsSrc = "{{ url_for('hls_playlist', vid=vid) }}";
-
         video.onerror = () => {
-          console.warn("Lecture directe échouée, tentative HLS...");
           const badge = document.querySelector('.playback-badge');
-          if (badge) badge.textContent = 'hls (fallback)';
-
+          if (badge) badge.textContent = 'hls';
           if (Hls.isSupported()) {
             const hls = new Hls();
             hls.loadSource(hlsSrc);
@@ -189,7 +77,6 @@
         };
       </script>
       {% endif %}
-
       {% endif %}
       {% if playback_method and playback_method != 'direct' %}
       <span class="playback-badge">{{ playback_method }}</span>
@@ -197,434 +84,273 @@
     </div>
 
     <div class="zoom-bar">
-      <span>Zoom&nbsp;:</span>
+      <span>Zoom</span>
       <button class="zoom-btn active" data-zoom="1">1×</button>
       <button class="zoom-btn" data-zoom="1.5">1.5×</button>
       <button class="zoom-btn" data-zoom="2">2×</button>
     </div>
     {% endif %}
 
-    {% if res %}
-    <p class="meta" id="resline">Résolution : <span id="resval">{{ res }}</span></p>
-    {% else %}
-    <p class="meta" id="resline">Résolution : <span id="resval">?</span></p>
-    {% endif %}
+    <p class="meta" id="resline">Résolution : <span id="resval">{{ res or '?' }}</span></p>
 
     <section class="meta-ops">
       <div class="tagsline">
         {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
         {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
-        <button id="addtag" class="pill add">＋ Tag</button>
+        <button id="addtag" class="pill add">+ Tag</button>
       </div>
       <div class="actions">
-        <button id="favbtn" class="fav {{ 'on' if fav else '' }}">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z" fill="{{ 'currentColor' if fav else 'none' }}" stroke="currentColor" stroke-width="2"/></svg>Favori
-        </button>
-        <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer Non lue' if played else 'Marquer Lue'
-          }}</button>
+        <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
+        <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
         <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
       </div>
     </section>
 
-    <!-- Vidéos similaires -->
     <section class="similar-section" id="similar-section" style="display:none;">
       <h3 class="similar-title">Vidéos similaires</h3>
       <div class="grid" id="similar-grid"></div>
     </section>
   </main>
 
-  <!-- Keyboard shortcuts panel -->
   <div class="shortcuts-hint" id="shortcuts">
     <button class="toggle-shortcuts"
-      onclick="document.getElementById('shortcutsPanel').hidden = !document.getElementById('shortcutsPanel').hidden">⌨️
-      Raccourcis</button>
+      onclick="document.getElementById('shortcutsPanel').hidden = !document.getElementById('shortcutsPanel').hidden">Raccourcis</button>
     <div class="shortcuts-panel" id="shortcutsPanel" hidden>
-      <p><kbd>Espace</kbd> / <kbd>K</kbd> — Lecture/Pause</p>
-      <p><kbd>J</kbd> — Reculer 10s</p>
-      <p><kbd>L</kbd> — Avancer 10s</p>
-      <p><kbd>←</kbd> / <kbd>→</kbd> — ±5s</p>
-      <p><kbd>↑</kbd> / <kbd>↓</kbd> — Volume</p>
-      <p><kbd>F</kbd> — Plein écran</p>
-      <p><kbd>M</kbd> — Muet</p>
+      <p><kbd>Espace</kbd> / <kbd>K</kbd> Lecture/Pause</p>
+      <p><kbd>J</kbd> Reculer 10s</p>
+      <p><kbd>L</kbd> Avancer 10s</p>
+      <p><kbd>←</kbd> / <kbd>→</kbd> ±5s</p>
+      <p><kbd>↑</kbd> / <kbd>↓</kbd> Volume</p>
+      <p><kbd>F</kbd> Plein écran</p>
+      <p><kbd>M</kbd> Muet</p>
     </div>
   </div>
 
   <footer class="footer">
-    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+    <div style="display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;">
       <span>MiniVid v2.1</span>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <strong style="color: #667eea;">Aerya</strong>
-        {% if not hide_credits %}
-        <img src="https://upandclear.org/wp-content/uploads/2024/06/Logo.detoure1.png.webp" alt="Aerya"
-          style="width: 20px; height: 20px; border-radius: 50%; object-fit: cover;">
-        {% endif %}
-      </div>
-      <div style="display: flex; align-items: center; gap: 15px;">
-        <a href="https://github.com/Aerya/MiniVid" target="_blank"
-          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">GitHub</a>
-        {% if not hide_credits %}
-        <a href="https://upandclear.org/" target="_blank"
-          style="color: #667eea; text-decoration: none; font-size: 12px; font-weight: 500;">Blog</a>
-        <a href="https://ko-fi.com/upandclear" target="_blank"
-          style="display: flex; align-items: center; gap: 4px; text-decoration: none;"><img
-            src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/ko-fi.webp" alt="Ko-fi"
-            style="width: 18px; height: 18px;"> ❤️</a>
-        {% endif %}
-      </div>
+      <strong>Aerya</strong>
+      <a href="https://github.com/Aerya/MiniVid" target="_blank" rel="noreferrer">GitHub</a>
+      {% if not hide_credits %}
+      <a href="https://upandclear.org/" target="_blank" rel="noreferrer">Blog</a>
+      <a href="https://ko-fi.com/upandclear" target="_blank" rel="noreferrer">Ko-fi</a>
+      {% endif %}
     </div>
   </footer>
 
+  <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page">↑</button>
+
   <script>
-    const backLink = document.querySelector('a.back');
-    const lastBrowse = localStorage.getItem('minivid_last_browse');
-    if (backLink && backLink.getAttribute('href') === '/browse' && lastBrowse) {
-      backLink.setAttribute('href', lastBrowse);
+    const VID = {{ vid | tojson }};
+    async function savePrefs(patch) {
+      try {
+        await fetch('/api/preferences', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
+      } catch (_) {}
     }
 
-    document.getElementById('addtag').addEventListener('click', async () => {
-      const res = prompt('Ajouter des tags (séparés par des virgules) :'); if (!res) return;
-      const tags = res.split(',').map(s => s.trim()).filter(Boolean); if (!tags.length) return;
+    (function setupBack() {
+      const back = document.getElementById('btn-back');
+      const lastBrowse = localStorage.getItem('minivid_last_browse');
+      if (lastBrowse && back && (back.getAttribute('href') || '').startsWith('/browse')) {
+        back.setAttribute('href', lastBrowse);
+      }
+    })();
+
+    (function themeToggle() {
+      const btn = document.getElementById('themeToggle');
+      function sync() { if (btn) btn.textContent = document.documentElement.classList.contains('light') ? '☀' : '☾'; }
+      sync();
+      btn?.addEventListener('click', () => {
+        const isLight = document.documentElement.classList.toggle('light');
+        savePrefs({ theme: isLight ? 'light' : 'dark' });
+        sync();
+      });
+    })();
+
+    document.getElementById('addtag')?.addEventListener('click', async () => {
+      const res = prompt('Ajouter des tags séparés par des virgules :');
+      if (!res) return;
+      const tags = res.split(',').map(s => s.trim()).filter(Boolean);
+      if (!tags.length) return;
       try {
         await fetch('/api/tag', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vid: "{{ vid }}", action: 'add', tags })
+          body: JSON.stringify({ vid: VID, tags })
         });
         location.reload();
-      } catch (e) { alert('Erreur tag'); }
+      } catch (_) { alert('Erreur tag'); }
     });
 
     const favBtn = document.getElementById('favbtn');
-    favBtn.addEventListener('click', async () => {
+    favBtn?.addEventListener('click', async () => {
       const next = !favBtn.classList.contains('on');
       try {
         await fetch('/api/fav', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vid: "{{ vid }}", fav: next })
+          body: JSON.stringify({ vid: VID, fav: next })
         });
-        favBtn.classList.toggle('on');
-        favBtn.querySelector('svg path').setAttribute('fill', next ? 'currentColor' : 'none');
-      } catch (e) { alert('Erreur favori'); }
+        favBtn.classList.toggle('on', next);
+      } catch (_) { alert('Erreur favori'); }
     });
 
     const readBtn = document.getElementById('readbtn');
     const readState = document.getElementById('readstate');
-    readBtn.addEventListener('click', async () => {
-      const next = !readBtn.classList.contains('on');
-      try {
-        await fetch('/api/played', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vid: "{{ vid }}", played: next })
-        });
-        readBtn.classList.toggle('on');
-        readBtn.textContent = next ? 'Marquer Non lue' : 'Marquer Lue';
-        readState.textContent = next ? 'Lue' : 'Non lue';
-      } catch (e) { alert('Erreur état de lecture'); }
+    async function setPlayed(next) {
+      await fetch('/api/played', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vid: VID, played: next })
+      });
+      readBtn?.classList.toggle('on', next);
+      if (readBtn) readBtn.textContent = next ? 'Marquer non lue' : 'Marquer lue';
+      if (readState) readState.textContent = next ? 'Lue' : 'Non lue';
+    }
+    readBtn?.addEventListener('click', async () => {
+      try { await setPlayed(!readBtn.classList.contains('on')); }
+      catch (_) { alert('Erreur état de lecture'); }
     });
 
     const v = document.getElementById('v');
     const span = document.getElementById('resval');
     if (v) {
-      let sent = false;
-      function maybeMark() {
-        if (sent) return;
+      let sentPlayed = false;
+      let saveTick = 0;
+
+      async function loadProgress() {
+        try {
+          const r = await fetch('/api/progress/' + encodeURIComponent(VID), { credentials: 'same-origin' });
+          const j = await r.json();
+          const t = parseFloat(j.progress || 0);
+          if (t > 1 && t < (v.duration || 1) - 1) v.currentTime = t;
+        } catch (_) {}
+      }
+
+      function maybeMarkPlayed() {
+        if (sentPlayed) return;
         const th = Math.min(10, (v.duration || 1) * 0.05);
         if (v.currentTime >= th || v.ended) {
-          sent = true;
-          fetch('/api/played', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vid: "{{ vid }}", played: true })
-          }).then(() => {
-            readBtn?.classList.add('on');
-            if (readBtn) readBtn.textContent = 'Marquer Non lue';
-            if (readState) readState.textContent = 'Lue';
-          }).catch(() => { });
+          sentPlayed = true;
+          setPlayed(true).catch(() => {});
         }
       }
-      v.addEventListener('timeupdate', maybeMark);
-      v.addEventListener('ended', maybeMark);
+
       v.addEventListener('loadedmetadata', () => {
-        if (v.videoWidth && v.videoHeight) { span.textContent = v.videoWidth + '×' + v.videoHeight; }
+        if (v.videoWidth && v.videoHeight && span) span.textContent = v.videoWidth + '×' + v.videoHeight;
+        loadProgress();
+      }, { once: true });
+
+      v.addEventListener('timeupdate', () => {
+        maybeMarkPlayed();
+        if (++saveTick % 4) return;
+        fetch('/api/progress/' + encodeURIComponent(VID), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ progress: v.currentTime || 0 })
+        }).catch(() => {});
       });
+
+      v.addEventListener('ended', () => {
+        fetch('/api/progress/' + encodeURIComponent(VID), { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
+        maybeMarkPlayed();
+      });
+
+      v.addEventListener('touchend', function (ev) {
+        const now = Date.now();
+        const rect = v.getBoundingClientRect();
+        const x = (ev.changedTouches?.[0]?.clientX || 0) - rect.left;
+        if (v._lastTap && now - v._lastTap < 350) {
+          v.currentTime = x < rect.width / 2
+            ? Math.max(0, (v.currentTime || 0) - 10)
+            : Math.min(v.duration || v.currentTime + 10, (v.currentTime || 0) + 10);
+          v._lastTap = 0;
+          ev.preventDefault();
+        } else {
+          v._lastTap = now;
+        }
+      }, { passive: false });
     }
-  </script>
 
-  <script>
-    (function () {
-      const key = 'minivid_theme';
-      try {
-        const saved = localStorage.getItem(key) || 'dark';
-        if (saved === 'light') document.documentElement.classList.add('light');
-        document.addEventListener('click', function (e) {
-          const b = e.target.closest('#themeToggle');
-          if (!b) return;
-          const el = document.documentElement;
-          el.classList.toggle('light');
-          localStorage.setItem(key, el.classList.contains('light') ? 'light' : 'dark');
-        });
-      } catch (e) { }
-
-      // Fix mode clair + plein écran : le filtre invert() du html ne s'applique
-      // plus une fois que l'élément sort du flux normal. On force filter:none sur
-      // la vidéo à l'entrée en fullscreen, et on restaure à la sortie.
-      (function () {
-        function applyFSFix() {
-          const v = document.getElementById('v');
-          if (!v) return;
-          const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
-          const isLight = document.documentElement.classList.contains('light');
-          v.style.filter = (isFS && isLight) ? 'none' : '';
-        }
-        ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(function (ev) {
-          document.addEventListener(ev, applyFSFix);
-        });
-        // Aussi si le thème change pendant le fullscreen
-        document.getElementById('themeToggle') && document.getElementById('themeToggle').addEventListener('click', function () {
-          setTimeout(applyFSFix, 0);
-        });
-      })();
-
-    })();
-    document.addEventListener('DOMContentLoaded', function () {
-      const home = Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').trim().toLowerCase() === 'accueil');
-      const logo = Array.from(document.querySelectorAll('header a, header .brand a, header .logo a')).find(a => (a.textContent || '').trim().toLowerCase() === 'minivid');
-      if (home && logo) { logo.setAttribute('href', home.getAttribute('href')); }
-    });
-  </script>
-
-  <!-- Keyboard shortcuts handler -->
-  <script>
     document.addEventListener('keydown', (e) => {
-      const v = document.getElementById('v');
-      if (!v || e.target.matches('input, textarea, [contenteditable]')) return;
-
+      const video = document.getElementById('v');
+      if (!video || e.target.matches('input, textarea, [contenteditable]')) return;
       const key = e.key.toLowerCase();
-      switch (key) {
-        case ' ':
-        case 'k':
-          e.preventDefault();
-          v.paused ? v.play() : v.pause();
-          break;
-        case 'j':
-          e.preventDefault();
-          v.currentTime = Math.max(0, v.currentTime - 10);
-          break;
-        case 'l':
-          e.preventDefault();
-          v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
-          break;
-        case 'f':
-          e.preventDefault();
-          if (document.fullscreenElement) {
-            document.exitFullscreen?.();
-          } else {
-            (v.requestFullscreen || v.webkitRequestFullscreen || v.msRequestFullscreen)?.call(v);
-          }
-          break;
-        case 'm':
-          e.preventDefault();
-          v.muted = !v.muted;
-          break;
-        case 'arrowleft':
-          e.preventDefault();
-          v.currentTime = Math.max(0, v.currentTime - 5);
-          break;
-        case 'arrowright':
-          e.preventDefault();
-          v.currentTime = Math.min(v.duration || 0, v.currentTime + 5);
-          break;
-        case 'arrowup':
-          e.preventDefault();
-          v.volume = Math.min(1, v.volume + 0.1);
-          break;
-        case 'arrowdown':
-          e.preventDefault();
-          v.volume = Math.max(0, v.volume - 0.1);
-          break;
-      }
+      if (key === ' ' || key === 'k') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+      if (key === 'j') { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 10); }
+      if (key === 'l') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 10); }
+      if (key === 'f') { e.preventDefault(); document.fullscreenElement ? document.exitFullscreen?.() : video.requestFullscreen?.(); }
+      if (key === 'm') { e.preventDefault(); video.muted = !video.muted; }
+      if (key === 'arrowleft') { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); }
+      if (key === 'arrowright') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); }
+      if (key === 'arrowup') { e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); }
+      if (key === 'arrowdown') { e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); }
     });
-  </script>
 
-  <button id="backTop" class="backtop" aria-label="Haut de page" title="Haut de page"
-    onclick="return (function(){try{var a=document.getElementById('___topanchor');if(!a){a=document.createElement('div');a.id='___topanchor';document.body.insertBefore(a,document.body.firstChild);}var targets=[document.scrollingElement,document.documentElement,document.body];var extra=document.querySelectorAll('main,.content,.container,.page,.grid,#app,#root,#content,.scroll,.scrollable');extra.forEach(function(n){targets.push(n)});var done=false;for(var i=0;i<targets.length;i++){var t=targets[i];if(!t)continue;if(t.scrollTo){t.scrollTo({top:0,behavior:'smooth'});done=true;}else if(typeof t.scrollTop!==\'undefined\'){t.scrollTop=0;done=true;}}if(!done){location.hash='#___topanchor';}}catch(e){location.hash='#___topanchor';}return false;})()">↑</button>
-
-  <script>
-    (function () {
-      var btn = document.getElementById('backTop');
-      if (!btn) return;
-      function toggle() { (window.scrollY > 200 ? btn.classList.add : btn.classList.remove)('show'); }
-      window.addEventListener('scroll', toggle, { passive: true });
-      toggle();
-      btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    })();
-  </script>
-
-  <script>
-    (function () {
-      const v = document.getElementById('v');
-      const b = document.getElementById('btnFS');
-      function enterFS(el) {
-        const c = el.closest('.player') || el;
-        const target = c;
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => { });
-          return;
-        }
-        (target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen || target.mozRequestFullScreen)?.call(target);
-      }
-      if (b && v) {
-        b.addEventListener('click', function (e) { e.preventDefault(); enterFS(v); });
-      }
-    })();
-  </script>
-
-  <script>
-    /* Zoom bar */
-    (function () {
+    (function zoomBar() {
       const wrap = document.querySelector('.player-wrap');
       if (!wrap) return;
-      document.querySelectorAll('.zoom-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          document.querySelectorAll('.zoom-btn').forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.zoom-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.zoom-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          var z = parseFloat(btn.dataset.zoom) || 1;
+          const z = parseFloat(btn.dataset.zoom) || 1;
           if (z === 1) {
             wrap.style.width = '';
             wrap.style.maxWidth = '';
           } else {
-            var base = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
+            const base = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
             wrap.style.width = (base * z) + 'px';
             wrap.style.maxWidth = 'none';
           }
         });
       });
     })();
-  </script>
 
-  <script>/*BACKTOP_FIX_LISTENER*/
-    (function () {
-      try {
-        var btn = document.getElementById('backTop');
-        if (!btn) return;
-        function __goTop__(e) {
-          try {
-            var el = document.scrollingElement || document.documentElement || document.body;
-            if (el && el.scrollTo) { el.scrollTo({ top: 0, behavior: 'smooth' }); }
-            else { window.scrollTo(0, 0); }
-          } catch (_) { window.scrollTo(0, 0); }
-          if (e) { e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); }
-          return false;
-        }
-        btn.addEventListener('click', __goTop__, true);
-        btn.onclick = __goTop__;
-      } catch (_) { }
-    })();
-  </script>
-
-  <script>
-    // __VID_PROGRESS__
-    (function () {
-      try {
-        var v = document.querySelector('video');
-        if (!v) return;
-        var vid = (document.body.getAttribute('data-vid') || location.pathname.split('/').pop() || '').trim();
-        function key() { return 'progress::' + vid; }
-        v.addEventListener('loadedmetadata', function () {
-          try {
-            var s = localStorage.getItem(key());
-            if (s) {
-              var t = parseFloat(s) || 0;
-              if (t > 1 && t < (v.duration || 1) - 1) { v.currentTime = t; }
-            }
-          } catch (e) { }
-        }, { once: true });
-        var saveTick = 0;
-        v.addEventListener('timeupdate', function () {
-          if (++saveTick % 3) return;
-          try { localStorage.setItem(key(), String(v.currentTime || 0)); } catch (e) { }
-        });
-        v.addEventListener('ended', function () { try { localStorage.removeItem(key()); } catch (e) { } });
-        // Gestes mobiles
-        var lastTap = 0;
-        v.addEventListener('touchend', function (ev) {
-          var now = Date.now();
-          var rect = v.getBoundingClientRect();
-          var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : 0) - rect.left;
-          if (now - lastTap < 350) {
-            if (x < rect.width / 2) { v.currentTime = Math.max(0, (v.currentTime || 0) - 10); }
-            else { v.currentTime = Math.min(v.duration || v.currentTime + 10, (v.currentTime || 0) + 10); }
-            lastTap = 0; ev.preventDefault(); return false;
-          } else { lastTap = now; }
-        }, { passive: false });
-        var startX = null;
-        v.addEventListener('touchstart', function (ev) { startX = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : null); }, { passive: true });
-        v.addEventListener('touchend', function (ev) {
-          if (startX == null) return;
-          var x = (ev.changedTouches && ev.changedTouches[0] ? ev.changedTouches[0].clientX : startX);
-          var dx = x - startX;
-          if (Math.abs(dx) > 60) {
-            if (dx > 0) { v.currentTime = Math.max(0, (v.currentTime || 0) - 15); }
-            else { v.currentTime = Math.min(v.duration || v.currentTime + 15, (v.currentTime || 0) + 15); }
-            ev.preventDefault(); return false;
-          }
-        }, { passive: false });
-      } catch (e) { }
-    })();
-  </script>
-
-  <script>
-    /* Similar videos */
-    (function () {
-      const VID = '{{ vid }}';
+    (function similarVideos() {
       const section = document.getElementById('similar-section');
       const grid = document.getElementById('similar-grid');
       if (!section || !grid) return;
-
       function formatSize(n) {
         if (!n) return '';
         if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' Go';
         return (n / 1048576).toFixed(1) + ' Mo';
       }
-
       async function loadSimilar() {
         try {
-          const r = await fetch('/api/similar/' + VID, { credentials: 'same-origin' });
+          const r = await fetch('/api/similar/' + encodeURIComponent(VID), { credentials: 'same-origin' });
           const j = await r.json();
-          if (!j || !j.ok || !j.videos || !j.videos.length) return;
+          if (!j?.ok || !j.videos?.length) return;
           section.style.display = '';
-          grid.innerHTML = j.videos.map(v => {
-            const safeName = v.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const playedCls = v.played ? 'played' : 'unplayed';
-            const favCls = v.fav ? 'fav-btn active' : 'fav-btn';
-            const statusHtml = v.played
-              ? '<div class="status">Lue</div>'
-              : '<div class="status un">Non lue</div>';
-            const tags = (v.tags || []).slice(0, 5).map(t =>
+          grid.innerHTML = j.videos.map(video => {
+            const safeName = video.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const statusHtml = video.played ? '<div class="status">Lue</div>' : '<div class="status un">Non lue</div>';
+            const favCls = video.fav ? 'fav-btn active' : 'fav-btn';
+            const tags = (video.tags || []).slice(0, 5).map(t =>
               `<a class="pill" href="/browse?tag=${encodeURIComponent(t)}">${t}</a>`
             ).join('');
-            const tagsHtml = tags
-              ? tags
-              : '<span class="muted">(pas de tag)</span>';
             return `
-              <article class="card ${playedCls}" data-vid="${v.id}">
-                <a class="thumb" href="/watch/${v.id}">
-                  <img loading="lazy" src="/thumb/${v.id}.jpg"
-                       alt="preview"
-                       onerror="this.src='/static/placeholder.svg'">
-                  <div class="badge">${(v.ext||'').toUpperCase()}</div>
+              <article class="card ${video.played ? 'played' : 'unplayed'}" data-vid="${video.id}">
+                <a class="thumb" href="/watch/${video.id}">
+                  <img loading="lazy" src="/thumb/${video.id}.jpg" alt="Aperçu vidéo" onerror="this.src='/static/placeholder.svg'">
+                  <div class="badge">${(video.ext || '').toUpperCase()}</div>
                   ${statusHtml}
                 </a>
-                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${v.id}"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg></button>
+                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${video.id}"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg></button>
                 <h3 title="${safeName}">${safeName}</h3>
-                <p class="meta"><span>${formatSize(v.size)}</span></p>
-                <p class="tagsline">${tagsHtml}</p>
+                <p class="meta">${formatSize(video.size)}</p>
+                <p class="tagsline">${tags || '<span class="muted">Sans tag</span>'}</p>
               </article>`;
           }).join('');
-
-          // Fav toggle on similar cards
           grid.querySelectorAll('.fav-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
               e.preventDefault();
@@ -633,18 +359,27 @@
               const next = !btn.classList.contains('active');
               try {
                 await fetch('/api/fav', {
-                  method: 'POST', credentials: 'same-origin',
+                  method: 'POST',
+                  credentials: 'same-origin',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ vid: id, fav: next })
                 });
                 btn.classList.toggle('active', next);
-              } catch(err) {}
+              } catch (_) {}
             });
           });
-        } catch(e) {}
+        } catch (_) {}
       }
-
       loadSimilar();
+    })();
+
+    (function backTop() {
+      const btn = document.getElementById('backTop');
+      if (!btn) return;
+      function toggle() { btn.classList.toggle('show', window.scrollY > 280); }
+      window.addEventListener('scroll', toggle, { passive: true });
+      btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+      toggle();
     })();
   </script>
 </body>

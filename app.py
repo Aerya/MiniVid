@@ -24,7 +24,7 @@ def ratelimited(key, per=1.0):
     _RATE_LIMIT[key] = now
     return False
 
-import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil
+import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil, sqlite3
 from datetime import datetime
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for, Response
@@ -40,6 +40,9 @@ DATA_DIR = os.environ.get("DATA_DIR") or "/data"
 THUMB_DIR = os.environ.get("THUMB_DIR") or "/cache/thumbs"
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(THUMB_DIR, exist_ok=True)
+STATE_DB = os.path.join(DATA_DIR, "state.db")
+STATE_JSON = os.path.join(DATA_DIR, "state.json")
+STATE_LOCK = threading.RLock()
 
 MINI_USER = os.environ.get("MINI_USER")
 MINI_PASS = os.environ.get("MINI_PASS")
@@ -123,7 +126,12 @@ LOG.info("Template dir: %s | Static dir: %s", TPL_DIR, ST_DIR)
 # Inject hide_credits into all templates
 @app.context_processor
 def inject_footer_config():
-    return dict(hide_credits=HIDE_FOOTER_CREDITS)
+    prefs = {}
+    try:
+        prefs = (read_state().get("prefs", {}) or {})
+    except Exception:
+        prefs = {}
+    return dict(hide_credits=HIDE_FOOTER_CREDITS, ui_prefs=prefs)
 
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')
@@ -310,21 +318,111 @@ except Exception as _e:
     LOG.warning("Impossible de démarrer l'auto-refresh: %s", _e)
 
 # ---------- State ----------
-def read_state():
-    path = os.path.join(DATA_DIR, "state.json")
-    if not os.path.exists(path):
-        return {"played":{}, "progress":{}, "fav":{}, "utags":{}, "lists":{}, "meta":{}, "prefs":{"hide_tags":[]}, "banned_tags":[]}
+def _default_state():
+    return {
+        "played": {},
+        "progress": {},
+        "fav": {},
+        "utags": {},
+        "lists": {},
+        "meta": {},
+        "prefs": {
+            "hide_tags": [],
+            "theme": "dark",
+            "thumb_px": 240,
+            "per": "all",
+            "read": "all",
+            "mix": "all",
+            "smart": False
+        },
+        "banned_tags": [],
+        "similar_enabled": False,
+        "similar_min_tags": 2
+    }
+
+def _merge_state(st):
+    base = _default_state()
+    if isinstance(st, dict):
+        for k, v in st.items():
+            if k == "prefs" and isinstance(v, dict):
+                prefs = base["prefs"].copy()
+                prefs.update(v)
+                base["prefs"] = prefs
+            else:
+                base[k] = v
+    return base
+
+def _state_db_conn():
+    conn = sqlite3.connect(STATE_DB, timeout=15)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+    """)
+    return conn
+
+def _read_state_json():
+    if not os.path.exists(STATE_JSON):
+        return _default_state()
     try:
-        with open(path,"r",encoding="utf-8") as f:
-            return json.load(f)
+        with open(STATE_JSON, "r", encoding="utf-8") as f:
+            return _merge_state(json.load(f))
     except Exception:
-        return {"played":{}, "progress":{}, "fav":{}, "utags":{}, "lists":{}, "meta":{}, "prefs":{"hide_tags":[] }, "banned_tags":[]}
+        return _default_state()
+
+def _bootstrap_state_db():
+    with STATE_LOCK:
+        try:
+            conn = _state_db_conn()
+            row = conn.execute("SELECT value FROM app_state WHERE key='state'").fetchone()
+            if row is None:
+                st = _read_state_json()
+                conn.execute(
+                    "INSERT OR REPLACE INTO app_state(key, value, updated_at) VALUES('state', ?, ?)",
+                    (json.dumps(st, ensure_ascii=False), int(time.time()))
+                )
+                conn.commit()
+            conn.close()
+        except Exception as e:
+            LOG.warning("SQLite state bootstrap failed: %s", e)
+
+def read_state():
+    with STATE_LOCK:
+        try:
+            _bootstrap_state_db()
+            conn = _state_db_conn()
+            row = conn.execute("SELECT value FROM app_state WHERE key='state'").fetchone()
+            conn.close()
+            if row:
+                return _merge_state(json.loads(row[0]))
+        except Exception as e:
+            LOG.warning("SQLite state read failed, falling back to JSON: %s", e)
+        return _read_state_json()
 
 def write_state(st):
-    tmp = os.path.join(DATA_DIR, "state.tmp.json")
-    with open(tmp,"w",encoding="utf-8") as f:
-        json.dump(st, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, os.path.join(DATA_DIR, "state.json"))
+    st = _merge_state(st)
+    payload = json.dumps(st, ensure_ascii=False)
+    with STATE_LOCK:
+        try:
+            conn = _state_db_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO app_state(key, value, updated_at) VALUES('state', ?, ?)",
+                (payload, int(time.time()))
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            LOG.warning("SQLite state write failed: %s", e)
+        tmp = os.path.join(DATA_DIR, "state.tmp.json")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(st, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, STATE_JSON)
+
+_bootstrap_state_db()
 
 # ---------- Banned tags (ENV + UI) ----------
 # Cache global pour banned_tags (évite 100+ appels par page)
@@ -501,6 +599,72 @@ def api_prefs():
         return jsonify(ok=True, prefs=prefs)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
+
+@app.route("/api/preferences", methods=["GET"])
+def api_preferences_get():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    st = read_state()
+    return jsonify(ok=True, prefs=(st.get("prefs", {}) or {}))
+
+@app.route("/api/preferences", methods=["POST"])
+def api_preferences_set():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {
+        "theme": lambda v: v if v in ("dark", "light") else "dark",
+        "thumb_px": lambda v: max(160, min(360, int(v))),
+        "per": lambda v: v if str(v) in ("all", "12", "24", "48", "96") else "all",
+        "read": lambda v: v if v in ("all", "unread", "read") else "all",
+        "mix": lambda v: v if v in ("all", "folders_first", "videos_first") else "all",
+        "smart": lambda v: bool(v),
+    }
+    st = read_state()
+    prefs = st.get("prefs", {}) or {}
+    for key, normalise in allowed.items():
+        if key in data:
+            try:
+                prefs[key] = normalise(data[key])
+            except Exception:
+                pass
+    st["prefs"] = prefs
+    write_state(st)
+    return jsonify(ok=True, prefs=prefs)
+
+@app.route("/api/progress/<vid>", methods=["GET"])
+def api_progress_get(vid):
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    st = read_state()
+    progress = st.get("progress", {}) or {}
+    try:
+        pos = float(progress.get(vid) or 0)
+    except Exception:
+        pos = 0
+    return jsonify(ok=True, progress=pos)
+
+@app.route("/api/progress/<vid>", methods=["POST", "DELETE"])
+def api_progress_set(vid):
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    st = read_state()
+    progress = st.get("progress", {}) or {}
+    if request.method == "DELETE":
+        progress.pop(vid, None)
+    else:
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            pos = max(0.0, float(data.get("progress") or 0))
+        except Exception:
+            pos = 0.0
+        if pos <= 0:
+            progress.pop(vid, None)
+        else:
+            progress[vid] = round(pos, 2)
+    st["progress"] = progress
+    write_state(st)
+    return jsonify(ok=True, progress=progress.get(vid, 0))
 
 # --- Banned tags API ---
 @app.route("/api/banned_tags", methods=["GET"])
@@ -746,15 +910,17 @@ def smart_group_items(items, mode="date"):
 def browse():
     if not auth_required():
         return redirect(url_for("login"))
-    per  = (request.args.get("per") or "all").strip().lower()
+    state = read_state()
+    prefs = state.get("prefs", {}) or {}
+    per  = (request.args.get("per") or str(prefs.get("per") or "all")).strip().lower()
     if per not in ("all","12","24","48","96"): per = "all"
-    readf = (request.args.get("read") or "all").strip().lower()
+    readf = (request.args.get("read") or str(prefs.get("read") or "all")).strip().lower()
     if readf not in ("all","unread","read"): readf = "all"
-    mix  = (request.args.get("mix") or "all").strip().lower()
+    mix  = (request.args.get("mix") or str(prefs.get("mix") or "all")).strip().lower()
     if mix not in ("all","folders_first","videos_first"): mix = "all"
     page = int((request.args.get("page") or "1") or 1)
     sort = (request.args.get("sort") or "date").strip().lower()
-    smart = (request.args.get("smart") or "0") in ("1","true","yes","on")
+    smart = (request.args.get("smart") if "smart" in request.args else str(prefs.get("smart", False))).lower() in ("1","true","yes","on")
     q    = (request.args.get("q") or "").strip()
     tag  = strip_surrogates((request.args.get("tag") or "").strip())
     utag = strip_surrogates((request.args.get("utag") or "").strip())
@@ -772,8 +938,7 @@ def browse():
     root_index = int(rootq_raw) if (rootq_raw is not None and str(rootq_raw).isdigit()) else None
     dirq_q = urlq(dirq) if dirq else ""
 
-    state = read_state()
-    played = state.get("played",{}); fav = state.get("fav",{}); utags_state = state.get("utags",{}); lists_state = state.get("lists",{}); meta = state.get("meta",{})
+    played = state.get("played",{}); fav = state.get("fav",{}); progress = state.get("progress",{}); utags_state = state.get("utags",{}); lists_state = state.get("lists",{}); meta = state.get("meta",{})
     roots = [{"idx":i, "name":safe_display_name(MEDIA_NAMES[i])} for i in range(len(MEDIA_DIRS))]
 
     items = MEDIA[:]
@@ -810,6 +975,7 @@ def browse():
         it["utags"] = utags_state.get(it["id"], [])
         it["fav"] = bool(fav.get(it["id"]))
         it["played"] = bool(played.get(it["id"]))
+        it["progress"] = float(progress.get(it["id"], 0) or 0)
         m = meta.get(it["id"], {})
         if isinstance(m, dict) and m.get("w") and m.get("h"):
             it["res"] = f"{m['w']}×{m['h']}"; it["p"] = p_label(m.get("h"))
@@ -959,7 +1125,8 @@ def browse():
             "id": v["id"], "name": v["name"], "mtime": v["mtime"], "size": v["size"],
             "ext": v["ext"], "res": v.get("res",""), "p": v.get("p",""),
             "tags": v.get("tags",[]), "utags": v.get("utags",[]), "ctags": ctags,
-            "fav": v.get("fav", False), "played": v.get("played", False)
+            "fav": v.get("fav", False), "played": v.get("played", False),
+            "progress": v.get("progress", 0), "duration": v.get("duration", "")
         })
 
     if mix == "all":

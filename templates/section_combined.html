@@ -1,24 +1,22 @@
 {% macro render_video_card(it, mix, sort, readf, per) %}
 <article class="card {{ 'played' if it.played else 'unplayed' }}" data-vid="{{ it.id }}"
-  data-duration="{{ it.duration or '' }}">
+  data-duration="{{ it.duration or '' }}" data-progress="{{ it.progress or 0 }}">
   <a class="thumb" href="/watch/{{ it.id }}?back={{ request.full_path | urlencode }}">
     <img loading="lazy" class="lazy-thumb" src="/static/placeholder.svg" data-src="/thumb/{{ it.id }}.jpg"
-      alt="preview" />
+      alt="Aperçu vidéo" />
     <div class="badge">{{ it.ext.upper() }}</div>
     {% if it.played %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
   </a>
 
-  <!-- Cœur favori -->
   <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori" data-id="{{ it.id }}">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg>
   </button>
 
-
   <h3 title="{{ it.name }}">{{ it.name }}</h3>
   <p class="meta">
     <span>{{ it.size | filesize }}</span>
-    {% if it.res %} • <span>{{ it.res }}</span>{% endif %}
-    {% if it.p %} • <span>{{ it.p }}</span>{% endif %}
+    {% if it.res %} · <span>{{ it.res }}</span>{% endif %}
+    {% if it.p %} · <span>{{ it.p }}</span>{% endif %}
   </p>
 
   <p class="tagsline">
@@ -30,7 +28,7 @@
       data-tag="{{ t }}">{{ t }}</a>
     {% endfor %}
     {% else %}
-    <span class="muted">(pas de tag)</span>
+    <span class="muted">Sans tag</span>
     {% endif %}
   </p>
 </article>
@@ -41,23 +39,22 @@
   <a class="thumb" href="{{ it.url }}" title="{{ 'Voir la vidéo' if it.is_single else 'Ouvrir le dossier' }}">
     {% if it.first_vid %}
     <img loading="lazy" class="lazy-thumb" src="/static/placeholder.svg" data-src="/thumb/{{ it.first_vid.id }}.jpg"
-      alt="preview" />
+      alt="Aperçu dossier" />
     {% else %}
-    <div class="foldericon">📁</div>
+    <div class="foldericon">▣</div>
     {% endif %}
     <div class="badge">{{ 'VIDÉO' if it.is_single else 'DOSSIER' }}</div>
     <div class="badge right">{{ it.read_count }}/{{ it.count }}</div>
     {% if it.all_read %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
   </a>
   <h3 title="{{ it.name }}">{{ it.name }}</h3>
-  <p class="meta"><span>Dernière modif.</span> • <span>{{ it.latest | datetime }}</span></p>
+  <p class="meta"><span>Dernière modif.</span> · <span>{{ it.latest | datetime }}</span></p>
 </article>
 {% endmacro %}
 
 {% if smart_groups %}
-{# Affichage groupé par période #}
 {% for group in smart_groups %}
-<h2 class="group-header">{{ group.label }} <small>({{ group.videos|length }})</small></h2>
+<h2 class="group-header">{{ group.label }} <small>{{ group.videos|length }}</small></h2>
 <section class="grid">
   {% for it in group.videos %}
   {% if it.kind == 'folder' %}
@@ -70,7 +67,6 @@
 {% endfor %}
 
 {% else %}
-{# Affichage classique #}
 <section class="grid">
   {% if not grid %}<p class="empty">Aucun élément.</p>{% endif %}
   {% for it in grid %}
