@@ -298,7 +298,17 @@
 
     (function zoomBar() {
       const wrap = document.querySelector('.player-wrap');
+      const video = document.getElementById('v');
       if (!wrap) return;
+      let baseWidth = 0;
+      function getBaseWidth() {
+        if (!baseWidth) {
+          const rect = wrap.getBoundingClientRect();
+          const parentWidth = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
+          baseWidth = Math.max(320, Math.round(rect.width || parentWidth || window.innerWidth));
+        }
+        return baseWidth;
+      }
       document.querySelectorAll('.zoom-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.zoom-btn').forEach(b => b.classList.remove('active'));
@@ -306,16 +316,23 @@
           const z = parseFloat(btn.dataset.zoom) || 1;
           if (z === 1) {
             wrap.style.width = '';
+            wrap.style.inlineSize = '';
             wrap.style.maxWidth = '';
+            if (video) video.style.width = '';
             wrap.classList.remove('zoomed');
           } else {
-            const base = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
-            wrap.style.width = (base * z) + 'px';
+            const width = Math.round(getBaseWidth() * z);
+            wrap.style.width = width + 'px';
+            wrap.style.inlineSize = width + 'px';
             wrap.style.maxWidth = 'none';
+            if (video) video.style.width = '100%';
             wrap.classList.add('zoomed');
           }
         });
       });
+      window.addEventListener('resize', () => {
+        if (!wrap.classList.contains('zoomed')) baseWidth = 0;
+      }, { passive: true });
     })();
 
     (function similarVideos() {
