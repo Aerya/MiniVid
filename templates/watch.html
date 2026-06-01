@@ -307,10 +307,12 @@
           if (z === 1) {
             wrap.style.width = '';
             wrap.style.maxWidth = '';
+            wrap.classList.remove('zoomed');
           } else {
             const base = wrap.parentElement ? wrap.parentElement.clientWidth : window.innerWidth;
             wrap.style.width = (base * z) + 'px';
             wrap.style.maxWidth = 'none';
+            wrap.classList.add('zoomed');
           }
         });
       });
