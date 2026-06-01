@@ -305,26 +305,30 @@
         wrap.style.width = '';
         wrap.style.inlineSize = '';
         wrap.style.maxWidth = '';
-        if (video) video.style.width = '';
+        if (video) {
+          video.style.width = '';
+          video.style.height = '';
+          video.style.maxHeight = '';
+        }
         wrap.classList.remove('zoomed');
+        document.body.classList.remove('has-zoom');
       }
 
-      function measureBaseWidth() {
-        const hadZoom = wrap.classList.contains('zoomed');
-        const prev = { w: wrap.style.width, i: wrap.style.inlineSize, m: wrap.style.maxWidth, c: hadZoom };
-        wrap.style.width = '';
-        wrap.style.inlineSize = '';
-        wrap.style.maxWidth = '';
-        wrap.classList.remove('zoomed');
-        // Force reflow then read natural width
-        const natural = wrap.getBoundingClientRect().width;
-        if (prev.c) {
-          wrap.style.width = prev.w;
-          wrap.style.inlineSize = prev.i;
-          wrap.style.maxWidth = prev.m;
-          wrap.classList.add('zoomed');
+      function nativeSize() {
+        if (video && video.videoWidth && video.videoHeight) {
+          return { w: video.videoWidth, h: video.videoHeight };
         }
-        return Math.max(320, Math.round(natural));
+        return null;
+      }
+
+      function availableBox() {
+        if (document.fullscreenElement) {
+          return { w: screen.width, h: screen.height };
+        }
+        // Leave a little breathing room for page chrome
+        const w = Math.max(320, Math.floor(window.innerWidth * 0.98));
+        const h = Math.max(240, Math.floor(window.innerHeight * 0.92));
+        return { w, h };
       }
 
       function applyZoom(z) {
@@ -332,14 +336,29 @@
           resetWrap();
           return;
         }
-        const base = measureBaseWidth();
-        const width = Math.round(base * z);
+        const nat = nativeSize();
+        if (!nat) {
+          if (video) {
+            video.addEventListener('loadedmetadata', () => applyZoom(z), { once: true });
+          }
+          return;
+        }
+        let targetW = nat.w * z;
+        let targetH = nat.h * z;
+        const box = availableBox();
+        const scale = Math.min(1, box.w / targetW, box.h / targetH);
+        const width = Math.round(targetW * scale);
+        const height = Math.round(targetH * scale);
         wrap.style.width = width + 'px';
         wrap.style.inlineSize = width + 'px';
         wrap.style.maxWidth = 'none';
-        if (video) video.style.width = '100%';
+        if (video) {
+          video.style.width = width + 'px';
+          video.style.height = height + 'px';
+          video.style.maxHeight = 'none';
+        }
         wrap.classList.add('zoomed');
-        // Bring the player back into view (it may overflow .watch to the right)
+        document.body.classList.add('has-zoom');
         requestAnimationFrame(() => {
           wrap.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
         });

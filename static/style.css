@@ -567,6 +567,11 @@ a.thumb,
   scroll-padding-inline: 1rem;
 }
 
+.watchpage.has-zoom .watch {
+  max-width: none;
+  overflow-x: visible;
+}
+
 .player-wrap {
   position: relative;
   margin: 0 auto;
@@ -591,7 +596,8 @@ a.thumb,
 }
 
 .player-wrap.zoomed video {
-  max-height: 90vh;
+  max-height: none;
+  height: auto;
 }
 
 .zoom-bar,
