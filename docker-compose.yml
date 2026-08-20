@@ -3,14 +3,16 @@ services:
     image: ghcr.io/aerya/minivid:latest
     container_name: minivid
     restart: always
+    gpus: all
     environment:
       TZ: Europe/Paris
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
       MEDIA_DIRS: /videos1|/videos2
       MEDIA_NAMES: ruTorrent|MeTube|
       DATA_DIR: /data
       THUMB_DIR: /cache/thumbs
       MINI_ALLOWED_EXT: .mp4,.webm,.mkv,.avi,.flv,.m2ts,.ts
-      MINI_PLAYBACK	Mode de lecture : "auto"
+      MINI_PLAYBACK: "auto"
       MINI_TRANSCODE: 1
       MINI_FIREFOX_MKV_FALLBACK: 1
       MINI_THUMB_OFFSET: 5
