@@ -154,6 +154,27 @@ class MediaManagementApiTest(unittest.TestCase):
         response = anonymous.get("/api/settings/media-managers")
         self.assertEqual(response.status_code, 403)
 
+    def test_new_unsaved_client_can_be_tested(self):
+        candidate = {
+            "id": "client_87654321",
+            "name": "qBittorrent direct",
+            "type": "qbittorrent",
+            "url": "http://qbit.test:8080",
+            "username": "user",
+            "password": "secret-value",
+        }
+        tested_client = mock.Mock()
+        tested_client.test.return_value = {"version": "v5.1.0"}
+        with mock.patch.object(minivid, "make_torrent_client", return_value=tested_client) as factory:
+            response = self.client.post(
+                "/api/settings/media-managers/test/client_87654321",
+                json={"client": candidate},
+            )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()["version"], "v5.1.0")
+        self.assertEqual(factory.call_args.args[1], "secret-value")
+        self.assertFalse(os.path.exists(minivid.MEDIA_MANAGERS_FILE))
+
 
 if __name__ == "__main__":
     unittest.main()

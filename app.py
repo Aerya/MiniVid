@@ -1061,6 +1061,11 @@ def api_media_manager_test(client_id):
         return jsonify(ok=False, error="authenticated_admin_required"), 403
     try:
         cfg = _read_media_managers()
+        candidate = (request.get_json(silent=True) or {}).get("client")
+        if isinstance(candidate, dict):
+            candidate["id"] = client_id
+            tested = _validate_media_managers({"clients": [candidate], "sources": {}}, cfg)
+            cfg = {**cfg, "clients": tested["clients"]}
         result = _configured_client(cfg, client_id).test()
         return jsonify(ok=True, **result)
     except TorrentClientError as exc:

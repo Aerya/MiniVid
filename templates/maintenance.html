@@ -424,7 +424,16 @@
         result.textContent = 'Test en cours...';
         try {
           const response = await fetch('/api/settings/media-managers/test/' + encodeURIComponent(row.dataset.clientId), {
-            method: 'POST', credentials: 'same-origin'
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client: {
+              id: row.dataset.clientId,
+              name: row.querySelector('.client-name').value,
+              type: row.querySelector('.client-type').value,
+              url: row.querySelector('.client-url').value,
+              username: row.querySelector('.client-user').value,
+              password: row.querySelector('.client-password').value,
+            } })
           });
           const data = await response.json();
           result.textContent = data.ok ? `Connexion réussie${data.version ? ' — ' + data.version : ''}` : `Erreur : ${data.error || response.status}`;
