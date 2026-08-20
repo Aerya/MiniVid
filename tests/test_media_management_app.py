@@ -164,7 +164,7 @@ class MediaManagementApiTest(unittest.TestCase):
             "password": "secret-value",
         }
         tested_client = mock.Mock()
-        tested_client.test.return_value = {"version": "v5.1.0"}
+        tested_client.test.return_value = {"ok": True, "version": "v5.1.0"}
         with mock.patch.object(minivid, "make_torrent_client", return_value=tested_client) as factory:
             response = self.client.post(
                 "/api/settings/media-managers/test/client_87654321",

@@ -1067,7 +1067,7 @@ def api_media_manager_test(client_id):
             tested = _validate_media_managers({"clients": [candidate], "sources": {}}, cfg)
             cfg = {**cfg, "clients": tested["clients"]}
         result = _configured_client(cfg, client_id).test()
-        return jsonify(ok=True, **result)
+        return jsonify({**result, "ok": True})
     except TorrentClientError as exc:
         return jsonify(ok=False, error=str(exc)), 502
 
