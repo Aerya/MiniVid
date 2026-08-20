@@ -49,10 +49,15 @@
         </div>
       </section>
 
-      <section class="card" style="min-height:320px;">
+      <section class="card">
         <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
           <h3 class="card-title">Journal récent</h3>
-          <small id="journal-hint" class="text-muted"></small>
+          <div class="manager-actions">
+            <small id="journal-hint" class="text-muted"></small>
+            <button id="journal-prev" class="btn" type="button" aria-label="Page précédente">Précédent</button>
+            <span id="journal-page" class="text-muted">1 / 1</span>
+            <button id="journal-next" class="btn" type="button" aria-label="Page suivante">Suivant</button>
+          </div>
         </header>
         <div class="card-body">
           <div id="journal" class="table-responsive">
@@ -80,6 +85,34 @@
           <button id="similar-save" class="btn btn-primary">Enregistrer</button>
         </div>
         <div id="similar-msg" class="text-muted" style="margin-top:.6rem;"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:1rem;">
+      <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
+        <h3 class="card-title">Sources vidéo et clients BitTorrent</h3>
+        <small id="media-managers-status" class="text-muted"></small>
+      </header>
+      <div class="card-body">
+        <p class="meta" style="margin:0 0 .75rem;">Associez un client à une ou plusieurs sources pour afficher les statistiques du torrent. La suppression reste contrôlée par une option globale et un mode propre à chaque source.</p>
+        <div class="settings-row">
+          <label class="smart-toggle"><input type="checkbox" id="torrent-integration-enabled" /> Activer la liaison BitTorrent</label>
+          <label class="smart-toggle"><input type="checkbox" id="media-deletion-enabled" /> Autoriser la suppression</label>
+        </div>
+
+        <div class="manager-heading">
+          <h4>Clients</h4>
+          <button id="add-torrent-client" class="btn" type="button">Ajouter un client</button>
+        </div>
+        <div id="torrent-clients" class="manager-list"></div>
+
+        <div class="manager-heading"><h4>Association des sources</h4></div>
+        <div id="media-source-links" class="manager-list"></div>
+
+        <div class="settings-row" style="margin-top:1rem;">
+          <button id="save-media-managers" class="btn btn-primary" type="button">Enregistrer la configuration</button>
+          <span id="media-managers-message" class="text-muted"></span>
+        </div>
       </div>
     </section>
   </main>
@@ -126,6 +159,9 @@
     let pollProgTimer = null;
     let pollLogTimer = null;
     let lastRendered = "";
+    let journalEvents = [];
+    let journalPage = 0;
+    const journalPageSize = 8;
 
     function setStatus(txt) { if (statusEl) statusEl.textContent = txt; }
     function setProgress(p) {
@@ -206,16 +242,21 @@
       }
     }
 
-    async function loadJournal() {
+    function renderJournal() {
       const box = document.getElementById('journal');
       if (!box) return;
-      try {
-        const r = await fetch("/api/maintenance/journal", { credentials: "same-origin" });
-        const j = await r.json();
-        if (!j || !j.ok) { box.innerHTML = '<div class="text-muted">Aucun journal</div>'; return; }
-        const ev = j.events || [];
-        if (!ev.length) { box.innerHTML = '<div class="text-muted">Aucun événement</div>'; return; }
-        const rows = ev.slice().reverse().map(e => {
+      if (!journalEvents.length) {
+        box.innerHTML = '<div class="text-muted">Aucun événement</div>';
+        document.getElementById('journal-page').textContent = '0 / 0';
+        document.getElementById('journal-prev').disabled = true;
+        document.getElementById('journal-next').disabled = true;
+        return;
+      }
+      const pages = Math.ceil(journalEvents.length / journalPageSize);
+      journalPage = Math.max(0, Math.min(journalPage, pages - 1));
+      const start = journalPage * journalPageSize;
+      const visible = journalEvents.slice().reverse().slice(start, start + journalPageSize);
+      const rows = visible.map(e => {
           const dt = new Date((e.ts || 0) * 1000).toLocaleString(undefined, {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -228,18 +269,43 @@
             <td>${e.changed != null ? e.changed : (e.removed != null ? e.removed : "—")}</td>
             <td>${e.took_ms != null ? e.took_ms + "ms" : "—"}</td>
           </tr>`;
-        }).join("");
-        const html = `<div class="table-wrapper"><table class="table">
+      }).join("");
+      const html = `<div class="table-wrapper"><table class="table">
           <thead><tr><th>Date</th><th>Action</th><th>Fichiers</th><th>Modifiés</th><th>Durée</th></tr></thead>
           <tbody>${rows}</tbody></table></div>`;
-        if (html !== lastRendered) {
-          lastRendered = html;
-          box.innerHTML = html;
-        }
+      if (html !== lastRendered) {
+        lastRendered = html;
+        box.innerHTML = html;
+      }
+      document.getElementById('journal-page').textContent = `${journalPage + 1} / ${pages}`;
+      document.getElementById('journal-prev').disabled = journalPage === 0;
+      document.getElementById('journal-next').disabled = journalPage >= pages - 1;
+    }
+
+    async function loadJournal() {
+      const box = document.getElementById('journal');
+      if (!box) return;
+      try {
+        const r = await fetch("/api/maintenance/journal", { credentials: "same-origin" });
+        const j = await r.json();
+        if (!j || !j.ok) { box.innerHTML = '<div class="text-muted">Aucun journal</div>'; return; }
+        journalEvents = j.events || [];
+        renderJournal();
       } catch (_) {
         box.innerHTML = '<div class="text-muted">Aucun journal</div>';
       }
     }
+
+    document.getElementById('journal-prev')?.addEventListener('click', () => {
+      journalPage = Math.max(0, journalPage - 1);
+      lastRendered = '';
+      renderJournal();
+    });
+    document.getElementById('journal-next')?.addEventListener('click', () => {
+      journalPage += 1;
+      lastRendered = '';
+      renderJournal();
+    });
 
     function startLiveJournal() {
       stopLiveJournal();
@@ -291,9 +357,143 @@
       }
     });
 
+    let mediaManagersConfig = null;
+    const newClientId = () => 'client_' + (globalThis.crypto?.randomUUID?.().replaceAll('-', '') ||
+      (Date.now().toString(36) + Math.random().toString(36).slice(2)));
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
+
+    function clientRow(client = {}) {
+      const id = client.id || newClientId();
+      return `<div class="manager-row torrent-client-row" data-client-id="${esc(id)}">
+        <label>Nom<input class="field client-name" value="${esc(client.name || '')}" placeholder="qBittorrent principal" /></label>
+        <label>Type<select class="field client-type">
+          <option value="qbittorrent" ${client.type === 'rutorrent' ? '' : 'selected'}>qBittorrent</option>
+          <option value="rutorrent" ${client.type === 'rutorrent' ? 'selected' : ''}>ruTorrent</option>
+        </select></label>
+        <label>URL<input class="field client-url" value="${esc(client.url || '')}" placeholder="http://client:8080" /></label>
+        <label>Utilisateur<input class="field client-user" value="${esc(client.username || '')}" autocomplete="username" /></label>
+        <label>Mot de passe<input class="field client-password" type="password" placeholder="${client.has_password ? 'Conservé si vide' : 'Mot de passe'}" autocomplete="new-password" /></label>
+        <div class="manager-actions">
+          <button class="btn test-client" type="button">Tester</button>
+          <button class="btn btn-danger remove-client" type="button">Retirer</button>
+        </div>
+        <div class="client-result text-muted"></div>
+      </div>`;
+    }
+
+    function renderMediaManagers(config) {
+      mediaManagersConfig = config;
+      document.getElementById('torrent-integration-enabled').checked = !!config.torrent_integration_enabled;
+      document.getElementById('media-deletion-enabled').checked = !!config.deletion_enabled;
+      document.getElementById('torrent-clients').innerHTML = (config.clients || []).map(clientRow).join('');
+      const options = ['<option value="">Aucun client</option>'].concat((config.clients || []).map(c =>
+        `<option value="${esc(c.id)}">${esc(c.name)}</option>`
+      )).join('');
+      document.getElementById('media-source-links').innerHTML = (config.media_sources || []).map(source => {
+        const link = config.sources?.[String(source.root)] || {};
+        return `<div class="manager-row source-link-row" data-root="${source.root}">
+          <div><strong>${esc(source.name)}</strong><div class="text-muted">${esc(source.path)}</div></div>
+          <label>Client<select class="field source-client">${options}</select></label>
+          <label>Chemin vu par le client<input class="field source-client-root" value="${esc(link.client_root || '/downloads')}" /></label>
+          <label>Suppression<select class="field source-delete-mode">
+            <option value="disabled">Désactivée</option>
+            <option value="file">Fichier uniquement</option>
+            <option value="torrent">Torrent et données</option>
+          </select></label>
+        </div>`;
+      }).join('');
+      document.querySelectorAll('.source-link-row').forEach(row => {
+        const link = config.sources?.[row.dataset.root] || {};
+        row.querySelector('.source-client').value = link.client_id || '';
+        row.querySelector('.source-delete-mode').value = link.delete_mode || 'disabled';
+      });
+      bindManagerButtons();
+      const status = document.getElementById('media-managers-status');
+      if (status) status.textContent = config.torrent_integration_enabled ? 'Liaison active' : 'Liaison inactive';
+    }
+
+    function bindManagerButtons() {
+      document.querySelectorAll('.remove-client').forEach(button => button.onclick = () => {
+        button.closest('.torrent-client-row')?.remove();
+      });
+      document.querySelectorAll('.test-client').forEach(button => button.onclick = async () => {
+        const row = button.closest('.torrent-client-row');
+        const result = row.querySelector('.client-result');
+        result.textContent = 'Test en cours...';
+        try {
+          const response = await fetch('/api/settings/media-managers/test/' + encodeURIComponent(row.dataset.clientId), {
+            method: 'POST', credentials: 'same-origin'
+          });
+          const data = await response.json();
+          result.textContent = data.ok ? `Connexion réussie${data.version ? ' — ' + data.version : ''}` : `Erreur : ${data.error || response.status}`;
+        } catch (error) { result.textContent = 'Erreur réseau : ' + error; }
+      });
+    }
+
+    document.getElementById('add-torrent-client')?.addEventListener('click', () => {
+      document.getElementById('torrent-clients').insertAdjacentHTML('beforeend', clientRow({}));
+      bindManagerButtons();
+    });
+
+    function collectMediaManagers() {
+      const clients = Array.from(document.querySelectorAll('.torrent-client-row')).map(row => ({
+        id: row.dataset.clientId,
+        name: row.querySelector('.client-name').value,
+        type: row.querySelector('.client-type').value,
+        url: row.querySelector('.client-url').value,
+        username: row.querySelector('.client-user').value,
+        password: row.querySelector('.client-password').value,
+      }));
+      const sources = {};
+      document.querySelectorAll('.source-link-row').forEach(row => {
+        sources[row.dataset.root] = {
+          client_id: row.querySelector('.source-client').value,
+          client_root: row.querySelector('.source-client-root').value,
+          delete_mode: row.querySelector('.source-delete-mode').value,
+        };
+      });
+      return {
+        torrent_integration_enabled: document.getElementById('torrent-integration-enabled').checked,
+        deletion_enabled: document.getElementById('media-deletion-enabled').checked,
+        clients,
+        sources,
+      };
+    }
+
+    async function loadMediaManagers() {
+      const message = document.getElementById('media-managers-message');
+      try {
+        const response = await fetch('/api/settings/media-managers', { credentials: 'same-origin' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || response.status);
+        renderMediaManagers(data);
+      } catch (error) {
+        if (message) message.textContent = 'Configuration indisponible : ' + error.message;
+      }
+    }
+
+    document.getElementById('save-media-managers')?.addEventListener('click', async () => {
+      const message = document.getElementById('media-managers-message');
+      message.textContent = 'Enregistrement...';
+      try {
+        const response = await fetch('/api/settings/media-managers', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(collectMediaManagers()),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || response.status);
+        renderMediaManagers(data);
+        message.textContent = 'Configuration enregistrée. Enregistrez avant de tester un nouveau client.';
+      } catch (error) { message.textContent = 'Erreur : ' + error.message; }
+    });
+
     pollProgress();
     loadJournal();
     loadSimilarConfig();
+    loadMediaManagers();
   </script>
 </body>
 

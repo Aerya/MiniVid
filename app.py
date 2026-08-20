@@ -24,10 +24,12 @@ def ratelimited(key, per=1.0):
     _RATE_LIMIT[key] = now
     return False
 
-import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil, sqlite3
+import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil, sqlite3, uuid
 from datetime import datetime
-from urllib.parse import quote_from_bytes, unquote_to_bytes
+from urllib.parse import quote_from_bytes, unquote_to_bytes, urlsplit
+from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for, Response
+from media_managers import TorrentClientError, make_torrent_client
 
 APP_NAME = "MiniVid"
 DEF_EXT = ".mp4,.webm,.mkv,.avi,.flv,.m2ts"
@@ -43,6 +45,8 @@ os.makedirs(THUMB_DIR, exist_ok=True)
 STATE_DB = os.path.join(DATA_DIR, "state.db")
 STATE_JSON = os.path.join(DATA_DIR, "state.json")
 STATE_LOCK = threading.RLock()
+MEDIA_MANAGERS_FILE = os.path.join(DATA_DIR, "media_managers.json")
+MEDIA_MANAGERS_LOCK = threading.RLock()
 
 MINI_USER = os.environ.get("MINI_USER")
 MINI_PASS = os.environ.get("MINI_PASS")
@@ -836,6 +840,305 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("browse"))
+
+
+# ---------- Gestion des sources et clients BitTorrent ----------
+
+def media_admin_required():
+    """Les fonctions destructives et leur configuration exigent une vraie session."""
+    return AUTH_ENABLED and bool(session.get("user"))
+
+
+def _default_media_managers():
+    return {
+        "torrent_integration_enabled": False,
+        "deletion_enabled": False,
+        "clients": [],
+        "sources": {},
+    }
+
+
+def _fernet():
+    key = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _encrypt_password(value):
+    if not value:
+        return ""
+    return _fernet().encrypt(str(value).encode("utf-8")).decode("ascii")
+
+
+def _decrypt_password(value):
+    if not value:
+        return ""
+    try:
+        return _fernet().decrypt(str(value).encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, UnicodeError) as exc:
+        raise TorrentClientError("Mot de passe illisible : la SECRET_KEY a peut-être changé") from exc
+
+
+def _read_media_managers():
+    with MEDIA_MANAGERS_LOCK:
+        cfg = _load_json(MEDIA_MANAGERS_FILE, _default_media_managers())
+        if not isinstance(cfg, dict):
+            cfg = _default_media_managers()
+        base = _default_media_managers()
+        base.update(cfg)
+        if not isinstance(base.get("clients"), list):
+            base["clients"] = []
+        if not isinstance(base.get("sources"), dict):
+            base["sources"] = {}
+        return base
+
+
+def _write_media_managers(cfg):
+    with MEDIA_MANAGERS_LOCK:
+        tmp = MEDIA_MANAGERS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(cfg, handle, ensure_ascii=False, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, MEDIA_MANAGERS_FILE)
+
+
+def _public_media_managers(cfg=None):
+    cfg = cfg or _read_media_managers()
+    clients = []
+    for client in cfg.get("clients", []):
+        clients.append({
+            "id": client.get("id", ""),
+            "name": client.get("name", ""),
+            "type": client.get("type", "qbittorrent"),
+            "url": client.get("url", ""),
+            "username": client.get("username", ""),
+            "timeout": client.get("timeout", 10),
+            "has_password": bool(client.get("password_enc")),
+        })
+    return {
+        "torrent_integration_enabled": bool(cfg.get("torrent_integration_enabled")),
+        "deletion_enabled": bool(cfg.get("deletion_enabled")),
+        "clients": clients,
+        "sources": cfg.get("sources", {}),
+        "media_sources": [
+            {"root": index, "name": MEDIA_NAMES[index], "path": MEDIA_DIRS[index]}
+            for index in range(len(MEDIA_DIRS))
+        ],
+        "auth_enabled": AUTH_ENABLED,
+    }
+
+
+def _validate_media_managers(payload, previous):
+    if not isinstance(payload, dict):
+        raise ValueError("Configuration invalide")
+    old_clients = {str(c.get("id")): c for c in previous.get("clients", []) if c.get("id")}
+    clients = []
+    client_ids = set()
+    for raw in payload.get("clients", []):
+        if not isinstance(raw, dict) or len(clients) >= 20:
+            continue
+        client_id = str(raw.get("id") or uuid.uuid4().hex)
+        if client_id in client_ids or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", client_id):
+            raise ValueError("Identifiant client invalide ou dupliqué")
+        client_type = str(raw.get("type") or "qbittorrent")
+        if client_type not in ("qbittorrent", "rutorrent"):
+            raise ValueError("Type de client non pris en charge")
+        name = str(raw.get("name") or "").strip()[:80]
+        url = str(raw.get("url") or "").strip().rstrip("/")
+        parsed = urlsplit(url)
+        if not name or parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("Nom ou URL du client invalide")
+        password = raw.get("password")
+        password_enc = old_clients.get(client_id, {}).get("password_enc", "")
+        if password not in (None, ""):
+            password_enc = _encrypt_password(password)
+        clients.append({
+            "id": client_id,
+            "name": name,
+            "type": client_type,
+            "url": url,
+            "username": str(raw.get("username") or "").strip()[:200],
+            "password_enc": password_enc,
+            "timeout": max(2, min(30, int(raw.get("timeout") or 10))),
+        })
+        client_ids.add(client_id)
+
+    sources = {}
+    raw_sources = payload.get("sources", {})
+    for root_key, raw in raw_sources.items() if isinstance(raw_sources, dict) else []:
+        try:
+            root_index = int(root_key)
+        except Exception:
+            continue
+        if root_index < 0 or root_index >= len(MEDIA_DIRS) or not isinstance(raw, dict):
+            continue
+        delete_mode = str(raw.get("delete_mode") or "disabled")
+        if delete_mode not in ("disabled", "file", "torrent"):
+            raise ValueError("Mode de suppression invalide")
+        client_id = str(raw.get("client_id") or "")
+        if client_id and client_id not in client_ids:
+            raise ValueError("Client associé introuvable")
+        if delete_mode == "torrent" and not client_id:
+            raise ValueError("La suppression torrent exige un client associé")
+        client_root = "/" + str(raw.get("client_root") or "downloads").strip().strip("/")
+        sources[str(root_index)] = {
+            "client_id": client_id,
+            "client_root": client_root,
+            "delete_mode": delete_mode,
+        }
+    return {
+        "torrent_integration_enabled": bool(payload.get("torrent_integration_enabled")),
+        "deletion_enabled": bool(payload.get("deletion_enabled")),
+        "clients": clients,
+        "sources": sources,
+    }
+
+
+def _configured_client(cfg, client_id):
+    client_cfg = next((c for c in cfg.get("clients", []) if c.get("id") == client_id), None)
+    if not client_cfg:
+        raise TorrentClientError("Client BitTorrent introuvable")
+    return make_torrent_client(client_cfg, _decrypt_password(client_cfg.get("password_enc", "")))
+
+
+def _media_item_and_path(vid):
+    item = next((entry for entry in MEDIA if entry.get("id") == vid), None)
+    if not item:
+        raise FileNotFoundError("Vidéo absente de l'index")
+    root_index, rel = id_to_parts(vid)
+    if root_index != int(item.get("root", -1)) or root_index < 0 or root_index >= len(MEDIA_DIRS):
+        raise ValueError("Source vidéo invalide")
+    root_real = os.path.realpath(MEDIA_DIRS[root_index])
+    full = os.path.realpath(os.path.join(root_real, rel))
+    if os.path.commonpath([root_real, full]) != root_real or not os.path.isfile(full):
+        raise ValueError("Chemin vidéo non autorisé")
+    return item, root_index, rel.replace("\\", "/"), full
+
+
+def _forget_media(vid):
+    global MEDIA, MEDIA_CACHE
+    MEDIA = [entry for entry in MEDIA if entry.get("id") != vid]
+    MEDIA_CACHE = {
+        **MEDIA_CACHE,
+        "items": MEDIA,
+        "count": len(MEDIA),
+        "last_scan": int(time.time()),
+    }
+    state = read_state()
+    for key in ("played", "progress", "fav", "utags", "meta"):
+        mapping = state.get(key, {}) or {}
+        mapping.pop(vid, None)
+        state[key] = mapping
+    write_state(state)
+    thumb = os.path.join(THUMB_DIR, vid + ".jpg")
+    hls_dir = os.path.join(HLS_SEGMENT_DIR, vid) if "HLS_SEGMENT_DIR" in globals() else ""
+    try:
+        os.remove(thumb)
+    except OSError:
+        pass
+    if hls_dir:
+        shutil.rmtree(hls_dir, ignore_errors=True)
+
+
+@app.route("/api/settings/media-managers", methods=["GET", "POST"])
+def api_media_managers_settings():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    if request.method == "GET":
+        return jsonify(ok=True, **_public_media_managers())
+    try:
+        previous = _read_media_managers()
+        cfg = _validate_media_managers(request.get_json(force=True, silent=True) or {}, previous)
+        _write_media_managers(cfg)
+        _log_event("media_managers_saved", clients=len(cfg["clients"]), sources=len(cfg["sources"]))
+        return jsonify(ok=True, **_public_media_managers(cfg))
+    except (ValueError, TorrentClientError) as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@app.route("/api/settings/media-managers/test/<client_id>", methods=["POST"])
+def api_media_manager_test(client_id):
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    try:
+        cfg = _read_media_managers()
+        result = _configured_client(cfg, client_id).test()
+        return jsonify(ok=True, **result)
+    except TorrentClientError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+
+@app.route("/api/media/<vid>/management", methods=["GET"])
+def api_media_management(vid):
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    try:
+        item, root_index, rel, full = _media_item_and_path(vid)
+        cfg = _read_media_managers()
+        source = cfg.get("sources", {}).get(str(root_index), {})
+        result = {
+            "ok": True,
+            "name": item.get("name", ""),
+            "root": root_index,
+            "root_name": item.get("root_name", ""),
+            "file_mtime": int(os.path.getmtime(full)),
+            "delete_mode": source.get("delete_mode", "disabled"),
+            "deletion_enabled": bool(cfg.get("deletion_enabled")),
+            "can_delete": False,
+            "torrent": None,
+        }
+        client_id = source.get("client_id")
+        if cfg.get("torrent_integration_enabled") and client_id:
+            try:
+                result["torrent"] = _configured_client(cfg, client_id).metadata(rel, source.get("client_root", "/downloads"))
+            except TorrentClientError as exc:
+                result["torrent_error"] = str(exc)
+        mode = result["delete_mode"]
+        result["can_delete"] = bool(cfg.get("deletion_enabled") and mode in ("file", "torrent"))
+        if mode == "torrent" and not result.get("torrent"):
+            result["can_delete"] = False
+        return jsonify(result)
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except (ValueError, OSError) as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@app.route("/api/media/<vid>/delete", methods=["POST"])
+def api_media_delete(vid):
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    try:
+        item, root_index, rel, full = _media_item_and_path(vid)
+        data = request.get_json(force=True, silent=True) or {}
+        if str(data.get("confirmation") or "") != str(item.get("name") or ""):
+            return jsonify(ok=False, error="confirmation_invalide"), 400
+        cfg = _read_media_managers()
+        if not cfg.get("deletion_enabled"):
+            return jsonify(ok=False, error="suppression_desactivee"), 403
+        source = cfg.get("sources", {}).get(str(root_index), {})
+        mode = source.get("delete_mode", "disabled")
+        details = {}
+        if mode == "file":
+            os.remove(full)
+        elif mode == "torrent":
+            if not cfg.get("torrent_integration_enabled"):
+                return jsonify(ok=False, error="integration_torrent_desactivee"), 403
+            client_id = source.get("client_id")
+            if not client_id:
+                return jsonify(ok=False, error="client_non_configure"), 409
+            details = _configured_client(cfg, client_id).delete_with_data(rel, source.get("client_root", "/downloads"))
+        else:
+            return jsonify(ok=False, error="suppression_interdite_pour_cette_source"), 403
+        _forget_media(vid)
+        _log_event("media_deleted", root=root_index, mode=mode, name=item.get("name", ""))
+        return jsonify(ok=True, deleted=True, mode=mode, **details)
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except PermissionError:
+        return jsonify(ok=False, error="source_montée_en_lecture_seule"), 403
+    except (ValueError, OSError, TorrentClientError) as exc:
+        LOG.warning("Suppression vidéo refusée: %s", exc)
+        return jsonify(ok=False, error=str(exc)), 502
 
 # ---------- Routes ----------
 @app.route("/")

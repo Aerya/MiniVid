@@ -12,6 +12,10 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 - **Fallback HLS automatique** : si le navigateur refuse la vidéo ou ne produit aucune image, MiniVid bascule vers HLS en conservant la position de lecture.
 - **HLS plus fiable** : les ruptures d'horodatage sont signalées et les segments ne deviennent visibles qu'une fois leur écriture terminée.
 - **Détection NVENC corrigée** : le test matériel utilise une dimension acceptée par les pilotes NVIDIA récents.
+- **Gestion des sources** : association de plusieurs sources à un ou plusieurs clients qBittorrent ou ruTorrent depuis la WebUI.
+- **Statistiques BitTorrent** : date d'ajout, temps de seed, ratio, pairs, seeds et état sur la page de lecture lorsque le client expose ces valeurs.
+- **Suppression contrôlée** : suppression simple d'un fichier ou retrait du torrent avec ses données, avec activation globale, règle par source et confirmation par le nom complet.
+- **Maintenance compacte** : journal paginé par groupes de huit événements.
 
 ---
 
@@ -90,6 +94,17 @@ Le support direct dépend du navigateur, du système, du conteneur et des codecs
 
 ### Configuration simple
 - Tout se règle via **variables d’environnement** dans votre `docker-compose.yml`
+
+### Gestion des sources et suppressions
+
+- Activation indépendante de la liaison BitTorrent et de la suppression
+- Plusieurs clients qBittorrent et ruTorrent configurables depuis la page Maintenance
+- Un client peut être associé à plusieurs sources vidéo
+- Trois modes par source : désactivé, fichier uniquement, torrent et données
+- Correspondance par chemin complet avant toute action sur un torrent
+- Retrait immédiat de la vidéo de l'index, des favoris, de la progression et des caches après une suppression réussie
+
+Cette fonction exige que l'authentification MiniVid soit activée. Les mots de passe des clients sont chiffrés sur disque à partir de `SECRET_KEY` et ne sont jamais renvoyés par l'API. Une modification de `SECRET_KEY` rendra les mots de passe enregistrés illisibles ; il faudra alors les saisir à nouveau.
 
 
 ## Captures et article
@@ -273,6 +288,29 @@ Accélération matérielle NVIDIA NVENC détectée.
 ```
 
 Sans GPU compatible, MiniVid conserve le fallback logiciel avec `libx264`.
+
+### Configurer les clients et les suppressions
+
+Ouvrez **Maintenance**, puis **Sources vidéo et clients BitTorrent**.
+
+1. Ajoutez un ou plusieurs clients qBittorrent ou ruTorrent avec leur URL et leurs identifiants.
+2. Enregistrez, puis utilisez **Tester** pour valider chaque connexion.
+3. Associez chaque source au client qui gère ses fichiers. Un même client peut être choisi pour plusieurs sources.
+4. Indiquez le chemin de la source tel qu'il est vu par le client, par exemple `/downloads`.
+5. Choisissez le mode de suppression de chaque source.
+6. Activez la liaison BitTorrent pour afficher les statistiques.
+7. Activez séparément la suppression lorsque la configuration a été vérifiée.
+
+Pour le mode **Fichier uniquement**, le volume correspondant doit être monté en lecture-écriture :
+
+```yaml
+volumes:
+  - /chemin/videos-simples:/videos2:rw
+```
+
+Pour le mode **Torrent et données**, le volume MiniVid peut rester en lecture seule : le client BitTorrent supprime lui-même les données. MiniVid refuse l'action s'il ne peut pas faire correspondre exactement le chemin de la vidéo avec un torrent unique.
+
+La prise en charge ruTorrent utilise le plugin officiel `httprpc` et son action `removewithdata`. Le plugin `erasedata` doit être disponible pour supprimer les données en plus de l'entrée rTorrent.
 
 ## Installation automatisée pour Windows
 

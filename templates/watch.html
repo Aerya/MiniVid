@@ -140,6 +140,33 @@
       </div>
     </section>
 
+    <section id="media-management" class="media-management" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;">
+        <div>
+          <strong>Fichier et partage</strong>
+          <div id="media-management-source" class="text-muted"></div>
+        </div>
+        <button id="delete-media-button" class="btn btn-danger" type="button" hidden>Supprimer la vidéo</button>
+      </div>
+      <div id="media-management-stats" class="media-management-grid"></div>
+      <div id="media-management-message" class="text-muted" style="margin-top:.65rem;"></div>
+    </section>
+
+    <dialog id="delete-media-dialog" class="delete-dialog">
+      <form method="dialog">
+        <h3>Supprimer définitivement cette vidéo ?</h3>
+        <p id="delete-media-explanation"></p>
+        <p>Pour confirmer, saisissez exactement le nom du fichier :</p>
+        <p><strong id="delete-media-name"></strong></p>
+        <input id="delete-media-confirmation" class="field" autocomplete="off" />
+        <div class="manager-actions" style="margin-top:1rem;justify-content:flex-end;">
+          <button class="btn" value="cancel">Annuler</button>
+          <button id="confirm-delete-media" class="btn btn-danger" value="default" type="button">Supprimer</button>
+        </div>
+        <div id="delete-media-error" class="text-muted" style="margin-top:.65rem;"></div>
+      </form>
+    </dialog>
+
     <section class="similar-section" id="similar-section" style="display:none;">
       <h3 class="similar-title">Vidéos similaires</h3>
       <div class="grid" id="similar-grid"></div>
@@ -176,6 +203,7 @@
 
   <script>
     const VID = {{ vid | tojson }};
+    const BACK_URL = {{ back | tojson }};
     async function savePrefs(patch) {
       try {
         await fetch('/api/preferences', {
@@ -254,6 +282,94 @@
       catch (_) { alert('Erreur état de lecture'); }
     });
 
+    let mediaManagement = null;
+    const formatDate = value => value ? new Date(value * 1000).toLocaleString() : '—';
+    function formatDuration(seconds) {
+      seconds = Math.max(0, Number(seconds) || 0);
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return [days ? days + ' j' : '', hours ? hours + ' h' : '', minutes + ' min'].filter(Boolean).join(' ');
+    }
+    function mediaStat(label, value) {
+      const box = document.createElement('div');
+      box.className = 'media-stat';
+      const title = document.createElement('span');
+      title.className = 'text-muted';
+      title.textContent = label;
+      const content = document.createElement('strong');
+      content.textContent = value;
+      box.append(title, content);
+      return box;
+    }
+    async function loadMediaManagement() {
+      const section = document.getElementById('media-management');
+      const stats = document.getElementById('media-management-stats');
+      const message = document.getElementById('media-management-message');
+      try {
+        const response = await fetch('/api/media/' + encodeURIComponent(VID) + '/management', { credentials: 'same-origin' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || response.status);
+        mediaManagement = data;
+        section.hidden = false;
+        document.getElementById('media-management-source').textContent = data.root_name || '';
+        stats.replaceChildren(mediaStat('Fichier modifié le', formatDate(data.file_mtime)));
+        if (data.torrent) {
+          stats.replaceChildren(
+            mediaStat('Ajouté au client', formatDate(data.torrent.added_on)),
+            mediaStat('Temps de seed', formatDuration(data.torrent.seeding_time)),
+            mediaStat('Ratio', Number(data.torrent.ratio || 0).toFixed(2)),
+            mediaStat('Pairs connectés', String(data.torrent.peers_connected ?? 0)),
+            mediaStat('Seeds connectés', String(data.torrent.seeds_connected ?? 0)),
+            mediaStat('État', data.torrent.state || '—')
+          );
+        }
+        message.textContent = data.torrent_error ? 'Client BitTorrent : ' + data.torrent_error : '';
+        const button = document.getElementById('delete-media-button');
+        button.hidden = !data.can_delete;
+      } catch (error) {
+        if (section) section.hidden = false;
+        if (message) message.textContent = 'Gestion indisponible : ' + error.message;
+      }
+    }
+
+    document.getElementById('delete-media-button')?.addEventListener('click', () => {
+      if (!mediaManagement?.can_delete) return;
+      document.getElementById('delete-media-name').textContent = mediaManagement.name;
+      document.getElementById('delete-media-confirmation').value = '';
+      document.getElementById('delete-media-error').textContent = '';
+      document.getElementById('delete-media-explanation').textContent = mediaManagement.delete_mode === 'torrent'
+        ? 'Le torrent sera retiré du client BitTorrent et ses données seront effacées du disque.'
+        : 'Le fichier sera effacé du disque.';
+      document.getElementById('delete-media-dialog').showModal();
+    });
+
+    document.getElementById('confirm-delete-media')?.addEventListener('click', async () => {
+      const button = document.getElementById('confirm-delete-media');
+      const error = document.getElementById('delete-media-error');
+      const confirmation = document.getElementById('delete-media-confirmation').value;
+      if (confirmation !== mediaManagement?.name) {
+        error.textContent = 'Le nom saisi ne correspond pas.';
+        return;
+      }
+      button.disabled = true;
+      error.textContent = 'Suppression en cours...';
+      try {
+        document.getElementById('v')?.pause();
+        const response = await fetch('/api/media/' + encodeURIComponent(VID) + '/delete', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirmation }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || response.status);
+        window.location.href = BACK_URL || '/browse';
+      } catch (deleteError) {
+        error.textContent = 'Suppression refusée : ' + deleteError.message;
+        button.disabled = false;
+      }
+    });
+
     const v = document.getElementById('v');
     const span = document.getElementById('resval');
     if (v) {
@@ -314,6 +430,7 @@
         }
       }, { passive: false });
     }
+    loadMediaManagement();
 
     document.addEventListener('keydown', (e) => {
       const video = document.getElementById('v');
