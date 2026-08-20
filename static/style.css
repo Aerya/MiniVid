@@ -836,6 +836,14 @@ kbd {
   padding: .55rem .65rem;
 }
 
+.delete-final-step {
+  margin-top: 1rem;
+  padding: .8rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
 .progress {
   overflow: hidden;
   height: 9px;
