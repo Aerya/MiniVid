@@ -72,7 +72,11 @@ class QBittorrentClient(_HttpClient):
             "/api/v2/auth/login",
             {"username": self.username, "password": self.password},
         )
-        if status != 200 or payload.decode("utf-8", "replace").strip() != "Ok.":
+        response_text = payload.decode("utf-8", "replace").strip()
+        # qBittorrent 5 peut répondre 204 sans corps, tandis que les versions
+        # précédentes répondent 200 avec « Ok. ». Le cookie confirme la session.
+        has_session = any(cookie.name.startswith("QBT_SID") and cookie.value for cookie in self.cookies)
+        if not has_session or not (status == 204 or (status == 200 and response_text == "Ok.")):
             raise TorrentClientError("Authentification qBittorrent refusée")
 
     def _json(self, path: str):

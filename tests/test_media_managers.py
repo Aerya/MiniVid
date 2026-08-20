@@ -45,7 +45,17 @@ class FakeTorrentServer(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         data = urllib.parse.parse_qs(self.rfile.read(length).decode())
         if self.path == "/api/v2/auth/login":
-            return self._send(b"Ok.", "text/plain")
+            if data.get("username") == ["modern"]:
+                self.send_response(204)
+                self.send_header("Set-Cookie", "QBT_SID_8080=modern-session; Path=/")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Set-Cookie", "QBT_SID=legacy-session; Path=/")
+            self.end_headers()
+            self.wfile.write(b"Ok.")
+            return
         if self.path == "/api/v2/torrents/delete":
             self.deleted.append(data)
             return self._send(b"", "text/plain")
@@ -95,6 +105,11 @@ class TorrentClientsTest(unittest.TestCase):
         client.delete_with_data("video.mkv", "/downloads")
         self.assertEqual(FakeTorrentServer.deleted[-1]["hashes"], ["abc123"])
         self.assertEqual(FakeTorrentServer.deleted[-1]["deleteFiles"], ["true"])
+
+    def test_qbittorrent_accepts_modern_204_login_response(self):
+        client = QBittorrentClient(self.base_url, "modern", "password")
+        result = client.test()
+        self.assertEqual(result["version"], "5.1.2")
 
     def test_qbittorrent_refuses_non_matching_path(self):
         client = QBittorrentClient(self.base_url, "user", "password")
