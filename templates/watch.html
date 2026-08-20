@@ -62,23 +62,57 @@
       <script>
         const video = document.getElementById('v');
         const hlsSrc = "{{ url_for('hls_playlist', vid=vid) }}";
-        video.onerror = () => {
+        let fallbackStarted = false;
+        let directFrameSeen = false;
+
+        function startHlsFallback() {
+          if (fallbackStarted) return;
+          fallbackStarted = true;
+          const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
           const badge = document.querySelector('.playback-badge');
           if (badge) badge.textContent = 'hls';
+          video.pause();
+          video.removeAttribute('src');
+          document.getElementById('vsource')?.remove();
+          video.load();
           if (Hls.isSupported()) {
-            const hls = new Hls();
+            const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
             hls.loadSource(hlsSrc);
             hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              if (resumeAt > 0) video.currentTime = resumeAt;
+              video.play();
+            });
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = hlsSrc;
-            video.play();
+            video.addEventListener('loadedmetadata', () => {
+              if (resumeAt > 0) video.currentTime = resumeAt;
+              video.play();
+            }, { once: true });
           }
-        };
+        }
+
+        video.addEventListener('error', startHlsFallback, { once: true });
+
+        // Certains navigateurs lisent l'audio d'un MKV/HEVC sans produire
+        // d'erreur, mais n'affichent aucune image. Une vraie frame décodée
+        // annule ce garde-fou; sinon on bascule vers HLS après quelques secondes.
+        if ('requestVideoFrameCallback' in video) {
+          video.requestVideoFrameCallback(() => { directFrameSeen = true; });
+        }
+        video.addEventListener('playing', () => {
+          window.setTimeout(() => {
+            const quality = video.getVideoPlaybackQuality?.();
+            const decodedFrames = quality?.totalVideoFrames || 0;
+            if (!fallbackStarted && video.currentTime > 1 && !directFrameSeen && decodedFrames === 0) {
+              startHlsFallback();
+            }
+          }, 4000);
+        }, { once: true });
       </script>
       {% endif %}
       {% endif %}
-      {% if playback_method and playback_method != 'direct' %}
+      {% if playback_method %}
       <span class="playback-badge">{{ playback_method }}</span>
       {% endif %}
     </div>

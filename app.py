@@ -1479,7 +1479,9 @@ def check_nvenc():
     """Détecte si l'accélération matérielle NVENC est disponible."""
     try:
         # Test simple: générer une image noire via nvenc
-        cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x64", "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-"]
+        # Recent NVIDIA drivers reject 64x64 for NVENC, which caused a false
+        # negative even when the GPU and video capability were available.
+        cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=256x256", "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-"]
         p = subprocess.run(cmd, capture_output=True, timeout=5)
         if p.returncode == 0:
             LOG.info("Accélération matérielle NVIDIA NVENC détectée.")
@@ -1519,6 +1521,11 @@ def hls_playlist(vid):
     for i in range(num_segments):
         d = min(seg_dur, duration - i * seg_dur)
         if d > 0:
+            # Chaque segment est encodé indépendamment et ses timestamps MPEG-TS
+            # repartent de zéro. Signaler la rupture évite que le lecteur attende
+            # une timeline qui ne pourra jamais continuer après le premier segment.
+            if i > 0:
+                playlist += "#EXT-X-DISCONTINUITY\n"
             playlist += f"#EXTINF:{d:.3f},\n"
             playlist += f"/hls/{vid}/segment_{i}.ts\n"
 
@@ -1537,6 +1544,7 @@ def _vcodec_args(full):
 def _build_segment_file(full, cache_path, seg_index):
     """Lance ffmpeg pour générer un segment .ts, retourne True si succès."""
     start_time = seg_index * HLS_SEGMENT_DURATION
+    temp_path = f"{cache_path}.tmp.{os.getpid()}.{threading.get_ident()}"
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-ss", str(start_time), "-i", full,
@@ -1544,15 +1552,18 @@ def _build_segment_file(full, cache_path, seg_index):
         "-avoid_negative_ts", "1",
     ] + _vcodec_args(full) + [
         "-c:a", "aac", "-ac", "2", "-b:a", "128k",
-        "-f", "mpegts", cache_path
+        "-f", "mpegts", temp_path
     ]
     try:
         subprocess.run(cmd, check=True, timeout=60)
+        # Le fichier final n'apparaît qu'une fois complètement écrit. Une requête
+        # HLS concurrente ne peut donc plus recevoir un segment tronqué.
+        os.replace(temp_path, cache_path)
         return True
     except Exception as e:
         LOG.error("HLS segment %d error: %s", seg_index, e)
         try:
-            os.remove(cache_path)
+            os.remove(temp_path)
         except OSError:
             pass
         return False
@@ -1617,34 +1628,12 @@ def hls_segment(vid, seg):
     return send_file(cache_path, mimetype="video/mp2t")
 
 def _get_best_playback_url(vid, full, ext, ua):
-    """Retourne la meilleure URL et méthode selon le navigateur et les codecs."""
-    ff_like = any(x in ua.lower() for x in ("firefox", "librewolf", "waterfox", "iceweasel"))
-    
-    fmt, vcodec, acodec, w, h = _probe_streams(full)
-    
-    # Codecs jugés "natifs" (H.264 + AAC/MP3)
-    can_copy = vcodec in ("h264", "avc1") and acodec in ("aac", "mp3", "mp4a", "mpga")
+    """Essaie toujours le fichier original; le lecteur bascule en HLS si besoin.
 
-    # Conteneurs non supportés nativement par les navigateurs (peu importe les codecs)
-    non_native_container = ext in ("avi", "flv", "m2ts")
-
-    if can_copy:
-        if non_native_container:
-            # Le remux convertit le conteneur en MP4 à la volée sans retranscodage
-            return url_for("remux", vid=vid), "remux"
-        if not ff_like:
-            return url_for("stream", vid=vid), "direct"
-        else:
-            # Firefox supporte mieux le HLS pour les formats non-MP4
-            if ext == "mp4":
-                return url_for("stream", vid=vid), "direct"
-            return url_for("hls_playlist", vid=vid), "hls"
-
-    if ALLOW_TRANSCODE:
-        # Transcodage nécessaire : HLS avec cache et GPU
-        return url_for("hls_playlist", vid=vid), "hls"
-
-    return None, "unsupported"
+    Le User-Agent ne permet pas de connaître de façon fiable les codecs réellement
+    disponibles. Le navigateur est donc laissé décider en tentant la source directe.
+    """
+    return url_for("stream", vid=vid), "direct"
 
 def _gen_ffmpeg(cmd):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
