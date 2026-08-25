@@ -145,6 +145,8 @@
         <div>
           <strong>Fichier et partage</strong>
           <div id="media-management-source" class="text-muted"></div>
+          <div id="media-management-filename" class="media-management-filename"></div>
+          <a id="media-management-client" class="media-management-client" target="_blank" rel="noopener noreferrer" hidden></a>
         </div>
         <button id="delete-media-button" class="btn btn-danger" type="button" hidden>Supprimer la vidéo</button>
       </div>
@@ -298,16 +300,29 @@
         mediaManagement = data;
         section.hidden = false;
         document.getElementById('media-management-source').textContent = data.root_name || '';
+        document.getElementById('media-management-filename').textContent = data.name || '';
+        const clientLink = document.getElementById('media-management-client');
+        if (data.torrent_client?.url) {
+          clientLink.href = data.torrent_client.url;
+          clientLink.textContent = 'Ouvrir ' + (data.torrent_client.name || 'le client BitTorrent');
+          clientLink.hidden = false;
+        } else {
+          clientLink.removeAttribute('href');
+          clientLink.hidden = true;
+        }
         stats.replaceChildren(mediaStat('Fichier modifié le', formatDate(data.file_mtime)));
-        if (data.torrent) {
-          stats.replaceChildren(
-            mediaStat('Ajouté au client', formatDate(data.torrent.added_on)),
-            mediaStat('Temps de seed', formatDuration(data.torrent.seeding_time)),
-            mediaStat('Ratio', Number(data.torrent.ratio || 0).toFixed(2)),
-            mediaStat('Pairs connectés', String(data.torrent.peers_connected ?? 0)),
-            mediaStat('Seeds connectés', String(data.torrent.seeds_connected ?? 0)),
-            mediaStat('État', data.torrent.state || '—')
-          );
+        if (data.torrents?.length) {
+          const torrentStats = [];
+          data.torrents.forEach((torrent, index) => torrentStats.push(
+            mediaStat(data.torrents.length > 1 ? `Torrent ${index + 1}` : 'Torrent', torrent.torrent_name || '—'),
+            mediaStat('Ajouté au client', formatDate(torrent.added_on)),
+            mediaStat('Temps de seed', formatDuration(torrent.seeding_time)),
+            mediaStat('Ratio', Number(torrent.ratio || 0).toFixed(2)),
+            mediaStat('Pairs connectés', String(torrent.peers_connected ?? 0)),
+            mediaStat('Seeds connectés', String(torrent.seeds_connected ?? 0)),
+            mediaStat('État', torrent.state || '—')
+          ));
+          stats.replaceChildren(...torrentStats);
         }
         message.textContent = data.torrent_error ? 'Client BitTorrent : ' + data.torrent_error : '';
         const button = document.getElementById('delete-media-button');
@@ -328,7 +343,7 @@
         deleteArmed = true;
         button.textContent = 'Confirmez la suppression';
         message.textContent = mediaManagement.delete_mode === 'torrent'
-          ? 'Cliquez une seconde fois pour retirer le torrent et effacer ses données.'
+          ? `Cliquez une seconde fois pour retirer ${mediaManagement.torrents?.length || 1} torrent(s) et effacer leurs données.`
           : 'Cliquez une seconde fois pour effacer définitivement le fichier.';
         clearTimeout(deleteArmTimer);
         deleteArmTimer = setTimeout(() => {
