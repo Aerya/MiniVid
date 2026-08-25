@@ -169,6 +169,14 @@ class MediaManagementApiTest(unittest.TestCase):
         response = anonymous.get("/api/settings/media-managers")
         self.assertEqual(response.status_code, 403)
 
+    def test_media_management_panel_is_collapsed_by_default(self):
+        response = self.client.get(f"/watch/{self.vid}")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('<details id="media-management"', html)
+        details_tag = html.split('<details id="media-management"', 1)[1].split('>', 1)[0]
+        self.assertNotIn(" open", details_tag)
+
     def test_new_unsaved_client_can_be_tested(self):
         candidate = {
             "id": "client_87654321",

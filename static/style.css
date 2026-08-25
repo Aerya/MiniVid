@@ -794,17 +794,62 @@ kbd {
 
 .media-management {
   margin-top: 1rem;
-  padding: .9rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
 }
 
+.media-management-summary {
+  padding: .8rem .9rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.media-management-summary::marker {
+  color: var(--text-muted);
+}
+
+.media-management[open] .media-management-summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.media-management-content {
+  padding: .9rem;
+}
+
 .media-management-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: .65rem;
   margin-top: .7rem;
+}
+
+.torrent-block + .torrent-block {
+  margin-top: .85rem;
+}
+
+.torrent-block {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.torrent-block-title {
+  padding: .65rem .75rem;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.torrent-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.torrent-stats-grid .media-stat {
+  border-radius: 0;
+}
+
+.torrent-stats-grid .media-stat + .media-stat {
+  border-left: 1px solid var(--border);
 }
 
 .media-management-filename {
@@ -831,6 +876,38 @@ kbd {
 .media-stat strong,
 .media-stat span {
   display: block;
+}
+
+@media (max-width: 900px) {
+  .torrent-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .torrent-stats-grid .media-stat:nth-child(4) {
+    border-left: 0;
+  }
+
+  .torrent-stats-grid .media-stat:nth-child(n + 4) {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 560px) {
+  .torrent-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .torrent-stats-grid .media-stat:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .torrent-stats-grid .media-stat:nth-child(even) {
+    border-left: 1px solid var(--border);
+  }
+
+  .torrent-stats-grid .media-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
 }
 
 .progress {
