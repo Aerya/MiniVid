@@ -13,8 +13,8 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 - **HLS plus fiable** : les ruptures d'horodatage sont signalées et les segments ne deviennent visibles qu'une fois leur écriture terminée.
 - **Détection NVENC corrigée** : le test matériel utilise une dimension acceptée par les pilotes NVIDIA récents.
 - **Gestion des sources** : association de plusieurs sources à un ou plusieurs clients qBittorrent ou ruTorrent depuis la WebUI.
-- **Statistiques BitTorrent** : date d'ajout, temps de seed, ratio, pairs, seeds et état sur la page de lecture lorsque le client expose ces valeurs.
-- **Suppression contrôlée** : suppression simple d'un fichier ou retrait du torrent avec ses données, avec activation globale, règle par source et confirmation par le nom complet.
+- **Statistiques BitTorrent** : nom exact du fichier, lien vers le client, date d'ajout, temps de seed, ratio, pairs, seeds et état sur la page de lecture lorsque le client expose ces valeurs.
+- **Suppression contrôlée** : suppression simple d'un fichier ou retrait du torrent avec ses données, avec activation globale, règle par source et confirmation par un second clic.
 - **Maintenance compacte** : journal paginé par groupes de huit événements.
 
 ---

@@ -1090,8 +1090,16 @@ def api_media_management(vid):
             "deletion_enabled": bool(cfg.get("deletion_enabled")),
             "can_delete": False,
             "torrent": None,
+            "torrent_client": None,
         }
         client_id = source.get("client_id")
+        client_cfg = next((client for client in cfg.get("clients", []) if client.get("id") == client_id), None)
+        if client_cfg:
+            result["torrent_client"] = {
+                "name": str(client_cfg.get("name") or "Client BitTorrent"),
+                "type": str(client_cfg.get("type") or ""),
+                "url": str(client_cfg.get("url") or ""),
+            }
         if cfg.get("torrent_integration_enabled") and client_id:
             try:
                 result["torrent"] = _configured_client(cfg, client_id).metadata(rel, source.get("client_root", "/downloads"))

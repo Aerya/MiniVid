@@ -109,6 +109,9 @@ class MediaManagementApiTest(unittest.TestCase):
 
     def test_global_delete_switch_blocks_file_removal(self):
         self.save_config(deletion_enabled=False)
+        management = self.client.get(f"/api/media/{self.vid}/management").get_json()
+        self.assertEqual(management["name"], self.video_name)
+        self.assertIsNone(management["torrent_client"])
         response = self.client.post(
             f"/api/media/{self.vid}/delete",
             json={"confirmation": self.video_name},
@@ -141,7 +144,15 @@ class MediaManagementApiTest(unittest.TestCase):
         with mock.patch.object(minivid, "_configured_client", return_value=fake):
             metadata = self.client.get(f"/api/media/{self.vid}/management")
             self.assertEqual(metadata.status_code, 200)
-            self.assertEqual(metadata.get_json()["torrent"]["ratio"], 1.5)
+            management = metadata.get_json()
+            self.assertEqual(management["name"], self.video_name)
+            self.assertEqual(management["torrent"]["ratio"], 1.5)
+            self.assertEqual(management["torrent_client"], {
+                "name": "qBittorrent test",
+                "type": "qbittorrent",
+                "url": "http://qbit.test:8080",
+            })
+            self.assertNotIn("username", management["torrent_client"])
             response = self.client.post(
                 f"/api/media/{self.vid}/delete",
                 json={"confirmation": self.video_name},

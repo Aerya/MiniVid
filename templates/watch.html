@@ -145,6 +145,8 @@
         <div>
           <strong>Fichier et partage</strong>
           <div id="media-management-source" class="text-muted"></div>
+          <div id="media-management-filename" class="media-management-filename"></div>
+          <a id="media-management-client" class="media-management-client" target="_blank" rel="noopener noreferrer" hidden></a>
         </div>
         <button id="delete-media-button" class="btn btn-danger" type="button" hidden>Supprimer la vidéo</button>
       </div>
@@ -298,6 +300,16 @@
         mediaManagement = data;
         section.hidden = false;
         document.getElementById('media-management-source').textContent = data.root_name || '';
+        document.getElementById('media-management-filename').textContent = data.name || '';
+        const clientLink = document.getElementById('media-management-client');
+        if (data.torrent_client?.url) {
+          clientLink.href = data.torrent_client.url;
+          clientLink.textContent = 'Ouvrir ' + (data.torrent_client.name || 'le client BitTorrent');
+          clientLink.hidden = false;
+        } else {
+          clientLink.removeAttribute('href');
+          clientLink.hidden = true;
+        }
         stats.replaceChildren(mediaStat('Fichier modifié le', formatDate(data.file_mtime)));
         if (data.torrent) {
           stats.replaceChildren(

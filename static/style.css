@@ -807,6 +807,21 @@ kbd {
   margin-top: .7rem;
 }
 
+.media-management-filename {
+  margin-top: .25rem;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.media-management-client {
+  display: inline-block;
+  margin-top: .35rem;
+}
+
+.media-management-client[hidden] {
+  display: none;
+}
+
 .media-stat {
   padding: .6rem;
   border-radius: var(--radius);
