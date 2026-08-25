@@ -100,6 +100,7 @@ Le support direct dépend du navigateur, du système, du conteneur et des codecs
 - Activation indépendante de la liaison BitTorrent et de la suppression
 - Plusieurs clients qBittorrent et ruTorrent configurables depuis la page Maintenance
 - Un client peut être associé à plusieurs sources vidéo
+- Tous les torrents correspondant au même fichier sont affichés et peuvent être supprimés ensemble avec leurs données
 - Trois modes par source : désactivé, fichier uniquement, torrent et données
 - Correspondance par chemin complet avant toute action sur un torrent
 - Retrait immédiat de la vidéo de l'index, des favoris, de la progression et des caches après une suppression réussie

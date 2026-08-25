@@ -91,7 +91,7 @@ class QBittorrentClient(_HttpClient):
         _, payload, _ = self.request("/api/v2/app/version")
         return {"ok": True, "version": payload.decode("utf-8", "replace").strip()}
 
-    def _find_torrent(self, rel: str, client_root: str):
+    def _find_torrents(self, rel: str, client_root: str):
         self.login()
         target = _client_path(client_root, rel)
         torrents = self._json("/api/v2/torrents/info")
@@ -106,10 +106,8 @@ class QBittorrentClient(_HttpClient):
                 possible.append(torrent)
             elif posixpath.basename(target) == str(torrent.get("name") or ""):
                 possible.append(torrent)
-        if len(exact) == 1:
-            return exact[0], target
-        if len(exact) > 1:
-            raise TorrentClientError("Plusieurs torrents correspondent exactement au fichier")
+        if exact:
+            return exact, target
 
         verified = []
         for torrent in possible:
@@ -123,14 +121,12 @@ class QBittorrentClient(_HttpClient):
                 if candidate == target:
                     verified.append(torrent)
                     break
-        if len(verified) == 1:
-            return verified[0], target
-        if len(verified) > 1:
-            raise TorrentClientError("Plusieurs torrents contiennent ce fichier")
+        if verified:
+            unique = {str(torrent.get("hash") or ""): torrent for torrent in verified}
+            return list(unique.values()), target
         raise TorrentClientError("Aucun torrent ne correspond exactement à cette vidéo")
 
-    def metadata(self, rel: str, client_root: str):
-        torrent, target = self._find_torrent(rel, client_root)
+    def _metadata(self, torrent: dict, target: str):
         return {
             "client_type": self.kind,
             "torrent_hash": str(torrent.get("hash") or ""),
@@ -146,18 +142,29 @@ class QBittorrentClient(_HttpClient):
             "state": str(torrent.get("state") or ""),
         }
 
+    def metadata_all(self, rel: str, client_root: str):
+        torrents, target = self._find_torrents(rel, client_root)
+        return [self._metadata(torrent, target) for torrent in torrents]
+
+    def metadata(self, rel: str, client_root: str):
+        return self.metadata_all(rel, client_root)[0]
+
     def delete_with_data(self, rel: str, client_root: str):
-        torrent, _ = self._find_torrent(rel, client_root)
-        info_hash = str(torrent.get("hash") or "")
-        if not info_hash:
+        torrents, _ = self._find_torrents(rel, client_root)
+        info_hashes = [str(torrent.get("hash") or "") for torrent in torrents]
+        if not info_hashes or any(not info_hash for info_hash in info_hashes):
             raise TorrentClientError("Hash qBittorrent manquant")
         status, _, _ = self.request(
             "/api/v2/torrents/delete",
-            {"hashes": info_hash, "deleteFiles": "true"},
+            {"hashes": "|".join(info_hashes), "deleteFiles": "true"},
         )
         if status != 200:
             raise TorrentClientError("Suppression qBittorrent refusée")
-        return {"torrent_hash": info_hash, "torrent_name": str(torrent.get("name") or "")}
+        return {
+            "torrent_hashes": info_hashes,
+            "torrent_names": [str(torrent.get("name") or "") for torrent in torrents],
+            "torrent_count": len(torrents),
+        }
 
 
 class RutorrentClient(_HttpClient):
@@ -215,17 +222,14 @@ class RutorrentClient(_HttpClient):
         torrents = self._list()
         return {"ok": True, "version": "ruTorrent", "torrent_count": len(torrents)}
 
-    def _find_torrent(self, rel: str, client_root: str):
+    def _find_torrents(self, rel: str, client_root: str):
         target = _client_path(client_root, rel)
         matches = [t for t in self._list() if posixpath.normpath(str(t.get("base_path") or "")) == target]
-        if len(matches) != 1:
-            if not matches:
-                raise TorrentClientError("Aucun torrent ruTorrent ne correspond exactement à cette vidéo")
-            raise TorrentClientError("Plusieurs torrents ruTorrent correspondent à cette vidéo")
-        return matches[0], target
+        if not matches:
+            raise TorrentClientError("Aucun torrent ruTorrent ne correspond exactement à cette vidéo")
+        return matches, target
 
-    def metadata(self, rel: str, client_root: str):
-        torrent, target = self._find_torrent(rel, client_root)
+    def _metadata(self, torrent: dict, target: str):
         ratio_raw = float(torrent.get("ratio_raw") or 0)
         state_changed = int(torrent.get("state_changed") or 0)
         return {
@@ -247,17 +251,31 @@ class RutorrentClient(_HttpClient):
             "state_changed": state_changed,
         }
 
+    def metadata_all(self, rel: str, client_root: str):
+        torrents, target = self._find_torrents(rel, client_root)
+        return [self._metadata(torrent, target) for torrent in torrents]
+
+    def metadata(self, rel: str, client_root: str):
+        return self.metadata_all(rel, client_root)[0]
+
     def delete_with_data(self, rel: str, client_root: str):
-        torrent, _ = self._find_torrent(rel, client_root)
-        info_hash = str(torrent.get("hash") or "")
-        result = self._action([
-            ("mode", "removewithdata"),
-            ("hash", info_hash),
-            ("v", "1"),
-        ])
-        if result is False or result is None:
-            raise TorrentClientError("Suppression ruTorrent refusée")
-        return {"torrent_hash": info_hash, "torrent_name": str(torrent.get("name") or "")}
+        torrents, _ = self._find_torrents(rel, client_root)
+        hashes = []
+        names = []
+        for torrent in torrents:
+            info_hash = str(torrent.get("hash") or "")
+            if not info_hash:
+                raise TorrentClientError("Hash ruTorrent manquant")
+            result = self._action([
+                ("mode", "removewithdata"),
+                ("hash", info_hash),
+                ("v", "1"),
+            ])
+            if result is False or result is None:
+                raise TorrentClientError("Suppression ruTorrent refusée")
+            hashes.append(info_hash)
+            names.append(str(torrent.get("name") or ""))
+        return {"torrent_hashes": hashes, "torrent_names": names, "torrent_count": len(torrents)}
 
 
 def make_torrent_client(config: dict, password: str):

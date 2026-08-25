@@ -311,15 +311,18 @@
           clientLink.hidden = true;
         }
         stats.replaceChildren(mediaStat('Fichier modifié le', formatDate(data.file_mtime)));
-        if (data.torrent) {
-          stats.replaceChildren(
-            mediaStat('Ajouté au client', formatDate(data.torrent.added_on)),
-            mediaStat('Temps de seed', formatDuration(data.torrent.seeding_time)),
-            mediaStat('Ratio', Number(data.torrent.ratio || 0).toFixed(2)),
-            mediaStat('Pairs connectés', String(data.torrent.peers_connected ?? 0)),
-            mediaStat('Seeds connectés', String(data.torrent.seeds_connected ?? 0)),
-            mediaStat('État', data.torrent.state || '—')
-          );
+        if (data.torrents?.length) {
+          const torrentStats = [];
+          data.torrents.forEach((torrent, index) => torrentStats.push(
+            mediaStat(data.torrents.length > 1 ? `Torrent ${index + 1}` : 'Torrent', torrent.torrent_name || '—'),
+            mediaStat('Ajouté au client', formatDate(torrent.added_on)),
+            mediaStat('Temps de seed', formatDuration(torrent.seeding_time)),
+            mediaStat('Ratio', Number(torrent.ratio || 0).toFixed(2)),
+            mediaStat('Pairs connectés', String(torrent.peers_connected ?? 0)),
+            mediaStat('Seeds connectés', String(torrent.seeds_connected ?? 0)),
+            mediaStat('État', torrent.state || '—')
+          ));
+          stats.replaceChildren(...torrentStats);
         }
         message.textContent = data.torrent_error ? 'Client BitTorrent : ' + data.torrent_error : '';
         const button = document.getElementById('delete-media-button');
@@ -340,7 +343,7 @@
         deleteArmed = true;
         button.textContent = 'Confirmez la suppression';
         message.textContent = mediaManagement.delete_mode === 'torrent'
-          ? 'Cliquez une seconde fois pour retirer le torrent et effacer ses données.'
+          ? `Cliquez une seconde fois pour retirer ${mediaManagement.torrents?.length || 1} torrent(s) et effacer leurs données.`
           : 'Cliquez une seconde fois pour effacer définitivement le fichier.';
         clearTimeout(deleteArmTimer);
         deleteArmTimer = setTimeout(() => {
