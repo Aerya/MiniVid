@@ -2249,6 +2249,8 @@ def api_maintenance_purge_thumbs():
 @app.after_request
 def add_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    if request.path == "/browse" or request.path.startswith(("/watch/", "/api/similar/")):
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
 
 @app.route("/api/maintenance/journal", methods=["GET"])

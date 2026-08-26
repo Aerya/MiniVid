@@ -197,6 +197,11 @@
       const remembered = localStorage.getItem('minivid_last_browse');
       return remembered?.startsWith('/browse') ? remembered : (BACK_URL || '/browse');
     }
+    function refreshedBrowseUrl() {
+      const url = new URL(browseReturnUrl(), window.location.origin);
+      url.searchParams.set('_mv_refresh', Date.now().toString());
+      return url.pathname + url.search;
+    }
     async function savePrefs(patch) {
       try {
         await fetch('/api/preferences', {
@@ -381,7 +386,7 @@
         });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || response.status);
-        window.location.href = browseReturnUrl();
+        window.location.href = refreshedBrowseUrl();
       } catch (deleteError) {
         message.textContent = 'Suppression refusée : ' + deleteError.message;
         deleteArmed = false;

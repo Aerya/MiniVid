@@ -358,8 +358,13 @@
       });
     })();
 
-    localStorage.setItem('minivid_last_browse', location.pathname + location.search);
-    const scrollKey = 'minivid_scroll:' + location.pathname + location.search;
+    const browseUrl = new URL(location.href);
+    const forcedRefresh = browseUrl.searchParams.has('_mv_refresh');
+    browseUrl.searchParams.delete('_mv_refresh');
+    const stableBrowseUrl = browseUrl.pathname + browseUrl.search;
+    localStorage.setItem('minivid_last_browse', stableBrowseUrl);
+    const scrollKey = 'minivid_scroll:' + stableBrowseUrl;
+    if (forcedRefresh) history.replaceState(history.state, '', stableBrowseUrl);
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     function restoreScroll() {
       const y = sessionStorage.getItem(scrollKey);
