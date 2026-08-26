@@ -1143,7 +1143,9 @@ def api_media_delete(vid):
             if not client_id:
                 return jsonify(ok=False, error="client_non_configure"), 409
             details = _configured_client(cfg, client_id).delete_with_data(rel, source.get("client_root", "/downloads"))
-            for _ in range(20):
+            # Certains montages réseau reflètent la suppression qBittorrent
+            # plusieurs secondes après la disparition des hash du client.
+            for _ in range(120):
                 if not os.path.exists(full):
                     break
                 time.sleep(0.25)
@@ -1244,6 +1246,8 @@ def smart_group_items(items, mode="date"):
 def browse():
     if not auth_required():
         return redirect(url_for("login"))
+    if request.args.get("_mv_refresh"):
+        scan_media()
     state = read_state()
     prefs = state.get("prefs", {}) or {}
     per  = (request.args.get("per") or str(prefs.get("per") or "all")).strip().lower()

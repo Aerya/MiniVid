@@ -208,6 +208,12 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn("window.addEventListener('pagehide', saveScroll)", html)
         self.assertIn("window.setTimeout(() => window.scrollTo(0, target), 150)", html)
 
+    def test_forced_browse_refresh_rescans_media(self):
+        with mock.patch.object(minivid, "scan_media") as scan:
+            response = self.client.get("/browse?root=0&_mv_refresh=123")
+        self.assertEqual(response.status_code, 200)
+        scan.assert_called_once_with()
+
     def test_new_unsaved_client_can_be_tested(self):
         candidate = {
             "id": "client_87654321",
