@@ -106,6 +106,7 @@ Le support direct dépend du navigateur, du système, du conteneur et des codecs
 - Vérification après suppression : tous les hash doivent avoir disparu du client et le fichier doit être absent du disque
 - Retrait de la vidéo de l'index, des favoris, de la progression et des caches uniquement après ces vérifications
 - En cas d'échec, la vidéo reste indexée et MiniVid affiche l'erreur renvoyée
+- Après une suppression réussie, la liste est rechargée sans cache afin de retirer immédiatement cartes, dossiers vides et miniatures, puis le défilement précédent est restauré
 
 Cette fonction exige que l'authentification MiniVid soit activée. Les mots de passe des clients sont chiffrés sur disque à partir de `SECRET_KEY` et ne sont jamais renvoyés par l'API. Une modification de `SECRET_KEY` rendra les mots de passe enregistrés illisibles ; il faudra alors les saisir à nouveau.
 

@@ -194,13 +194,17 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn('<details id="media-management"', html)
         details_tag = html.split('<details id="media-management"', 1)[1].split('>', 1)[0]
         self.assertNotIn(" open", details_tag)
-        self.assertIn("window.location.href = browseReturnUrl();", html)
+        self.assertIn("url.searchParams.set('_mv_refresh'", html)
+        self.assertIn("window.location.href = refreshedBrowseUrl();", html)
 
     def test_browse_page_persists_and_restores_scroll_position(self):
         response = self.client.get("/browse?root=0&sort=date")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Cache-Control"), "no-store, max-age=0")
         html = response.get_data(as_text=True)
         self.assertIn("history.scrollRestoration = 'manual'", html)
+        self.assertIn("browseUrl.searchParams.delete('_mv_refresh')", html)
+        self.assertIn("history.replaceState(history.state, '', stableBrowseUrl)", html)
         self.assertIn("window.addEventListener('pagehide', saveScroll)", html)
         self.assertIn("window.setTimeout(() => window.scrollTo(0, target), 150)", html)
 
