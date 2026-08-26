@@ -14,7 +14,7 @@ Pensée pour être simple, rapide et efficace, elle combine navigation par dossi
 - **Détection NVENC corrigée** : le test matériel utilise une dimension acceptée par les pilotes NVIDIA récents.
 - **Gestion des sources** : association de plusieurs sources à un ou plusieurs clients qBittorrent ou ruTorrent depuis la WebUI.
 - **Statistiques BitTorrent** : panneau « Fichier et partage » replié par défaut, avec nom exact, lien vers le client et un bloc distinct par torrent pour ses statistiques.
-- **Suppression contrôlée** : suppression simple d'un fichier ou retrait du torrent avec ses données, avec activation globale, règle par source et confirmation par un second clic.
+- **Suppression contrôlée et vérifiée** : suppression simple d'un fichier ou retrait de tous les torrents correspondant exactement au chemin, avec leurs données, activation globale, règle par source et confirmation par un second clic. MiniVid vérifie ensuite la disparition des hash et du fichier avant de retirer la vidéo de son index.
 - **Maintenance compacte** : journal paginé par groupes de huit événements.
 
 ---
@@ -103,7 +103,9 @@ Le support direct dépend du navigateur, du système, du conteneur et des codecs
 - Tous les torrents correspondant au même fichier sont affichés et peuvent être supprimés ensemble avec leurs données
 - Trois modes par source : désactivé, fichier uniquement, torrent et données
 - Correspondance par chemin complet avant toute action sur un torrent
-- Retrait immédiat de la vidéo de l'index, des favoris, de la progression et des caches après une suppression réussie
+- Vérification après suppression : tous les hash doivent avoir disparu du client et le fichier doit être absent du disque
+- Retrait de la vidéo de l'index, des favoris, de la progression et des caches uniquement après ces vérifications
+- En cas d'échec, la vidéo reste indexée et MiniVid affiche l'erreur renvoyée
 
 Cette fonction exige que l'authentification MiniVid soit activée. Les mots de passe des clients sont chiffrés sur disque à partir de `SECRET_KEY` et ne sont jamais renvoyés par l'API. Une modification de `SECRET_KEY` rendra les mots de passe enregistrés illisibles ; il faudra alors les saisir à nouveau.
 

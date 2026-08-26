@@ -360,11 +360,18 @@
 
     localStorage.setItem('minivid_last_browse', location.pathname + location.search);
     const scrollKey = 'minivid_scroll:' + location.pathname + location.search;
-    window.addEventListener('pageshow', () => {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    function restoreScroll() {
       const y = sessionStorage.getItem(scrollKey);
-      if (y) requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10) || 0));
-    });
+      if (!y) return;
+      const target = parseInt(y, 10) || 0;
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, target)));
+      window.setTimeout(() => window.scrollTo(0, target), 150);
+    }
+    window.addEventListener('pageshow', restoreScroll);
+    restoreScroll();
     function saveScroll() { sessionStorage.setItem(scrollKey, String(window.scrollY)); }
+    window.addEventListener('pagehide', saveScroll);
     document.querySelectorAll('a.thumb, .roots a, .pager a, .tagbar a').forEach(el => {
       el.addEventListener('click', saveScroll, { capture: true });
     });
