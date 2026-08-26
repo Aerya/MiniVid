@@ -1143,10 +1143,25 @@ def api_media_delete(vid):
             if not client_id:
                 return jsonify(ok=False, error="client_non_configure"), 409
             details = _configured_client(cfg, client_id).delete_with_data(rel, source.get("client_root", "/downloads"))
+            for _ in range(20):
+                if not os.path.exists(full):
+                    break
+                time.sleep(0.25)
+            if os.path.exists(full):
+                raise TorrentClientError(
+                    "Les torrents ont été retirés, mais le fichier existe encore sur le disque"
+                )
         else:
             return jsonify(ok=False, error="suppression_interdite_pour_cette_source"), 403
         _forget_media(vid)
-        _log_event("media_deleted", root=root_index, mode=mode, name=item.get("name", ""))
+        _log_event(
+            "media_deleted",
+            root=root_index,
+            mode=mode,
+            name=item.get("name", ""),
+            torrent_count=details.get("torrent_count", 0),
+            torrent_hashes=details.get("torrent_hashes", []),
+        )
         return jsonify(ok=True, deleted=True, mode=mode, **details)
     except FileNotFoundError as exc:
         return jsonify(ok=False, error=str(exc)), 404

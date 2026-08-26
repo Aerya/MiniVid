@@ -6,6 +6,7 @@ import base64
 import http.cookiejar
 import json
 import posixpath
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -160,6 +161,20 @@ class QBittorrentClient(_HttpClient):
         )
         if status != 200:
             raise TorrentClientError("Suppression qBittorrent refusée")
+        remaining = set(info_hashes)
+        for _ in range(20):
+            torrents_after = self._json("/api/v2/torrents/info")
+            remaining = {
+                str(torrent.get("hash") or "")
+                for torrent in torrents_after if isinstance(torrents_after, list)
+            } & set(info_hashes)
+            if not remaining:
+                break
+            time.sleep(0.25)
+        if remaining:
+            raise TorrentClientError(
+                f"qBittorrent conserve encore {len(remaining)} torrent(s) après la suppression"
+            )
         return {
             "torrent_hashes": info_hashes,
             "torrent_names": [str(torrent.get("name") or "") for torrent in torrents],
@@ -275,6 +290,11 @@ class RutorrentClient(_HttpClient):
                 raise TorrentClientError("Suppression ruTorrent refusée")
             hashes.append(info_hash)
             names.append(str(torrent.get("name") or ""))
+        remaining = {str(torrent.get("hash") or "") for torrent in self._list()} & set(hashes)
+        if remaining:
+            raise TorrentClientError(
+                f"ruTorrent conserve encore {len(remaining)} torrent(s) après la suppression"
+            )
         return {"torrent_hashes": hashes, "torrent_names": names, "torrent_count": len(torrents)}
 
 

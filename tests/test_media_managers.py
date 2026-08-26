@@ -10,6 +10,8 @@ from media_managers import QBittorrentClient, RutorrentClient, TorrentClientErro
 class FakeTorrentServer(BaseHTTPRequestHandler):
     deleted = []
     duplicate_qbit = False
+    deleted_qbit_hashes = set()
+    deleted_rutorrent_hashes = set()
 
     def log_message(self, *_args):
         pass
@@ -42,6 +44,7 @@ class FakeTorrentServer(BaseHTTPRequestHandler):
             }]
             if self.duplicate_qbit:
                 torrents.append({**torrents[0], "hash": "abc456", "name": "copie-video.mkv", "ratio": 1.25})
+            torrents = [torrent for torrent in torrents if torrent["hash"] not in self.deleted_qbit_hashes]
             return self._send(torrents)
         self.send_error(404)
 
@@ -62,6 +65,7 @@ class FakeTorrentServer(BaseHTTPRequestHandler):
             return
         if self.path == "/api/v2/torrents/delete":
             self.deleted.append(data)
+            self.deleted_qbit_hashes.update(data.get("hashes", [""])[0].split("|"))
             return self._send(b"", "text/plain")
         if self.path == "/rutorrent/plugins/httprpc/action.php":
             mode = data.get("mode", [""])[0]
@@ -77,9 +81,11 @@ class FakeTorrentServer(BaseHTTPRequestHandler):
                 values[25] = "/downloads/video.mkv"
                 values[26] = 1700000000
                 values[28] = 1
-                return self._send({"t": {"DEF456": values}, "cid": 1})
+                torrents = {} if "DEF456" in self.deleted_rutorrent_hashes else {"DEF456": values}
+                return self._send({"t": torrents, "cid": 1})
             if mode == "removewithdata":
                 self.deleted.append(data)
+                self.deleted_rutorrent_hashes.add(data.get("hash", [""])[0])
                 return self._send([0])
         self.send_error(404)
 
@@ -100,6 +106,8 @@ class TorrentClientsTest(unittest.TestCase):
     def setUp(self):
         FakeTorrentServer.deleted.clear()
         FakeTorrentServer.duplicate_qbit = False
+        FakeTorrentServer.deleted_qbit_hashes.clear()
+        FakeTorrentServer.deleted_rutorrent_hashes.clear()
 
     def test_qbittorrent_metadata_and_delete_with_data(self):
         client = QBittorrentClient(self.base_url, "user", "password")

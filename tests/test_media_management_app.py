@@ -30,6 +30,9 @@ import app as minivid  # noqa: E402
 class FakeTorrentClient:
     deleted = []
 
+    def __init__(self, file_path=None):
+        self.file_path = file_path
+
     def metadata(self, rel, client_root):
         return {
             "client_type": "qbittorrent",
@@ -50,7 +53,9 @@ class FakeTorrentClient:
 
     def delete_with_data(self, rel, client_root):
         self.deleted.append((rel, client_root))
-        return {"torrent_hash": "abc", "torrent_name": rel}
+        if self.file_path:
+            os.remove(self.file_path)
+        return {"torrent_hashes": ["abc"], "torrent_names": [rel], "torrent_count": 1}
 
 
 class MediaManagementApiTest(unittest.TestCase):
@@ -143,7 +148,7 @@ class MediaManagementApiTest(unittest.TestCase):
 
     def test_torrent_metadata_and_delete_use_associated_client(self):
         self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
-        fake = FakeTorrentClient()
+        fake = FakeTorrentClient(self.video_path)
         with mock.patch.object(minivid, "_configured_client", return_value=fake):
             metadata = self.client.get(f"/api/media/{self.vid}/management")
             self.assertEqual(metadata.status_code, 200)
@@ -164,6 +169,19 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         self.assertEqual(FakeTorrentClient.deleted, [(self.video_name, "/downloads")])
 
+    def test_torrent_delete_keeps_index_when_file_still_exists(self):
+        self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+        fake = FakeTorrentClient()
+        with mock.patch.object(minivid, "_configured_client", return_value=fake), \
+             mock.patch.object(minivid.time, "sleep", return_value=None):
+            response = self.client.post(
+                f"/api/media/{self.vid}/delete",
+                json={"confirmation": self.video_name},
+            )
+        self.assertEqual(response.status_code, 502, response.get_json())
+        self.assertTrue(os.path.exists(self.video_path))
+        self.assertTrue(any(item["id"] == self.vid for item in minivid.MEDIA))
+
     def test_configuration_requires_authenticated_session(self):
         anonymous = minivid.app.test_client()
         response = anonymous.get("/api/settings/media-managers")
@@ -176,6 +194,15 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn('<details id="media-management"', html)
         details_tag = html.split('<details id="media-management"', 1)[1].split('>', 1)[0]
         self.assertNotIn(" open", details_tag)
+        self.assertIn("window.location.href = browseReturnUrl();", html)
+
+    def test_browse_page_persists_and_restores_scroll_position(self):
+        response = self.client.get("/browse?root=0&sort=date")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("history.scrollRestoration = 'manual'", html)
+        self.assertIn("window.addEventListener('pagehide', saveScroll)", html)
+        self.assertIn("window.setTimeout(() => window.scrollTo(0, target), 150)", html)
 
     def test_new_unsaved_client_can_be_tested(self):
         candidate = {
