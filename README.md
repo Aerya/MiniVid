@@ -146,4 +146,4 @@ Le profil initial utilise `C:\Videos`. L'assistant permet ensuite d'ajouter jusq
 
 ## Vie privée
 
-Les vidéos, l'index, les miniatures et les préférences restent sur votre installation. La génération facultative de tags avec Gemini et le chargement de `hls.js` depuis son CDN nécessitent un accès externe.
+Les vidéos, l'index, les miniatures et les préférences restent sur votre installation. Le chargement de `hls.js` depuis son CDN nécessite un accès externe.
