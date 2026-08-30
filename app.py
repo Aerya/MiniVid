@@ -312,15 +312,6 @@ def _autoscan_loop():
         except Exception as e:
             LOG.warning("[autoscan] error: %s", e)
 
-# démarrage du thread après le scan initial
-try:
-    if AUTOSCAN and SCAN_INTERVAL > 0:
-        t_autoscan = threading.Thread(target=_autoscan_loop, daemon=True)
-        t_autoscan.start()
-        LOG.info("Auto-refresh actif (intervalle: %ss)", SCAN_INTERVAL)
-except Exception as _e:
-    LOG.warning("Impossible de démarrer l'auto-refresh: %s", _e)
-
 # ---------- State ----------
 def _default_state():
     return {
