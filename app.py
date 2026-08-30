@@ -1104,7 +1104,9 @@ def api_media_management(vid):
         if cfg.get("torrent_integration_enabled") and client_id:
             try:
                 torrent_client = _configured_client(cfg, client_id)
-                result["torrents"] = torrent_client.metadata_all(rel, source.get("client_root", "/downloads"))
+                result["torrents"] = torrent_client.metadata_all(
+                    rel, source.get("client_root", "/downloads"), os.path.getsize(full)
+                )
                 result["torrent"] = result["torrents"][0] if result["torrents"] else None
             except TorrentClientError as exc:
                 result["torrent_error"] = str(exc)
@@ -1142,7 +1144,9 @@ def api_media_delete(vid):
             client_id = source.get("client_id")
             if not client_id:
                 return jsonify(ok=False, error="client_non_configure"), 409
-            details = _configured_client(cfg, client_id).delete_with_data(rel, source.get("client_root", "/downloads"))
+            details = _configured_client(cfg, client_id).delete_with_data(
+                rel, source.get("client_root", "/downloads"), os.path.getsize(full)
+            )
             # Certains montages réseau reflètent la suppression qBittorrent
             # plusieurs secondes après la disparition des hash du client.
             for _ in range(120):

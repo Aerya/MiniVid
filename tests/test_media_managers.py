@@ -10,6 +10,7 @@ from media_managers import QBittorrentClient, RutorrentClient, TorrentClientErro
 class FakeTorrentServer(BaseHTTPRequestHandler):
     deleted = []
     duplicate_qbit = False
+    alias_qbit = False
     deleted_qbit_hashes = set()
     deleted_rutorrent_hashes = set()
 
@@ -41,11 +42,22 @@ class FakeTorrentServer(BaseHTTPRequestHandler):
                 "num_incomplete": 30,
                 "num_complete": 40,
                 "state": "stalledUP",
+                "total_size": 123,
             }]
             if self.duplicate_qbit:
                 torrents.append({**torrents[0], "hash": "abc456", "name": "copie-video.mkv", "ratio": 1.25})
+            if self.alias_qbit:
+                torrents.append({
+                    **torrents[0],
+                    "hash": "alias789",
+                    "name": "video.mkv",
+                    "content_path": "/downloads/cross-seed/video.mkv",
+                    "save_path": "/downloads/cross-seed",
+                })
             torrents = [torrent for torrent in torrents if torrent["hash"] not in self.deleted_qbit_hashes]
             return self._send(torrents)
+        if path.path == "/api/v2/torrents/files":
+            return self._send([{"name": "video.mkv", "size": 123}])
         self.send_error(404)
 
     def do_POST(self):
@@ -106,6 +118,7 @@ class TorrentClientsTest(unittest.TestCase):
     def setUp(self):
         FakeTorrentServer.deleted.clear()
         FakeTorrentServer.duplicate_qbit = False
+        FakeTorrentServer.alias_qbit = False
         FakeTorrentServer.deleted_qbit_hashes.clear()
         FakeTorrentServer.deleted_rutorrent_hashes.clear()
 
@@ -132,6 +145,15 @@ class TorrentClientsTest(unittest.TestCase):
         result = client.delete_with_data("video.mkv", "/downloads")
         self.assertEqual(result["torrent_count"], 2)
         self.assertEqual(FakeTorrentServer.deleted[-1]["hashes"], ["abc123|abc456"])
+
+    def test_qbittorrent_includes_same_name_and_size_cross_seed_alias(self):
+        FakeTorrentServer.alias_qbit = True
+        client = QBittorrentClient(self.base_url, "user", "password")
+        metadata = client.metadata_all("video.mkv", "/downloads", expected_size=123)
+        self.assertEqual([item["torrent_hash"] for item in metadata], ["abc123", "alias789"])
+        result = client.delete_with_data("video.mkv", "/downloads", expected_size=123)
+        self.assertEqual(result["torrent_count"], 2)
+        self.assertEqual(FakeTorrentServer.deleted[-1]["hashes"], ["abc123|alias789"])
 
     def test_qbittorrent_refuses_non_matching_path(self):
         client = QBittorrentClient(self.base_url, "user", "password")
