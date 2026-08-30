@@ -312,15 +312,6 @@ def _autoscan_loop():
         except Exception as e:
             LOG.warning("[autoscan] error: %s", e)
 
-# démarrage du thread après le scan initial
-try:
-    if AUTOSCAN and SCAN_INTERVAL > 0:
-        t_autoscan = threading.Thread(target=_autoscan_loop, daemon=True)
-        t_autoscan.start()
-        LOG.info("Auto-refresh actif (intervalle: %ss)", SCAN_INTERVAL)
-except Exception as _e:
-    LOG.warning("Impossible de démarrer l'auto-refresh: %s", _e)
-
 # ---------- State ----------
 def _default_state():
     return {
@@ -1104,7 +1095,9 @@ def api_media_management(vid):
         if cfg.get("torrent_integration_enabled") and client_id:
             try:
                 torrent_client = _configured_client(cfg, client_id)
-                result["torrents"] = torrent_client.metadata_all(rel, source.get("client_root", "/downloads"))
+                result["torrents"] = torrent_client.metadata_all(
+                    rel, source.get("client_root", "/downloads"), os.path.getsize(full)
+                )
                 result["torrent"] = result["torrents"][0] if result["torrents"] else None
             except TorrentClientError as exc:
                 result["torrent_error"] = str(exc)
@@ -1142,8 +1135,12 @@ def api_media_delete(vid):
             client_id = source.get("client_id")
             if not client_id:
                 return jsonify(ok=False, error="client_non_configure"), 409
-            details = _configured_client(cfg, client_id).delete_with_data(rel, source.get("client_root", "/downloads"))
-            for _ in range(20):
+            details = _configured_client(cfg, client_id).delete_with_data(
+                rel, source.get("client_root", "/downloads"), os.path.getsize(full)
+            )
+            # Certains montages réseau reflètent la suppression qBittorrent
+            # plusieurs secondes après la disparition des hash du client.
+            for _ in range(120):
                 if not os.path.exists(full):
                     break
                 time.sleep(0.25)
@@ -1244,6 +1241,8 @@ def smart_group_items(items, mode="date"):
 def browse():
     if not auth_required():
         return redirect(url_for("login"))
+    if request.args.get("_mv_refresh"):
+        scan_media()
     state = read_state()
     prefs = state.get("prefs", {}) or {}
     per  = (request.args.get("per") or str(prefs.get("per") or "all")).strip().lower()
@@ -2249,6 +2248,8 @@ def api_maintenance_purge_thumbs():
 @app.after_request
 def add_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    if request.path == "/browse" or request.path.startswith(("/watch/", "/api/similar/")):
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
 
 @app.route("/api/maintenance/journal", methods=["GET"])

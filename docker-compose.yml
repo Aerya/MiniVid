@@ -2,78 +2,24 @@ services:
   minivid:
     image: ghcr.io/aerya/minivid:latest
     container_name: minivid
-    restart: always
-    gpus: all
-    environment:
-      TZ: Europe/Paris
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
-      MEDIA_DIRS: /videos1|/videos2
-      MEDIA_NAMES: ruTorrent|MeTube|
-      DATA_DIR: /data
-      THUMB_DIR: /cache/thumbs
-      MINI_ALLOWED_EXT: .mp4,.webm,.mkv,.avi,.flv,.m2ts,.ts
-      MINI_PLAYBACK: "auto"
-      MINI_TRANSCODE: 1
-      MINI_FIREFOX_MKV_FALLBACK: 1
-      MINI_THUMB_OFFSET: 5
-      MINI_THUMB_MAX: 30
-      MINI_AUTOSCAN: 1
-      # Auth (prises du .env ; si vide => pas d'auth)
-      MINI_USER: ${MINI_USER}
-      MINI_PASS: ${MINI_PASS}
-      # En console : openssl rand -hex 32
-      SECRET_KEY: 
-      # Gemini auto-tagging (clé API Google — https://aistudio.google.com/apikey)
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      # Ollama (alternative locale à Gemini)
-      # OLLAMA_URL: http://host.docker.internal:11434
-      # OLLAMA_MODEL: llava
-      # Liste noire tags (les mots de moins de 3 lettres sont automatiquement bannis)
-      MINI_BANNED_TAGS:  >
-        and,the,source,video,videos,vid,vids,film,movie,part,
-        les,une,des,ils,elles,sur,sous,dans,par,pour,sans,avec,chez,
-        cet,cette,ces,mon,mes,ton,tes,ses,notre,nos,votre,vos,leur,leurs,
-        qui,que,quoi,dont,quand,comme,
-        your,they,for,with,without,into,onto,about,this,that,these,those,
-        here,there,then,than,are,was,being,been,have,had,just,only,
-        over,under,very,more,most,less,were,com,net
-    volumes:
-      - /mnt/Fichiers/rutorrentdirect:/videos1:ro
-      - /mnt/Fichiers/metube:/videos2:ro
-      - /mnt/Docker/MiniVid/data:/data
-      - /mnt/Docker/MiniVid/cache:/cache
+    restart: unless-stopped
+    env_file: .env
     ports:
-      - "8080:8080"
+      - "${MINIVID_PORT:-8080}:8080"
+    volumes:
+      # Adaptez les chemins hôtes et ajoutez ou retirez des sources si nécessaire.
+      - /chemin/vers/videos1:/videos1:ro
+      - /chemin/vers/videos2:/videos2:ro
+      - ./data:/data
+      - ./cache:/cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
-    # Scan toutes les INTERVAL secondes
-  minivid-scheduler:
-    image: curlimages/curl:8.10.1
-    container_name: minivid-scheduler
-    depends_on:
-      - minivid
-    restart: always
-    environment:
-      APP_URL: ${APP_URL}
-      MINI_USER: ${MINI_USER}
-      MINI_PASS: ${MINI_PASS}
-      INTERVAL: ${INTERVAL}
-    command: >
-      sh -c '
-        set -eu;
-        for i in $(seq 1 60); do curl -fsS "$APP_URL/maintenance" >/dev/null 2>&1 && break || sleep 2; done
-        while :; do
-          if [ -n "$MINI_USER" ] && [ -n "$MINI_PASS" ]; then
-            # login (remember=on)
-            curl -sS -c /tmp/c.jar -X POST "$APP_URL/login" \
-              -d "username=$MINI_USER" -d "password=$MINI_PASS" -d "remember=on" -o /dev/null || true
-            if curl -sS -b /tmp/c.jar "$APP_URL/api/maintenance/progress" | grep -qi "\"running\"\\s*:\\s*true"; then
-              sleep 120
-            else
-              curl -m 5 -sS -b /tmp/c.jar -X POST "$APP_URL/api/maintenance/rescan" -o /dev/null || true
-            fi
-          else
-            curl -m 5 -sS -X POST "$APP_URL/api/maintenance/rescan" -o /dev/null || true
-          fi
-          sleep "$INTERVAL"
-        done
-      '
+    # NVIDIA NVENC (facultatif) : décommentez les deux lignes suivantes.
+    # gpus: all
+    # environment:
+    #   NVIDIA_DRIVER_CAPABILITIES: compute,utility,video

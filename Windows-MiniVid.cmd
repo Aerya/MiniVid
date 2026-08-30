@@ -67,7 +67,7 @@ $TXT = @{
     askPort="Host port for MiniVid (maps to 8080 in container) [default 8080]"
     portBusy="Port {0} seems in use on localhost."
     portUseAnyway="Use it anyway? [y/N]"
-    askCount="How many media folders to add? [1-10, default 5]"
+    askCount="How many media folders to add? [1-10, default 1]"
     mediaNameN="Display name for folder #{0} (shown in UI)"
     askTypeN="Folder #{0}: Local path (L) or SMB network share (N)? [L/N, default L]"
     askLocalPathN="Windows path for /videos{0} (e.g. C:\Videos\...)"
@@ -128,7 +128,7 @@ $TXT = @{
     askPort="Port hote pour MiniVid (mappe vers 8080) [defaut 8080]"
     portBusy="Le port {0} semble deja occupe."
     portUseAnyway="L'utiliser quand meme ? [y/N]"
-    askCount="Combien de dossiers medias ajouter ? [1-10, defaut 5]"
+    askCount="Combien de dossiers medias ajouter ? [1-10, defaut 1]"
     mediaNameN="Nom affiche pour le dossier no {0} (visible dans l'UI)"
     askTypeN="Dossier no {0} : Local (L) ou SMB (N) ? [L/N, defaut L]"
     askLocalPathN="Chemin Windows pour /videos{0} (ex. C:\Videos\...)"
@@ -168,7 +168,23 @@ $DockerCliCandidates = @(
 )
 
 # === Utilities ===
-function Find-DockerCli { foreach ($p in $DockerCliCandidates) { try { & $p version *> $null; return $p } catch {} } return $null }
+function Find-DockerCli {
+  foreach ($p in $DockerCliCandidates) {
+    try {
+      $cmd = Get-Command $p -ErrorAction Stop
+      if ($cmd.Path) { return $cmd.Path }
+      return $cmd.Source
+    } catch {}
+  }
+  return $null
+}
+function Test-DockerEngine([string]$Docker) {
+  if (-not $Docker) { return $false }
+  try {
+    & $Docker info *> $null
+    return ($LASTEXITCODE -eq 0)
+  } catch { return $false }
+}
 function Ensure-Winget {
   try { Get-Command winget -ErrorAction Stop | Out-Null } catch {
     try { Get-Command winget.exe -ErrorAction Stop | Out-Null } catch {
@@ -183,19 +199,25 @@ function Ensure-DockerDesktop {
   if ($cli) { Ok ([string]::Format((T 'dockerDetected'), $cli)); return }
   Info (T 'installingDocker'); Ensure-Winget
   winget install --id Docker.DockerDesktop -e --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) { throw "Docker Desktop installation failed (winget exit code: $LASTEXITCODE)." }
   Ok (T 'dockerInstallReq')
 }
 function Start-DockerAndWait {
-  if (Test-Path $DockerDesktopExe) { Info (T 'startingDD'); Start-Process $DockerDesktopExe | Out-Null } else { Warn 'Docker Desktop executable not found.' }
-  while ($true) {
+  param([int]$TimeoutSeconds = 300)
+  $cli = Find-DockerCli
+  if (Test-DockerEngine $cli) { Ok ([string]::Format((T 'dockerReady'), $cli)); return $cli }
+  if (Test-Path $DockerDesktopExe) { Info (T 'startingDD'); Start-Process $DockerDesktopExe | Out-Null } else { throw 'Docker Desktop executable not found.' }
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
     $cli = Find-DockerCli
-    if ($cli) { try { & $cli info *> $null; Ok ([string]::Format((T 'dockerReady'), $cli)); return $cli } catch {} }
+    if (Test-DockerEngine $cli) { Ok ([string]::Format((T 'dockerReady'), $cli)); return $cli }
     try {
       $wsl = & wsl.exe -l -v 2>$null
       if ($wsl -match 'docker-desktop\s+\d+\s+Running') { Info (T 'wslRunning') } else { Info (T 'waitingWSL') }
     } catch {}
     Start-Sleep -Seconds 3
   }
+  throw "Docker Desktop did not become ready within $TimeoutSeconds seconds."
 }
 function Ensure-Dirs {
   New-Item -ItemType Directory -Force -Path $Root | Out-Null
@@ -211,19 +233,15 @@ function Generate-SecretKey {
 function Set-SecretKey-In-Env {
   param([string]$EnvPath)
   $key = Generate-SecretKey
-  if (Test-Path $EnvPath) {
-    $raw = Get-Content -Raw $EnvPath
-    if ($raw -match '^\s*SECRET_KEY\s*=') { $raw = $raw -replace '^\s*SECRET_KEY\s*=.*$', "SECRET_KEY=$key"; Set-Content -Encoding ASCII -Path $EnvPath -Value $raw }
-    else { Add-Content -Path $EnvPath -Encoding ASCII -Value "SECRET_KEY=$key" }
-  } else {
-    "SECRET_KEY=$key" | Out-File -Encoding ASCII $EnvPath
-  }
+  Ensure-Env-Key 'SECRET_KEY' $key
   Ok ([string]::Format((T 'secUpdated'), $EnvPath)); return $key
 }
 function Ensure-SecretKey {
   if (-not (Test-Path $EnvPath)) { return }
-  $raw = Get-Content -Raw $EnvPath
-  if ($raw -notmatch '^\s*SECRET_KEY\s*=\s*\S') { Set-SecretKey-In-Env -EnvPath $EnvPath | Out-Null }
+  $envMap = Read-DotEnv -Path $EnvPath
+  if (-not $envMap.ContainsKey('SECRET_KEY') -or [string]::IsNullOrWhiteSpace($envMap['SECRET_KEY'])) {
+    Set-SecretKey-In-Env -EnvPath $EnvPath | Out-Null
+  }
 }
 function Test-PortInUse([int]$Port){
   try {
@@ -244,13 +262,22 @@ function PathToForward([string]$p){
   if ($p -match '^\\\\') { return (Normalize-Unc $p) }
   return ($p -replace '\\','/')
 }
+function ConvertTo-YamlSingleQuoted([string]$Value) {
+  if ($null -eq $Value) { return '' }
+  return $Value.Replace("'", "''")
+}
+function ConvertTo-DotEnvValue([string]$Value) {
+  if ($null -eq $Value) { $Value = '' }
+  if ($Value -match '[\r\n]') { throw 'Environment values cannot contain line breaks.' }
+  return "'" + $Value.Replace("'", "\'") + "'"
+}
 function Ensure-Env-Key([string]$key,[string]$val){
   $content = ''
   if (Test-Path $EnvPath) { $content = Get-Content -Raw $EnvPath -ErrorAction SilentlyContinue }
   $pattern = '^\s*' + [regex]::Escape($key) + '\s*=.*$(\r?\n)?'
   $content = [regex]::Replace($content, $pattern, '', [System.Text.RegularExpressions.RegexOptions]::Multiline)
   if ($content -and -not $content.EndsWith("`n")) { $content += "`r`n" }
-  $content += ($key + '=' + $val + "`r`n")
+  $content += ($key + '=' + (ConvertTo-DotEnvValue $val) + "`r`n")
   Set-Content -Encoding ASCII -Path $EnvPath -Value $content
 }
 function Clear-Cifs-Creds {
@@ -266,10 +293,10 @@ function Clear-Cifs-Creds {
 
 function Write-DefaultEnv {
 @"
-APP_URL=http://minivid:8080
 MINI_USER=
 MINI_PASS=
-INTERVAL=3600
+SECRET_KEY=
+MINI_SCAN_INTERVAL=3600
 CIFS_DOMAIN=
 CIFS_USER=
 CIFS_PASS=
@@ -298,6 +325,8 @@ function Ensure-Files {
   elseif (Detect-OldCompose -path $ComposePath) { $regen = $true }
   if ($regen) { Backup-And-Write }
   if (-not (Test-Path $EnvPath)) { Write-DefaultEnv; Ok ([string]::Format((T 'createdEnv'), $EnvPath)) }
+  $envMap = Read-DotEnv -Path $EnvPath
+  if (-not $envMap.ContainsKey('MINI_SCAN_INTERVAL')) { Ensure-Env-Key 'MINI_SCAN_INTERVAL' '3600' }
 }
 function Open-Editor($file) { Start-Process -FilePath "notepad.exe" -ArgumentList "`"$file`"" }
 function Get-HostPort {
@@ -310,27 +339,26 @@ function Get-HostPort {
 
 # === Default compose ===
 function Write-DefaultCompose {
-  $dataHost  = (Join-Path $Root 'data').Replace('\','/')
-  $cacheHost = (Join-Path $Root 'cache').Replace('\','/')
+  $dataHost  = ConvertTo-YamlSingleQuoted ((Join-Path $Root 'data').Replace('\','/'))
+  $cacheHost = ConvertTo-YamlSingleQuoted ((Join-Path $Root 'cache').Replace('\','/'))
   $tpl = @'
 services:
   minivid:
     image: ghcr.io/aerya/minivid:latest
     container_name: minivid
-    restart: always
+    restart: unless-stopped
     environment:
       TZ: Europe/Paris
-      MEDIA_DIRS: /videos1|/videos2|/videos3|/videos4|/videos5
-      MEDIA_NAMES: ruTorrent|MeTube|Docs|Concerts|Tests formats video
+      MEDIA_DIRS: /videos1
+      MEDIA_NAMES: Videos
       DATA_DIR: /data
       THUMB_DIR: /cache/thumbs
       MINI_ALLOWED_EXT: .mp4,.webm,.mkv,.avi,.flv,.m2ts
-      MINI_PLAYBACK: auto
       MINI_TRANSCODE: "1"
-      MINI_FIREFOX_MKV_FALLBACK: "1"
       MINI_THUMB_OFFSET: "5"
       MINI_THUMB_MAX: "30"
       MINI_AUTOSCAN: "1"
+      MINI_SCAN_INTERVAL: ${MINI_SCAN_INTERVAL}
       MINI_USER: ${MINI_USER}
       MINI_PASS: ${MINI_PASS}
       SECRET_KEY: ${SECRET_KEY}
@@ -343,46 +371,11 @@ services:
         here,there,then,than,are,was,being,been,have,had,just,only,
         over,under,very,more,most,less,were,com,net
     volumes:
-      - 'C:/CHANGE_ME/rutorrent-direct:/videos1:ro'
-      - 'C:/CHANGE_ME/MeTube:/videos2:ro'
-      - 'C:/CHANGE_ME/TEST/Docs:/videos3:ro'
-      - 'C:/CHANGE_ME/TEST/Concerts:/videos4:ro'
-      - 'C:/CHANGE_ME/TEST/Formats:/videos5:ro'
+      - 'C:/Videos:/videos1:ro'
       - '@@DATA_HOST@@:/data'
       - '@@CACHE_HOST@@:/cache'
     ports:
       - "8080:8080"
-
-  minivid-scheduler:
-    image: curlimages/curl:8.10.1
-    container_name: minivid-scheduler
-    depends_on:
-      - minivid
-    restart: always
-    environment:
-      APP_URL: ${APP_URL}
-      MINI_USER: ${MINI_USER}
-      MINI_PASS: ${MINI_PASS}
-      INTERVAL: ${INTERVAL}
-    command: >
-      sh -c '
-        set -eu;
-        for i in $(seq 1 60); do curl -fsS "$APP_URL/maintenance" >/dev/null 2>&1 && break || sleep 2; done
-        while :; do
-          if [ -n "$MINI_USER" ] && [ -n "$MINI_PASS" ]; then
-            curl -sS -c /tmp/c.jar -X POST "$APP_URL/login" \
-              -d "username=$MINI_USER" -d "password=$MINI_PASS" -d "remember=on" -o /dev/null || true
-            if curl -sS -b /tmp/c.jar "$APP_URL/api/maintenance/progress" | grep -qi "\"running\"\s*:\s*true"; then
-              sleep 120
-            else
-              curl -m 5 -sS -b /tmp/c.jar -X POST "$APP_URL/api/maintenance/rescan" -o /dev/null || true
-            fi
-          else
-            curl -m 5 -sS -X POST "$APP_URL/api/maintenance/rescan" -o /dev/null || true
-          fi
-          sleep "$INTERVAL"
-        done
-      '
 '@
   $out = $tpl.Replace('@@DATA_HOST@@', $dataHost).Replace('@@CACHE_HOST@@', $cacheHost)
   Set-Content -Encoding ASCII -Path $ComposePath -Value $out
@@ -428,7 +421,13 @@ function Read-DotEnv {
     $raw = Get-Content -Raw $Path -ErrorAction SilentlyContinue
     foreach($line in ($raw -split "`r?`n")) {
       if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
-      if ($line -match '^\s*([^=\s]+)\s*=\s*(.*)\s*$') { $map[$matches[1]]=$matches[2] }
+      if ($line -match '^\s*([^=\s]+)\s*=\s*(.*)\s*$') {
+        $value = $matches[2].Trim()
+        if ($value.Length -ge 2 -and $value.StartsWith("'") -and $value.EndsWith("'")) {
+          $value = $value.Substring(1, $value.Length - 2).Replace("\'", "'")
+        }
+        $map[$matches[1]] = $value
+      }
     }
   }
   return $map
@@ -453,6 +452,13 @@ function Get-Prompt([string]$key, [int]$i){
   }
 }
 
+function Read-HiddenText([string]$Prompt) {
+  $secure = Read-Host $Prompt -AsSecureString
+  $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+  finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+
 # === Guided compose builder ===
 function Setup-Compose-Guided {
   param([string]$Docker)
@@ -471,7 +477,7 @@ function Setup-Compose-Guided {
   }
 
   # Folders
-  $count = 5
+  $count = 1
   $ans = Read-Host (T 'askCount')
   if ($ans -match '^\d+$') { $n=[int]$ans; if ($n -ge 1 -and $n -le 10) { $count=$n } }
 
@@ -499,7 +505,7 @@ function Setup-Compose-Guided {
       $vname = "videos$($i)"
       if ($needAuth -match '^(y|yes|o|oui)$') {
         $serviceVolumes.Add( "      - ${vname}:/videos$($i):ro" ) | Out-Null
-        $cifsBlocks.Add( "  ${vname}:`r`n    driver: local`r`n    driver_opts:`r`n      type: cifs`r`n      device: '$unc'`r`n      o: 'username=${CIFS_USER},password=${CIFS_PASS},DOMAINPLACEHOLDER,SECPLACEHOLDER,ro'" ) | Out-Null
+        $cifsBlocks.Add( "  ${vname}:`r`n    driver: local`r`n    driver_opts:`r`n      type: cifs`r`n      device: '$unc'`r`n      o: 'username=`${CIFS_USER},password=`${CIFS_PASS},DOMAINPLACEHOLDER,SECPLACEHOLDER,ro'" ) | Out-Null
         $authFlags += $true
       } else {
         $serviceVolumes.Add( "      - ${vname}:/videos$($i):ro" ) | Out-Null
@@ -508,14 +514,14 @@ function Setup-Compose-Guided {
       }
     } else {
       $path = Read-Host (Get-Prompt 'askLocalPathN' $i)
-      $path = PathToForward $path
+      $path = ConvertTo-YamlSingleQuoted (PathToForward $path)
       $serviceVolumes.Add( "      - '$($path):/videos$($i):ro'" ) | Out-Null
     }
   }
 
   # data/cache local
-  $dataHost  = (Join-Path $Root 'data').Replace('\','/')
-  $cacheHost = (Join-Path $Root 'cache').Replace('\','/')
+  $dataHost  = ConvertTo-YamlSingleQuoted ((Join-Path $Root 'data').Replace('\','/'))
+  $cacheHost = ConvertTo-YamlSingleQuoted ((Join-Path $Root 'cache').Replace('\','/'))
   $serviceVolumes.Add( "      - '$($dataHost):/data'" ) | Out-Null
   $serviceVolumes.Add( "      - '$($cacheHost):/cache'" ) | Out-Null
 
@@ -529,8 +535,11 @@ function Setup-Compose-Guided {
     $u=$null; $p=$null; $d=$null
     if ($needAuthAny) {
       $u = Read-Host (T 'askCifsUser')
-      $p = Read-Host (T 'askCifsPass')
+      $p = Read-HiddenText (T 'askCifsPass')
       $d = Read-Host (T 'askCifsDomain')
+      if ($u -match ',' -or $p -match ',' -or $d -match ',') {
+        throw 'CIFS username, password and domain cannot contain a comma.'
+      }
       if ($u) { Ensure-Env-Key 'CIFS_USER' $u }
       if ($p) { Ensure-Env-Key 'CIFS_PASS' $p }
       if ($d) { Ensure-Env-Key 'CIFS_DOMAIN' $d }
@@ -558,8 +567,8 @@ function Setup-Compose-Guided {
         $share = $m.Groups[1].Value
         $opt = $perShareOpts[$share]
         $oline = if (-not $authFlags[$idx]) { "guest,$opt,ro" } else {
-          $tmp = "username=${CIFS_USER},password=${CIFS_PASS},"
-          if ($d) { $tmp += "domain=${CIFS_DOMAIN}," }
+          $tmp = 'username=${CIFS_USER},password=${CIFS_PASS},'
+          if ($d) { $tmp += 'domain=${CIFS_DOMAIN},' }
           $tmp + $opt + ",ro"
         }
         $block = [regex]::Replace($block, "o:\s*'[^']*'", "o: '$oline'")
@@ -575,7 +584,7 @@ services:
   minivid:
     image: ghcr.io/aerya/minivid:latest
     container_name: minivid
-    restart: always
+    restart: unless-stopped
     environment:
       TZ: Europe/Paris
       MEDIA_DIRS: @@MEDIA_DIRS@@
@@ -583,12 +592,11 @@ services:
       DATA_DIR: /data
       THUMB_DIR: /cache/thumbs
       MINI_ALLOWED_EXT: .mp4,.webm,.mkv,.avi,.flv,.m2ts
-      MINI_PLAYBACK: auto
       MINI_TRANSCODE: "1"
-      MINI_FIREFOX_MKV_FALLBACK: "1"
       MINI_THUMB_OFFSET: "5"
       MINI_THUMB_MAX: "30"
       MINI_AUTOSCAN: "1"
+      MINI_SCAN_INTERVAL: ${MINI_SCAN_INTERVAL}
       MINI_USER: ${MINI_USER}
       MINI_PASS: ${MINI_PASS}
       SECRET_KEY: ${SECRET_KEY}
@@ -604,40 +612,10 @@ services:
 @@SERVICE_VOLUMES@@
     ports:
       - "@@PORT@@:8080"
-
-  minivid-scheduler:
-    image: curlimages/curl:8.10.1
-    container_name: minivid-scheduler
-    depends_on:
-      - minivid
-    restart: always
-    environment:
-      APP_URL: ${APP_URL}
-      MINI_USER: ${MINI_USER}
-      MINI_PASS: ${MINI_PASS}
-      INTERVAL: ${INTERVAL}
-    command: >
-      sh -c '
-        set -eu;
-        for i in $(seq 1 60); do curl -fsS "$APP_URL/maintenance" >/dev/null 2>&1 && break || sleep 2; done
-        while :; do
-          if [ -n "$MINI_USER" ] && [ -n "$MINI_PASS" ]; then
-            curl -sS -c /tmp/c.jar -X POST "$APP_URL/login" \
-              -d "username=$MINI_USER" -d "password=$MINI_PASS" -d "remember=on" -o /dev/null || true
-            if curl -sS -b /tmp/c.jar "$APP_URL/api/maintenance/progress" | grep -qi "\"running\"\s*:\s*true"; then
-              sleep 120
-            else
-              curl -m 5 -sS -b /tmp/c.jar -X POST "$APP_URL/api/maintenance/rescan" -o /dev/null || true
-            fi
-          else
-            curl -m 5 -sS -X POST "$APP_URL/api/maintenance/rescan" -o /dev/null || true
-          fi
-          sleep "$INTERVAL"
-        done
-      '
 '@
+  $mediaNamesYaml = "'" + ((($mediaNames -join '|') -replace "'", "''")) + "'"
   $compose = $tpl.Replace('@@MEDIA_DIRS@@', ($mediaDirs -join '|')).
-                 Replace('@@MEDIA_NAMES@@', ($mediaNames -join '|')).
+                 Replace('@@MEDIA_NAMES@@', $mediaNamesYaml).
                  Replace('@@SERVICE_VOLUMES@@', $serviceJoined).
                  Replace('@@PORT@@', [string]$port)
 
@@ -711,9 +689,7 @@ function Set-WebAuth {
   $ans = Read-Host (T 'webAuthEnableQ')
   if ($ans -match '^(y|yes|o|oui)$') {
     $user = Read-Host (T 'webAuthUserQ')
-    $sec  = Read-Host (T 'webAuthPassQ') -AsSecureString
-    $ptr  = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-    try { $pass = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) } finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+    $pass = Read-HiddenText (T 'webAuthPassQ')
     if ([string]::IsNullOrWhiteSpace($user) -or [string]::IsNullOrWhiteSpace($pass)) {
       Warn (T 'webAuthOff'); Ensure-Env-Key 'MINI_USER' ''; Ensure-Env-Key 'MINI_PASS' ''
     } else {
@@ -734,11 +710,9 @@ function Compose-Pull-Up {
 
   Ensure-SecretKey
   Repair-ComposeCifs
-  & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath down *> $null
-  Purge-Smb-NamedVolumes -Docker $Docker
 
   Info 'validate: docker compose config'
-  & $Docker compose -f $ComposePath --env-file $EnvPath config 1>$null 2>$null
+  & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath config 1>$null 2>$null
   if ($LASTEXITCODE -ne 0) { throw (T 'diagFail') }
 
   $common = @('compose','-p','minivid','-f',$ComposePath,'--env-file',$EnvPath)
@@ -749,6 +723,14 @@ function Compose-Pull-Up {
     Info 'retry: docker compose pull (no --progress)'
     & $Docker @common 'pull'
     if ($LASTEXITCODE -ne 0) { throw 'docker compose pull failed.' }
+  }
+
+  # A named CIFS volume must be detached before Docker can recreate it.
+  $smbVolumes = & $Docker volume ls --format '{{.Name}}' 2>$null | Where-Object { $_ -match '^minivid_videos\d+$' }
+  if ($smbVolumes) {
+    & $Docker @common 'down'
+    if ($LASTEXITCODE -ne 0) { throw 'docker compose down failed before SMB volume refresh.' }
+    Purge-Smb-NamedVolumes -Docker $Docker
   }
 
   Info 'docker compose up -d'
@@ -819,7 +801,8 @@ function Ensure-Files-Once {
   Ensure-Files
 }
 $cli = Find-DockerCli
-if (-not $cli) { Ensure-DockerDesktop; $cli = Start-DockerAndWait } else { Ok ([string]::Format((T 'dockerDetected'), $cli)) }
+if (-not $cli) { Ensure-DockerDesktop }
+$cli = Start-DockerAndWait
 
 Ensure-Files
 

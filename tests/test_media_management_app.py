@@ -48,11 +48,11 @@ class FakeTorrentClient:
             "state": "stalledUP",
         }
 
-    def metadata_all(self, rel, client_root):
+    def metadata_all(self, rel, client_root, expected_size=None):
         return [self.metadata(rel, client_root)]
 
-    def delete_with_data(self, rel, client_root):
-        self.deleted.append((rel, client_root))
+    def delete_with_data(self, rel, client_root, expected_size=None):
+        self.deleted.append((rel, client_root, expected_size))
         if self.file_path:
             os.remove(self.file_path)
         return {"torrent_hashes": ["abc"], "torrent_names": [rel], "torrent_count": 1}
@@ -167,7 +167,7 @@ class MediaManagementApiTest(unittest.TestCase):
                 json={"confirmation": self.video_name},
             )
         self.assertEqual(response.status_code, 200, response.get_json())
-        self.assertEqual(FakeTorrentClient.deleted, [(self.video_name, "/downloads")])
+        self.assertEqual(FakeTorrentClient.deleted, [(self.video_name, "/downloads", len(b"not-a-real-video"))])
 
     def test_torrent_delete_keeps_index_when_file_still_exists(self):
         self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
@@ -194,15 +194,25 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn('<details id="media-management"', html)
         details_tag = html.split('<details id="media-management"', 1)[1].split('>', 1)[0]
         self.assertNotIn(" open", details_tag)
-        self.assertIn("window.location.href = browseReturnUrl();", html)
+        self.assertIn("url.searchParams.set('_mv_refresh'", html)
+        self.assertIn("window.location.href = refreshedBrowseUrl();", html)
 
     def test_browse_page_persists_and_restores_scroll_position(self):
         response = self.client.get("/browse?root=0&sort=date")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Cache-Control"), "no-store, max-age=0")
         html = response.get_data(as_text=True)
         self.assertIn("history.scrollRestoration = 'manual'", html)
+        self.assertIn("browseUrl.searchParams.delete('_mv_refresh')", html)
+        self.assertIn("history.replaceState(history.state, '', stableBrowseUrl)", html)
         self.assertIn("window.addEventListener('pagehide', saveScroll)", html)
         self.assertIn("window.setTimeout(() => window.scrollTo(0, target), 150)", html)
+
+    def test_forced_browse_refresh_rescans_media(self):
+        with mock.patch.object(minivid, "scan_media") as scan:
+            response = self.client.get("/browse?root=0&_mv_refresh=123")
+        self.assertEqual(response.status_code, 200)
+        scan.assert_called_once_with()
 
     def test_new_unsaved_client_can_be_tested(self):
         candidate = {
