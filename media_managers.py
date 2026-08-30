@@ -92,7 +92,7 @@ class QBittorrentClient(_HttpClient):
         _, payload, _ = self.request("/api/v2/app/version")
         return {"ok": True, "version": payload.decode("utf-8", "replace").strip()}
 
-    def _find_torrents(self, rel: str, client_root: str):
+    def _find_torrents(self, rel: str, client_root: str, expected_size: int | None = None):
         self.login()
         target = _client_path(client_root, rel)
         torrents = self._json("/api/v2/torrents/info")
@@ -107,9 +107,6 @@ class QBittorrentClient(_HttpClient):
                 possible.append(torrent)
             elif posixpath.basename(target) == str(torrent.get("name") or ""):
                 possible.append(torrent)
-        if exact:
-            return exact, target
-
         verified = []
         for torrent in possible:
             info_hash = str(torrent.get("hash") or "")
@@ -122,8 +119,27 @@ class QBittorrentClient(_HttpClient):
                 if candidate == target:
                     verified.append(torrent)
                     break
-        if verified:
-            unique = {str(torrent.get("hash") or ""): torrent for torrent in verified}
+        matches = exact + verified
+        if expected_size:
+            target_name = posixpath.basename(target).casefold()
+            known_hashes = {str(torrent.get("hash") or "") for torrent in matches}
+            for torrent in torrents if isinstance(torrents, list) else []:
+                info_hash = str(torrent.get("hash") or "")
+                if not info_hash or info_hash in known_hashes:
+                    continue
+                torrent_name = posixpath.basename(str(torrent.get("name") or "")).casefold()
+                if torrent_name != target_name and int(torrent.get("total_size") or 0) != int(expected_size):
+                    continue
+                files = self._json("/api/v2/torrents/files?" + urllib.parse.urlencode({"hash": info_hash}))
+                if any(
+                    posixpath.basename(str(item.get("name") or "")).casefold() == target_name
+                    and int(item.get("size") or 0) == int(expected_size)
+                    for item in files if isinstance(files, list)
+                ):
+                    matches.append(torrent)
+                    known_hashes.add(info_hash)
+        if matches:
+            unique = {str(torrent.get("hash") or ""): torrent for torrent in matches}
             return list(unique.values()), target
         raise TorrentClientError("Aucun torrent ne correspond exactement à cette vidéo")
 
@@ -143,15 +159,15 @@ class QBittorrentClient(_HttpClient):
             "state": str(torrent.get("state") or ""),
         }
 
-    def metadata_all(self, rel: str, client_root: str):
-        torrents, target = self._find_torrents(rel, client_root)
+    def metadata_all(self, rel: str, client_root: str, expected_size: int | None = None):
+        torrents, target = self._find_torrents(rel, client_root, expected_size)
         return [self._metadata(torrent, target) for torrent in torrents]
 
-    def metadata(self, rel: str, client_root: str):
-        return self.metadata_all(rel, client_root)[0]
+    def metadata(self, rel: str, client_root: str, expected_size: int | None = None):
+        return self.metadata_all(rel, client_root, expected_size)[0]
 
-    def delete_with_data(self, rel: str, client_root: str):
-        torrents, _ = self._find_torrents(rel, client_root)
+    def delete_with_data(self, rel: str, client_root: str, expected_size: int | None = None):
+        torrents, _ = self._find_torrents(rel, client_root, expected_size)
         info_hashes = [str(torrent.get("hash") or "") for torrent in torrents]
         if not info_hashes or any(not info_hash for info_hash in info_hashes):
             raise TorrentClientError("Hash qBittorrent manquant")
@@ -237,9 +253,18 @@ class RutorrentClient(_HttpClient):
         torrents = self._list()
         return {"ok": True, "version": "ruTorrent", "torrent_count": len(torrents)}
 
-    def _find_torrents(self, rel: str, client_root: str):
+    def _find_torrents(self, rel: str, client_root: str, expected_size: int | None = None):
         target = _client_path(client_root, rel)
-        matches = [t for t in self._list() if posixpath.normpath(str(t.get("base_path") or "")) == target]
+        target_name = posixpath.basename(target).casefold()
+        matches = [
+            torrent for torrent in self._list()
+            if posixpath.normpath(str(torrent.get("base_path") or "")) == target
+            or (
+                expected_size
+                and posixpath.basename(str(torrent.get("base_path") or "")).casefold() == target_name
+                and int(torrent.get("size") or 0) == int(expected_size)
+            )
+        ]
         if not matches:
             raise TorrentClientError("Aucun torrent ruTorrent ne correspond exactement à cette vidéo")
         return matches, target
@@ -266,15 +291,15 @@ class RutorrentClient(_HttpClient):
             "state_changed": state_changed,
         }
 
-    def metadata_all(self, rel: str, client_root: str):
-        torrents, target = self._find_torrents(rel, client_root)
+    def metadata_all(self, rel: str, client_root: str, expected_size: int | None = None):
+        torrents, target = self._find_torrents(rel, client_root, expected_size)
         return [self._metadata(torrent, target) for torrent in torrents]
 
-    def metadata(self, rel: str, client_root: str):
-        return self.metadata_all(rel, client_root)[0]
+    def metadata(self, rel: str, client_root: str, expected_size: int | None = None):
+        return self.metadata_all(rel, client_root, expected_size)[0]
 
-    def delete_with_data(self, rel: str, client_root: str):
-        torrents, _ = self._find_torrents(rel, client_root)
+    def delete_with_data(self, rel: str, client_root: str, expected_size: int | None = None):
+        torrents, _ = self._find_torrents(rel, client_root, expected_size)
         hashes = []
         names = []
         for torrent in torrents:

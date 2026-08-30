@@ -48,11 +48,11 @@ class FakeTorrentClient:
             "state": "stalledUP",
         }
 
-    def metadata_all(self, rel, client_root):
+    def metadata_all(self, rel, client_root, expected_size=None):
         return [self.metadata(rel, client_root)]
 
-    def delete_with_data(self, rel, client_root):
-        self.deleted.append((rel, client_root))
+    def delete_with_data(self, rel, client_root, expected_size=None):
+        self.deleted.append((rel, client_root, expected_size))
         if self.file_path:
             os.remove(self.file_path)
         return {"torrent_hashes": ["abc"], "torrent_names": [rel], "torrent_count": 1}
@@ -167,7 +167,7 @@ class MediaManagementApiTest(unittest.TestCase):
                 json={"confirmation": self.video_name},
             )
         self.assertEqual(response.status_code, 200, response.get_json())
-        self.assertEqual(FakeTorrentClient.deleted, [(self.video_name, "/downloads")])
+        self.assertEqual(FakeTorrentClient.deleted, [(self.video_name, "/downloads", len(b"not-a-real-video"))])
 
     def test_torrent_delete_keeps_index_when_file_still_exists(self):
         self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)

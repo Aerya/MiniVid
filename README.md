@@ -101,6 +101,7 @@ Le support direct dépend du navigateur, du système, du conteneur et des codecs
 - Plusieurs clients qBittorrent et ruTorrent configurables depuis la page Maintenance
 - Un client peut être associé à plusieurs sources vidéo
 - Tous les torrents correspondant au même fichier sont affichés et peuvent être supprimés ensemble avec leurs données
+- Les variantes cross-seed utilisant un autre chemin sont également rattachées lorsque le nom du fichier et sa taille sont identiques, puis retirées du client avec leurs données
 - Trois modes par source : désactivé, fichier uniquement, torrent et données
 - Correspondance par chemin complet avant toute action sur un torrent
 - Vérification après suppression : tous les hash doivent avoir disparu du client et le fichier doit être absent du disque
