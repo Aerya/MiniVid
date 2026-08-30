@@ -117,6 +117,7 @@ Pour ruTorrent, le plugin `httprpc` est utilisé. La suppression des données n�
 | `MEDIA_DIRS` | vide | Chemins vidéo internes, séparés par `|` |
 | `MEDIA_NAMES` | automatique | Noms affichés, dans le même ordre |
 | `MINI_ALLOWED_EXT` | formats courants | Extensions indexées |
+| `MINI_BANNED_TAGS` | liste fournie | Mots ignorés lors de la génération automatique des tags |
 | `MINI_TRANSCODE` | `0` | Autorise le fallback HLS |
 | `MINI_AUTOSCAN` | `1` | Active le rescan automatique |
 | `MINI_SCAN_INTERVAL` | `3600` | Intervalle de scan en secondes |
