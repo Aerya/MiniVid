@@ -461,7 +461,18 @@
       const video = document.getElementById('v');
       if (!video || e.target.matches('input, textarea, [contenteditable]')) return;
       const key = e.key.toLowerCase();
-      if (key === ' ' || key === 'k') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+
+      // Espace/K doivent basculer l'état une seule fois par pression.
+      // Certains navigateurs peuvent transmettre plusieurs keydown ou
+      // retraiter la touche avec les contrôles natifs du lecteur.
+      if (key === ' ' || key === 'k') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        video.paused ? video.play() : video.pause();
+        return;
+      }
+
       if (key === 'j') { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 10); }
       if (key === 'l') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 10); }
       if (key === 'f') { e.preventDefault(); document.fullscreenElement ? document.exitFullscreen?.() : video.requestFullscreen?.(); }
@@ -470,7 +481,19 @@
       if (key === 'arrowright') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); }
       if (key === 'arrowup') { e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); }
       if (key === 'arrowdown') { e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); }
-    });
+    }, true);
+
+    document.addEventListener('keyup', (e) => {
+      if (e.target.matches('input, textarea, [contenteditable]')) return;
+      const key = e.key.toLowerCase();
+
+      // Empêche les contrôles vidéo natifs de refaire un toggle
+      // au relâchement de la touche.
+      if (key === ' ' || key === 'k') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
 
     (function zoomBar() {
       const wrap = document.querySelector('.player-wrap');
