@@ -10,7 +10,7 @@ La lecture directe est toujours tentée en premier. Si le navigateur ne sait pas
 - recherche, tags, favoris, filtres et statut lu/non lu ;
 - miniatures automatiques et vidéos similaires ;
 - interface responsive avec thèmes clair et sombre ;
-- lecture directe avec fallback HLS logiciel ou NVIDIA NVENC ;
+- lecture directe avec fallback HLS logiciel, NVIDIA NVENC ou VA-API Intel/AMD ;
 - rescans automatiques et page Maintenance ;
 - authentification mono-utilisateur facultative ;
 - liaison à plusieurs clients qBittorrent ou ruTorrent ;
@@ -29,22 +29,38 @@ D'autres captures et une présentation détaillée sont disponibles dans [l'arti
 ```bash
 git clone https://github.com/Aerya/MiniVid.git
 cd MiniVid
-cp .env.example .env
+./minivid.sh
 ```
 
-Éditez ensuite :
+MiniVid crée sa configuration, les dossiers nécessaires et démarre immédiatement avec `./videos`. L'interface est disponible sur `http://IP_DU_SERVEUR:8080`.
 
-1. les volumes vidéo dans `docker-compose.yml` ;
+Pour utiliser un autre dossier, modifiez seulement cette ligne dans `.env`, puis relancez `./minivid.sh` :
+
+```dotenv
+MINIVID_MEDIA_PATH=/mnt/films
+```
+
+Le lanceur détecte automatiquement NVIDIA, Intel ou AMD. Si le GPU n'est pas utilisable par Docker, MiniVid revient au CPU au lieu de rester bloqué. Le mode peut aussi être forcé :
+
+```bash
+MINIVID_GPU=cpu ./minivid.sh
+MINIVID_GPU=nvidia ./minivid.sh
+MINIVID_GPU=vaapi ./minivid.sh
+```
+
+Pour une configuration avancée, éditez ensuite :
+
+1. les volumes vidéo supplémentaires dans `docker-compose.yml` ;
 2. `MEDIA_DIRS` et `MEDIA_NAMES` dans `.env` ;
-3. les identifiants et la clé de session si l'authentification est souhaitée.
+3. les identifiants si l'authentification est souhaitée.
 
-Générez une clé de session avec :
+Le lanceur génère la clé de session lorsque `openssl` est disponible. Pour la générer manuellement :
 
 ```bash
 openssl rand -hex 32
 ```
 
-Placez le résultat dans `SECRET_KEY`, puis démarrez MiniVid :
+Placez le résultat dans `SECRET_KEY`, puis démarrez MiniVid sans le lanceur si souhaité :
 
 ```bash
 docker compose up -d
@@ -83,17 +99,15 @@ Pour désactiver tout transcodage :
 MINI_TRANSCODE=0
 ```
 
-### NVIDIA NVENC
+### Accélération GPU facultative
 
-Après installation de NVIDIA Container Toolkit sur l'hôte, décommentez dans le Compose :
+Le Compose principal fonctionne en CPU sur toutes les machines. `minivid.sh` ajoute automatiquement le fichier adapté :
 
-```yaml
-gpus: all
-environment:
-  NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
-```
+- `docker-compose.nvidia.yml` pour NVIDIA NVENC ;
+- `docker-compose.vaapi.yml` pour Intel ou AMD sous Linux ;
+- aucun fichier supplémentaire pour le CPU.
 
-MiniVid utilise alors NVENC s'il est disponible, sinon `libx264`.
+NVIDIA nécessite le pilote et NVIDIA Container Toolkit sur l'hôte. Intel/AMD nécessite `/dev/dri/renderD128`. MiniVid teste réellement l'encodeur au démarrage et utilise `libx264` si aucun GPU compatible n'est exposé.
 
 ## Clients BitTorrent et suppression
 
@@ -114,11 +128,12 @@ Pour ruTorrent, le plugin `httprpc` est utilisé. La suppression des données n�
 
 | Variable | Défaut | Rôle |
 | --- | --- | --- |
-| `MEDIA_DIRS` | vide | Chemins vidéo internes, séparés par `|` |
-| `MEDIA_NAMES` | automatique | Noms affichés, dans le même ordre |
+| `MINIVID_MEDIA_PATH` | `./videos` | Premier dossier vidéo sur l'hôte |
+| `MEDIA_DIRS` | `/videos1` | Chemins vidéo internes, séparés par `|` |
+| `MEDIA_NAMES` | `Vidéos` | Noms affichés, dans le même ordre |
 | `MINI_ALLOWED_EXT` | formats courants | Extensions indexées |
 | `MINI_BANNED_TAGS` | liste fournie | Mots ignorés lors de la génération automatique des tags |
-| `MINI_TRANSCODE` | `0` | Autorise le fallback HLS |
+| `MINI_TRANSCODE` | `1` | Autorise le fallback HLS |
 | `MINI_AUTOSCAN` | `1` | Active le rescan automatique |
 | `MINI_SCAN_INTERVAL` | `3600` | Intervalle de scan en secondes |
 | `MINI_THUMB_OFFSET` | `5` | Position de la miniature en secondes |
