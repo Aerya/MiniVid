@@ -109,6 +109,8 @@ Le Compose principal fonctionne en CPU sur toutes les machines. `minivid.sh` ajo
 
 NVIDIA nécessite le pilote et NVIDIA Container Toolkit sur l'hôte. Intel/AMD nécessite `/dev/dri/renderD128`. MiniVid teste réellement l'encodeur au démarrage et utilise `libx264` si aucun GPU compatible n'est exposé.
 
+Sur ARM64, le mode CPU reste entièrement pris en charge et VA-API est tenté avec les pilotes Mesa disponibles dans l'image. Le pilote Intel `iHD` n'étant pas distribué pour ARM64 par Debian, l'accélération Intel VA-API intégrée à l'image est limitée à AMD64. Si VA-API ne fonctionne pas sur une machine ARM64, MiniVid revient automatiquement au transcodage CPU.
+
 ## Clients BitTorrent et suppression
 
 La configuration se fait dans **Maintenance > Sources vidéo et clients BitTorrent**.
