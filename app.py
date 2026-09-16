@@ -1826,6 +1826,29 @@ def check_nvenc():
 
 HAS_NVENC = check_nvenc()
 
+def check_vaapi():
+    """Détecte un encodeur H.264 VA-API Intel ou AMD réellement utilisable."""
+    device = os.environ.get("MINI_VAAPI_DEVICE", "/dev/dri/renderD128")
+    if not os.path.exists(device):
+        return False
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-vaapi_device", device,
+            "-f", "lavfi", "-i", "color=c=black:s=256x256",
+            "-frames:v", "1", "-vf", "format=nv12,hwupload",
+            "-c:v", "h264_vaapi", "-f", "null", "-",
+        ]
+        p = subprocess.run(cmd, capture_output=True, timeout=5)
+        if p.returncode == 0:
+            LOG.info("Accélération matérielle VA-API Intel/AMD détectée.")
+            return True
+    except Exception as e:
+        LOG.warning("Erreur lors de la détection VA-API: %s", e)
+    LOG.info("Accélération matérielle VA-API non disponible.")
+    return False
+
+HAS_VAAPI = not HAS_NVENC and check_vaapi()
+
 @app.route("/hls/<vid>/playlist.m3u8")
 def hls_playlist(vid):
     """Génère une playlist HLS à la volée pour le remux."""
@@ -1872,6 +1895,11 @@ def _vcodec_args(full):
         return ["-c:v", "copy"]
     if HAS_NVENC:
         return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-cq", "23"]
+    if HAS_VAAPI:
+        return [
+            "-vaapi_device", os.environ.get("MINI_VAAPI_DEVICE", "/dev/dri/renderD128"),
+            "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "23",
+        ]
     return ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
 
 def _build_segment_file(full, cache_path, seg_index):
@@ -2020,6 +2048,15 @@ def remux(vid):
         
         if HAS_NVENC:
             v_args = ["-c:v","h264_nvenc","-preset","p1","-tune","ll","-cq","23","-pix_fmt","yuv420p"]
+        elif HAS_VAAPI:
+            filters = ["format=nv12", "hwupload"]
+            if vf:
+                filters.append("scale_vaapi=w=1280:h=720:force_original_aspect_ratio=decrease")
+            vf = ["-vf", ",".join(filters)]
+            v_args = [
+                "-vaapi_device", os.environ.get("MINI_VAAPI_DEVICE", "/dev/dri/renderD128"),
+                "-c:v", "h264_vaapi", "-qp", "22",
+            ]
         else:
             v_args = ["-c:v","libx264","-preset","veryfast","-crf","22","-pix_fmt","yuv420p"]
 

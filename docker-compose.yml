@@ -7,9 +7,8 @@ services:
     ports:
       - "${MINIVID_PORT:-8080}:8080"
     volumes:
-      # Adaptez les chemins hôtes et ajoutez ou retirez des sources si nécessaire.
-      - /chemin/vers/videos1:/videos1:ro
-      - /chemin/vers/videos2:/videos2:ro
+      # Un dossier suffit pour démarrer. Ajoutez d'autres sources si nécessaire.
+      - ${MINIVID_MEDIA_PATH:-./videos}:/videos1:ro
       - ./data:/data
       - ./cache:/cache
     healthcheck:
@@ -18,8 +17,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-    # NVIDIA NVENC (facultatif) : décommentez les deux lignes suivantes.
-    # gpus: all
-    # environment:
-    #   NVIDIA_DRIVER_CAPABILITIES: compute,utility,video

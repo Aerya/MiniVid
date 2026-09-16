@@ -236,5 +236,24 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertFalse(os.path.exists(minivid.MEDIA_MANAGERS_FILE))
 
 
+class HardwareTranscodingTest(unittest.TestCase):
+    def codec_args(self, *, nvenc=False, vaapi=False):
+        with mock.patch.object(minivid, "HAS_NVENC", nvenc), \
+             mock.patch.object(minivid, "HAS_VAAPI", vaapi), \
+             mock.patch.object(minivid, "_probe_all", return_value={"vcodec": "hevc"}):
+            return minivid._vcodec_args("video.mkv")
+
+    def test_cpu_is_the_default_fallback(self):
+        self.assertIn("libx264", self.codec_args())
+
+    def test_nvenc_is_preferred_when_available(self):
+        self.assertIn("h264_nvenc", self.codec_args(nvenc=True, vaapi=True))
+
+    def test_vaapi_is_used_for_intel_or_amd(self):
+        args = self.codec_args(vaapi=True)
+        self.assertIn("h264_vaapi", args)
+        self.assertIn("/dev/dri/renderD128", args)
+
+
 if __name__ == "__main__":
     unittest.main()
