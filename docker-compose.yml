@@ -1,9 +1,45 @@
 services:
+  gpu-bootstrap:
+    image: ${MINIVID_IMAGE:-ghcr.io/aerya/minivid:latest}
+    command: ["python", "/app/gpu_bootstrap.py"]
+    restart: "no"
+    network_mode: none
+    environment:
+      MINIVID_GPU: ${MINIVID_GPU:-auto}
+      MINIVID_GPU_FALLBACK: ${MINIVID_GPU_FALLBACK:-1}
+      MINIVID_TEST_IMAGE: ${MINIVID_IMAGE:-ghcr.io/aerya/minivid:latest}
+    volumes:
+      - /:/host:ro
+      - /dev:/host/dev:ro
+      - /etc/cdi:/host/etc/cdi:rw
+      - /var/run/cdi:/host/var/run/cdi:rw
+      - /var/run/cdi:/var/run/cdi:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_CHROOT
+    device_cgroup_rules:
+      - "c 195:* rwm"
+      - "c 226:* rwm"
+
   minivid:
-    image: ghcr.io/aerya/minivid:latest
+    image: ${MINIVID_IMAGE:-ghcr.io/aerya/minivid:latest}
     container_name: minivid
     restart: unless-stopped
+    depends_on:
+      gpu-bootstrap:
+        condition: service_completed_successfully
+        restart: true
     env_file: .env
+    environment:
+      MINIVID_GPU: ${MINIVID_GPU:-auto}
+      MINIVID_GPU_FALLBACK: ${MINIVID_GPU_FALLBACK:-1}
+    devices:
+      - "minivid.dev/gpu=all"
     ports:
       - "${MINIVID_PORT:-8080}:8080"
     volumes:

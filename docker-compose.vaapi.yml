@@ -1,7 +1,0 @@
-services:
-  minivid:
-    devices:
-      - /dev/dri:/dev/dri
-    group_add:
-      - "${MINIVID_VIDEO_GID:-44}"
-      - "${MINIVID_RENDER_GID:-109}"
