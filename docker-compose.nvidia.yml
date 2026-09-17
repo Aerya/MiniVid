@@ -1,5 +1,0 @@
-services:
-  minivid:
-    gpus: all
-    environment:
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video

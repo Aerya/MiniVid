@@ -40,12 +40,12 @@ Pour utiliser un autre dossier, modifiez seulement cette ligne dans `.env`, puis
 MINIVID_MEDIA_PATH=/mnt/films
 ```
 
-Le lanceur détecte automatiquement NVIDIA, Intel ou AMD. Si le GPU n'est pas utilisable par Docker, MiniVid revient au CPU au lieu de rester bloqué. Le mode peut aussi être forcé :
+Le Compose détecte automatiquement NVIDIA, Intel ou AMD, y compris depuis Dockge. Si le GPU n'est pas réellement utilisable par Docker, MiniVid revient au CPU au lieu de bloquer le stack. Le mode peut aussi être forcé dans `.env` :
 
-```bash
-MINIVID_GPU=cpu ./minivid.sh
-MINIVID_GPU=nvidia ./minivid.sh
-MINIVID_GPU=vaapi ./minivid.sh
+```dotenv
+MINIVID_GPU=cpu
+# auto, cpu, nvidia, vaapi, intel ou amd
+MINIVID_GPU_FALLBACK=1
 ```
 
 Pour une configuration avancée, éditez ensuite :
@@ -101,13 +101,9 @@ MINI_TRANSCODE=0
 
 ### Accélération GPU facultative
 
-Le Compose principal fonctionne en CPU sur toutes les machines. `minivid.sh` ajoute automatiquement le fichier adapté :
+Un helper éphémère prépare uniquement l'accès GPU avant le démarrage de MiniVid. Il teste l'encodeur dans Docker, régénère le CDI avec `nvidia-ctk` lorsqu'un CDI NVIDIA est obsolète, puis expose NVIDIA ou `/dev/dri` au conteneur principal. Le conteneur MiniVid n'est pas privilégié. Aucun override Compose ni `gpus: all` n'est nécessaire.
 
-- `docker-compose.nvidia.yml` pour NVIDIA NVENC ;
-- `docker-compose.vaapi.yml` pour Intel ou AMD sous Linux ;
-- aucun fichier supplémentaire pour le CPU.
-
-NVIDIA nécessite le pilote et NVIDIA Container Toolkit sur l'hôte. Intel/AMD nécessite `/dev/dri/renderD128`. MiniVid teste réellement l'encodeur au démarrage et utilise `libx264` si aucun GPU compatible n'est exposé.
+NVIDIA nécessite le pilote et NVIDIA Container Toolkit sur l'hôte. Intel/AMD nécessite `/dev/dri/renderD128`. Docker Engine 25 ou plus récent est requis pour CDI. Avec `MINIVID_GPU_FALLBACK=1` (valeur par défaut), toute détection ou validation en échec sélectionne le CPU.
 
 Sur ARM64, le mode CPU reste entièrement pris en charge et VA-API est tenté avec les pilotes Mesa disponibles dans l'image. Le pilote Intel `iHD` n'étant pas distribué pour ARM64 par Debian, l'accélération Intel VA-API intégrée à l'image est limitée à AMD64. Si VA-API ne fonctionne pas sur une machine ARM64, MiniVid revient automatiquement au transcodage CPU.
 
