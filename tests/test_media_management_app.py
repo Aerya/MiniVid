@@ -188,7 +188,8 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_media_management_panel_is_collapsed_by_default(self):
-        response = self.client.get(f"/watch/{self.vid}")
+        with mock.patch.object(minivid, "_is_decodable_media", return_value=True):
+            response = self.client.get(f"/watch/{self.vid}")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn('<details id="media-management"', html)
@@ -196,6 +197,14 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertNotIn(" open", details_tag)
         self.assertIn("url.searchParams.set('_mv_refresh'", html)
         self.assertIn("window.location.href = refreshedBrowseUrl();", html)
+
+    def test_corrupted_media_shows_a_clear_error_instead_of_a_player(self):
+        with mock.patch.object(minivid, "_is_decodable_media", return_value=False):
+            response = self.client.get(f"/watch/{self.vid}")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Ce fichier vidéo est incomplet ou endommagé.", html)
+        self.assertNotIn('id="v"', html)
 
     def test_browse_page_persists_and_restores_scroll_position(self):
         response = self.client.get("/browse?root=0&sort=date")

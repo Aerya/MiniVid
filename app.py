@@ -1996,6 +1996,28 @@ def _get_best_playback_url(vid, full, ext, ua):
     """
     return url_for("stream", vid=vid), "direct"
 
+
+def _is_decodable_media(path):
+    """Vérifie rapidement la première image avant d'envoyer le lecteur au navigateur.
+
+    Un conteneur MP4 peut exister et répondre aux requêtes HTTP tout en étant
+    tronqué ou endommagé. Dans ce cas le navigateur reste fréquemment bloqué sur
+    son indicateur de chargement, et le repli HLS ne peut pas le réparer.
+    """
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-v", "error", "-xerror", "-nostdin", "-i", path,
+             "-map", "0:v:0", "-frames:v", "1", "-f", "null", "-"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
 def _gen_ffmpeg(cmd):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
@@ -2098,17 +2120,19 @@ def watch(vid):
     back = request.args.get("back") or "/browse"
 
     ua = (request.headers.get("User-Agent") or "").lower()
-    
-    # Utiliser la nouvelle détection intelligente
+
+    corrupted = not _is_decodable_media(full)
+    # Utiliser la nouvelle détection intelligente seulement pour un média lisible.
     play_url, playback_method = _get_best_playback_url(vid, full, ext, ua)
-    unsupported = (playback_method == "unsupported")
+    unsupported = corrupted or (playback_method == "unsupported")
 
     return render_template(
         "watch.html",
         vid=vid, name=name, ctype=_ctype_for(full), back=back,
         tags=tags, utags=ut, fav=fav, played=played, res=res,
         play_url=play_url, ext=ext, unsupported=unsupported,
-        playback_method=playback_method, can_hls=ALLOW_TRANSCODE
+        playback_method=playback_method, can_hls=ALLOW_TRANSCODE,
+        corrupted=corrupted,
     )
 
 
