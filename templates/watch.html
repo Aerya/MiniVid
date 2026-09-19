@@ -30,9 +30,15 @@
   <main class="watch">
     {% if unsupported %}
     <div class="fallback">
+      {% if corrupted %}
+      <p><strong>Ce fichier vidéo est incomplet ou endommagé.</strong></p>
+      <p>MiniVid a arrêté la lecture avant qu'elle ne boucle indéfiniment. Vérifiez ou retéléchargez le fichier source.</p>
+      <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
+      {% else %}
       <p><strong>Ce navigateur ne peut pas lire directement ce fichier .{{ ext }} et le transcodage est désactivé.</strong></p>
       <p>Activez <code>MINI_TRANSCODE=1</code> pour autoriser le remux/transcodage à la volée, ou utilisez un navigateur Chromium.</p>
       <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
+      {% endif %}
     </div>
     {% else %}
     <div class="player-wrap">
