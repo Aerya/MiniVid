@@ -217,6 +217,16 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn("window.addEventListener('pagehide', saveScroll)", html)
         self.assertIn("window.setTimeout(() => window.scrollTo(0, target), 150)", html)
 
+    def test_language_preference_persists_and_loads_the_flag_switcher(self):
+        response = self.client.post("/api/preferences", json={"lang": "en"})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()["prefs"]["lang"], "en")
+        response = self.client.get("/browse")
+        html = response.get_data(as_text=True)
+        self.assertIn('<html lang="en"', html)
+        self.assertIn('src="/static/i18n.js"', html)
+        self.client.post("/api/preferences", json={"lang": "fr"})
+
     def test_forced_browse_refresh_rescans_media(self):
         with mock.patch.object(minivid, "scan_media") as scan:
             response = self.client.get("/browse?root=0&_mv_refresh=123")

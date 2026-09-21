@@ -328,7 +328,8 @@ def _default_state():
             "per": "all",
             "read": "all",
             "mix": "all",
-            "smart": False
+            "smart": False,
+            "lang": "fr",
         },
         "banned_tags": [],
         "similar_enabled": False,
@@ -614,6 +615,7 @@ def api_preferences_set():
         "read": lambda v: v if v in ("all", "unread", "read") else "all",
         "mix": lambda v: v if v in ("all", "folders_first", "videos_first") else "all",
         "smart": lambda v: bool(v),
+        "lang": lambda v: v if v in ("fr", "en") else "fr",
     }
     st = read_state()
     prefs = st.get("prefs", {}) or {}

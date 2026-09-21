@@ -1,28 +1,27 @@
 # MiniVid
 
-MiniVid transforme un ou plusieurs dossiers vidéo en médiathèque web privée. L'application indexe les fichiers, génère les miniatures et permet de parcourir, rechercher et lire la collection depuis un navigateur.
+MiniVid turns one or more video folders into a private web media library. It indexes files, generates thumbnails, and lets you browse, search and play your collection from a browser.
 
-La lecture directe est toujours tentée en premier. Si le navigateur ne sait pas décoder le fichier, MiniVid bascule automatiquement vers un flux HLS H.264/AAC, sans perdre la position de lecture.
+<p align="center">
+  🇬🇧 English ·
+  🇫🇷 <a href="https://github.com/Aerya/MiniVid/blob/main/README.fr.md">Français</a>
+</p>
 
-## Ce que MiniVid propose
+Direct playback is always attempted first. If the browser cannot decode a file, MiniVid can fall back to an H.264/AAC HLS stream without losing the playback position.
 
-- navigation par source et par dossier ;
-- recherche, tags, favoris, filtres et statut lu/non lu ;
-- miniatures automatiques et vidéos similaires ;
-- interface responsive avec thèmes clair et sombre ;
-- lecture directe avec fallback HLS logiciel, NVIDIA NVENC ou VA-API Intel/AMD ;
-- rescans automatiques et page Maintenance ;
-- authentification mono-utilisateur facultative ;
-- liaison à plusieurs clients qBittorrent ou ruTorrent ;
-- suppression contrôlée d'un fichier ou de tous ses torrents associés, variantes cross-seed comprises.
+## Features
 
-## Aperçu
+- Browse by source and folder, search, tags, favorites, collections and watched/unwatched filters.
+- Automatic thumbnails, similar videos, responsive light/dark interface and a persistent French/English language switcher.
+- Direct playback with software HLS, NVIDIA NVENC or Intel/AMD VA-API fallback.
+- Automatic rescans, optional single-user authentication, and multiple qBittorrent or ruTorrent clients.
+- Controlled deletion of a video file or every associated torrent, including matching cross-seed variants.
 
-![Bibliothèque MiniVid](docs/screenshots/library.png)
-![Lecteur et informations BitTorrent](docs/screenshots/player-sharing.png)
-![Maintenance et configuration des sources](docs/screenshots/maintenance.png)
+## Screenshots
 
-D'autres captures et une présentation détaillée sont disponibles dans [l'article consacré à MiniVid](https://upandclear.org/2025/09/03/minivid-indexage-lecture-tags-et-favoris-pour-vos-videos-locales/).
+![MiniVid library](docs/screenshots/library.png)
+![Player and BitTorrent information](docs/screenshots/player-sharing.png)
+![Maintenance and source configuration](docs/screenshots/maintenance.png)
 
 ## Installation
 
@@ -32,131 +31,99 @@ cd MiniVid
 ./minivid.sh
 ```
 
-MiniVid crée sa configuration, les dossiers nécessaires et démarre immédiatement avec `./videos`. L'interface est disponible sur `http://IP_DU_SERVEUR:8080`.
+MiniVid creates its configuration and required folders, then starts with `./videos`. Open `http://SERVER_IP:8080`.
 
-Pour utiliser un autre dossier, modifiez seulement cette ligne dans `.env`, puis relancez `./minivid.sh` :
+To use another folder, change this line in `.env`, then run `./minivid.sh` again:
 
 ```dotenv
-MINIVID_MEDIA_PATH=/mnt/films
+MINIVID_MEDIA_PATH=/mnt/movies
 ```
 
-Le Compose détecte automatiquement NVIDIA, Intel ou AMD, y compris depuis Dockge. Si le GPU n'est pas réellement utilisable par Docker, MiniVid revient au CPU au lieu de bloquer le stack. Le mode peut aussi être forcé dans `.env` :
+Compose automatically detects NVIDIA, Intel and AMD, including from Dockge. If Docker cannot use the GPU, MiniVid safely falls back to CPU. You can force a mode in `.env`:
 
 ```dotenv
 MINIVID_GPU=cpu
-# auto, cpu, nvidia, vaapi, intel ou amd
+# auto, cpu, nvidia, vaapi, intel or amd
 MINIVID_GPU_FALLBACK=1
 ```
 
-Pour une configuration avancée, éditez ensuite :
+For an advanced setup, edit the extra video volumes in `docker-compose.yml`, then set matching `MEDIA_DIRS` and `MEDIA_NAMES` values in `.env`. The lists use `|` as their separator.
 
-1. les volumes vidéo supplémentaires dans `docker-compose.yml` ;
-2. `MEDIA_DIRS` et `MEDIA_NAMES` dans `.env` ;
-3. les identifiants si l'authentification est souhaitée.
+```yaml
+volumes:
+  - /mnt/movies:/videos1:ro
+  - /mnt/archive:/videos2:ro
+```
 
-Le lanceur génère la clé de session lorsque `openssl` est disponible. Pour la générer manuellement :
+```dotenv
+MEDIA_DIRS=/videos1|/videos2
+MEDIA_NAMES=Movies|Archive
+```
+
+Use `:ro` for a read-only library. A source intended for direct file deletion must be mounted with `:rw`.
+
+The launcher creates a session key when `openssl` is available. To create one yourself:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Placez le résultat dans `SECRET_KEY`, puis démarrez MiniVid sans le lanceur si souhaité :
+Put the result in `SECRET_KEY`, then start MiniVid without the launcher if desired:
 
 ```bash
 docker compose up -d
 ```
 
-L'interface est disponible sur `http://IP_DU_SERVEUR:8080`.
+## Playback and GPU acceleration
 
-Le premier scan peut prendre quelques minutes selon la taille de la collection et les performances du stockage.
+MiniVid sends the original file first. If direct playback fails or no video frame is decoded, the player switches to HLS. Browser and operating-system codec support determine whether formats such as MKV/HEVC play directly. Disable all transcoding with `MINI_TRANSCODE=0`.
 
-## Ajouter des sources
+An ephemeral helper prepares GPU access before MiniVid starts. It tests the encoder from Docker, repairs stale NVIDIA CDI metadata with `nvidia-ctk` when needed, then exposes NVIDIA or `/dev/dri` to the main container. The MiniVid container is not privileged and no Compose override or `gpus: all` is required.
 
-Chaque volume vidéo doit correspondre à un chemin de `MEDIA_DIRS`. Les noms de `MEDIA_NAMES` suivent le même ordre et les listes sont séparées par `|`.
+NVIDIA requires the host driver and NVIDIA Container Toolkit. Intel/AMD requires `/dev/dri/renderD128`. Docker Engine 25 or later is required for CDI. With the default `MINIVID_GPU_FALLBACK=1`, a failed detection selects CPU instead of blocking the stack. ARM64 CPU mode is fully supported; VA-API is attempted with the Mesa drivers in the image.
 
-```yaml
-volumes:
-  - /mnt/films:/videos1:ro
-  - /mnt/archives:/videos2:ro
-```
+## BitTorrent clients and deletion
 
-```dotenv
-MEDIA_DIRS=/videos1|/videos2
-MEDIA_NAMES=Films|Archives
-```
+Configure this from **Maintenance > Video sources and BitTorrent clients**:
 
-Utilisez `:ro` pour une médiathèque en lecture seule. Une source configurée pour la suppression directe de fichiers doit être montée en `:rw`.
+1. Add a qBittorrent or ruTorrent client and test its connection.
+2. Associate each video source with its client and the path seen by that client.
+3. Choose the source deletion mode, then separately enable BitTorrent integration and deletion.
 
-## Lecture et transcodage
+MiniVid displays every torrent matching a file. "Torrent and data" deletion removes associated torrents, including matching cross-seed variants, and verifies the result before removing the video from its index. Deletion requires MiniVid authentication. Client passwords are encrypted with `SECRET_KEY`; changing that key requires entering them again.
 
-MiniVid envoie d'abord le fichier original au navigateur. La lecture reste donc immédiate et sans transcodage lorsque le conteneur et les codecs sont pris en charge. En cas d'échec ou d'absence d'image décodée, le lecteur passe automatiquement en HLS.
+## Useful configuration
 
-Le support direct dépend du navigateur et du système. Un MKV/HEVC peut être lu nativement sur une machine et nécessiter le fallback sur une autre.
-
-Pour désactiver tout transcodage :
-
-```dotenv
-MINI_TRANSCODE=0
-```
-
-### Accélération GPU facultative
-
-Un helper éphémère prépare uniquement l'accès GPU avant le démarrage de MiniVid. Il teste l'encodeur dans Docker, régénère le CDI avec `nvidia-ctk` lorsqu'un CDI NVIDIA est obsolète, puis expose NVIDIA ou `/dev/dri` au conteneur principal. Le conteneur MiniVid n'est pas privilégié. Aucun override Compose ni `gpus: all` n'est nécessaire.
-
-NVIDIA nécessite le pilote et NVIDIA Container Toolkit sur l'hôte. Intel/AMD nécessite `/dev/dri/renderD128`. Docker Engine 25 ou plus récent est requis pour CDI. Avec `MINIVID_GPU_FALLBACK=1` (valeur par défaut), toute détection ou validation en échec sélectionne le CPU.
-
-Sur ARM64, le mode CPU reste entièrement pris en charge et VA-API est tenté avec les pilotes Mesa disponibles dans l'image. Le pilote Intel `iHD` n'étant pas distribué pour ARM64 par Debian, l'accélération Intel VA-API intégrée à l'image est limitée à AMD64. Si VA-API ne fonctionne pas sur une machine ARM64, MiniVid revient automatiquement au transcodage CPU.
-
-## Clients BitTorrent et suppression
-
-La configuration se fait dans **Maintenance > Sources vidéo et clients BitTorrent**.
-
-1. Ajoutez un client qBittorrent ou ruTorrent et testez la connexion.
-2. Associez chaque source au client concerné et indiquez le chemin vu par celui-ci.
-3. Choisissez le mode de suppression de la source.
-4. Activez séparément la liaison BitTorrent et l'autorisation de suppression.
-
-MiniVid affiche tous les torrents correspondant au fichier. Lors d'une suppression « torrent et données », il retire tous les torrents associés, y compris les variantes cross-seed reconnues par nom et taille, puis vérifie la disparition des torrents et du fichier avant de retirer la vidéo de l'index.
-
-La suppression exige l'authentification MiniVid. Les mots de passe des clients sont chiffrés avec `SECRET_KEY` ; changer cette clé oblige à les saisir de nouveau.
-
-Pour ruTorrent, le plugin `httprpc` est utilisé. La suppression des données nécessite aussi l'action `removewithdata` fournie par le plugin `erasedata`.
-
-## Configuration utile
-
-| Variable | Défaut | Rôle |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `MINIVID_MEDIA_PATH` | `./videos` | Premier dossier vidéo sur l'hôte |
-| `MEDIA_DIRS` | `/videos1` | Chemins vidéo internes, séparés par `|` |
-| `MEDIA_NAMES` | `Vidéos` | Noms affichés, dans le même ordre |
-| `MINI_ALLOWED_EXT` | formats courants | Extensions indexées |
-| `MINI_BANNED_TAGS` | liste fournie | Mots ignorés lors de la génération automatique des tags |
-| `MINI_TRANSCODE` | `1` | Autorise le fallback HLS |
-| `MINI_AUTOSCAN` | `1` | Active le rescan automatique |
-| `MINI_SCAN_INTERVAL` | `3600` | Intervalle de scan en secondes |
-| `MINI_THUMB_OFFSET` | `5` | Position de la miniature en secondes |
-| `MINI_USER` / `MINI_PASS` | vides | Active l'authentification si les deux sont définis |
-| `SECRET_KEY` | aléatoire | Sessions et chiffrement des identifiants clients |
+| `MINIVID_MEDIA_PATH` | `./videos` | First video directory on the host |
+| `MEDIA_DIRS` | `/videos1` | Internal video paths, separated with `|` |
+| `MEDIA_NAMES` | `Videos` | Display names in the same order |
+| `MINI_ALLOWED_EXT` | common formats | Indexed extensions |
+| `MINI_BANNED_TAGS` | supplied list | Words ignored for automatic tags |
+| `MINI_TRANSCODE` | `1` | Enables HLS fallback |
+| `MINI_AUTOSCAN` | `1` | Enables automatic rescanning |
+| `MINI_SCAN_INTERVAL` | `3600` | Scan interval in seconds |
+| `MINI_USER` / `MINI_PASS` | empty | Enables authentication when both are set |
+| `SECRET_KEY` | random | Sessions and client-password encryption |
 
-Toutes les valeurs prêtes à personnaliser sont regroupées dans `.env.example`.
+## Maintenance and updates
 
-## Maintenance et mises à jour
-
-La page Maintenance permet de rescanner la bibliothèque, purger les caches et consulter le journal récent. Le rescan périodique est assuré directement par MiniVid ; aucun conteneur planificateur séparé n'est nécessaire.
+The Maintenance page can rescan the library, clear caches and show the recent journal. Periodic scanning runs inside MiniVid, so no separate scheduler is required.
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-Les données d'application sont conservées dans `./data` et les miniatures ainsi que les segments temporaires dans `./cache`.
+Application data stays in `./data`; thumbnails and temporary segments stay in `./cache`.
 
 ## Windows
 
-Le script [Windows-MiniVid.cmd](https://github.com/Aerya/MiniVid/blob/main/Windows-MiniVid.cmd) est prévu pour Windows 10/11 x64 avec PowerShell 5.1, WSL2 et Docker Desktop. Il peut installer et démarrer Docker Desktop, générer une configuration pour des dossiers locaux ou SMB/CIFS, tester les montages réseau, configurer l'authentification et valider le Compose avant le déploiement.
+[Windows-MiniVid.cmd](https://github.com/Aerya/MiniVid/blob/main/Windows-MiniVid.cmd) offers an interactive English/French selection at startup. It targets Windows 10/11 x64 with PowerShell 5.1, WSL2 and Docker Desktop. It can install and start Docker Desktop, build a configuration for local folders or SMB/CIFS shares, test network mounts, configure authentication and validate Compose before deployment.
 
-Le profil initial utilise `C:\Videos`. L'assistant permet ensuite d'ajouter jusqu'à dix sources et de choisir un autre port.
+The script is provided **as is**. It has not been tested on a local Windows machine by the project maintainer, so review it and keep backups before using destructive menu entries. The default profile uses `C:\Videos`; the wizard can add up to ten sources and choose another port.
 
-## Vie privée
+## Privacy
 
-Les vidéos, l'index, les miniatures et les préférences restent sur votre installation. Le chargement de `hls.js` depuis son CDN nécessite un accès externe.
+Videos, the index, thumbnails and preferences remain on your installation. Loading `hls.js` from its CDN requires external network access.
