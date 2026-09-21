@@ -83,7 +83,7 @@
   }
 
   function mountSwitcher() {
-    const host = document.querySelector('.header-right') || document.querySelector('.login');
+    const host = document.querySelector('.header-right');
     if (!host || host.querySelector('.language-switcher')) return;
     const switcher = document.createElement('div');
     switcher.className = 'language-switcher';
