@@ -90,6 +90,32 @@ $TXT = @{
     webAuthPassQ="Password (input hidden)"
     webAuthOn="Web auth enabled."
     webAuthOff="Web auth disabled."
+    wingetMissing='winget not found. Install "App Installer" from Microsoft Store, then run this script again.'
+    dockerInstallFailed="Docker Desktop installation failed (winget exit code: {0})."
+    dockerDesktopMissing="Docker Desktop executable not found."
+    dockerTimeout="Docker Desktop did not become ready within {0} seconds."
+    invalidEnv="Environment values cannot contain line breaks."
+    invalidCifs="CIFS username, password and domain cannot contain a comma."
+    repairSkipped="Repair skipped: {0}"
+    validating="Validating: docker compose config"
+    pulling="Pulling Docker images..."
+    retryPull="Retrying: docker compose pull (without --progress)"
+    pullFailed="docker compose pull failed."
+    downBeforeRefresh="docker compose down failed before SMB volume refresh."
+    starting="Starting MiniVid..."
+    upFailed="docker compose up failed."
+    started="MiniVid started."
+    confirmSuffix="[y/N]"
+    stopping="Stopping MiniVid..."; stopped="MiniVid stopped."
+    stopFailed="docker compose stop failed."
+    restarting="Restarting MiniVid..."; restarted="MiniVid restarted."
+    restartFailed="docker compose restart failed."
+    removingContainers="Removing MiniVid containers..."; containersRemoved="Containers removed."
+    downFailed="docker compose down failed."
+    detectingImages="Detecting project images..."; noImages="No images found for this project."
+    imagesToRemove="Images to remove:"; removeImages="Remove these images only?"
+    imagesPartial="Some images could not be removed (in use?): {0}"; imagesRemoved="Project images removed."
+    invalidChoice="Invalid choice."
   }
   fr = @{
     title="========== MiniVid Assistant Windows =========="
@@ -151,6 +177,32 @@ $TXT = @{
     webAuthPassQ="Mot de passe (saisi masque)"
     webAuthOn="Authentification activee."
     webAuthOff="Authentification desactivee."
+    wingetMissing='winget introuvable. Installez "App Installer" depuis le Microsoft Store, puis relancez ce script.'
+    dockerInstallFailed="Echec de l'installation de Docker Desktop (code winget : {0})."
+    dockerDesktopMissing="Executable Docker Desktop introuvable."
+    dockerTimeout="Docker Desktop n'est pas pret apres {0} secondes."
+    invalidEnv="Les valeurs d'environnement ne peuvent pas contenir de retour a la ligne."
+    invalidCifs="L'utilisateur, le mot de passe et le domaine CIFS ne peuvent pas contenir de virgule."
+    repairSkipped="Reparation ignoree : {0}"
+    validating="Validation : docker compose config"
+    pulling="Telechargement des images Docker..."
+    retryPull="Nouvel essai : docker compose pull (sans --progress)"
+    pullFailed="Echec de docker compose pull."
+    downBeforeRefresh="Echec de docker compose down avant le rafraichissement SMB."
+    starting="Demarrage de MiniVid..."
+    upFailed="Echec de docker compose up."
+    started="MiniVid demarre."
+    confirmSuffix="[o/N]"
+    stopping="Arret de MiniVid..."; stopped="MiniVid arrete."
+    stopFailed="Echec de docker compose stop."
+    restarting="Redemarrage de MiniVid..."; restarted="MiniVid redemarre."
+    restartFailed="Echec de docker compose restart."
+    removingContainers="Suppression des conteneurs MiniVid..."; containersRemoved="Conteneurs supprimes."
+    downFailed="Echec de docker compose down."
+    detectingImages="Recherche des images du projet..."; noImages="Aucune image trouvee pour ce projet."
+    imagesToRemove="Images a supprimer :"; removeImages="Supprimer uniquement ces images ?"
+    imagesPartial="Certaines images ne peuvent pas etre supprimees (utilisees ?) : {0}"; imagesRemoved="Images du projet supprimees."
+    invalidChoice="Choix invalide."
   }
 }
 function T($k){ if($Global:LANG -eq 'fr') { return $TXT.fr[$k] } else { return $TXT.en[$k] } }
@@ -188,7 +240,7 @@ function Test-DockerEngine([string]$Docker) {
 function Ensure-Winget {
   try { Get-Command winget -ErrorAction Stop | Out-Null } catch {
     try { Get-Command winget.exe -ErrorAction Stop | Out-Null } catch {
-      Err 'winget not found. Install "App Installer" from Microsoft Store, then re-run.'
+      Err (T 'wingetMissing')
       try { Start-Process 'ms-windows-store://pdp/?productid=9NBLGGH4NNS1' | Out-Null } catch {}
       throw 'winget missing'
     }
@@ -199,14 +251,14 @@ function Ensure-DockerDesktop {
   if ($cli) { Ok ([string]::Format((T 'dockerDetected'), $cli)); return }
   Info (T 'installingDocker'); Ensure-Winget
   winget install --id Docker.DockerDesktop -e --accept-package-agreements --accept-source-agreements
-  if ($LASTEXITCODE -ne 0) { throw "Docker Desktop installation failed (winget exit code: $LASTEXITCODE)." }
+  if ($LASTEXITCODE -ne 0) { throw ([string]::Format((T 'dockerInstallFailed'), $LASTEXITCODE)) }
   Ok (T 'dockerInstallReq')
 }
 function Start-DockerAndWait {
   param([int]$TimeoutSeconds = 300)
   $cli = Find-DockerCli
   if (Test-DockerEngine $cli) { Ok ([string]::Format((T 'dockerReady'), $cli)); return $cli }
-  if (Test-Path $DockerDesktopExe) { Info (T 'startingDD'); Start-Process $DockerDesktopExe | Out-Null } else { throw 'Docker Desktop executable not found.' }
+  if (Test-Path $DockerDesktopExe) { Info (T 'startingDD'); Start-Process $DockerDesktopExe | Out-Null } else { throw (T 'dockerDesktopMissing') }
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
     $cli = Find-DockerCli
@@ -217,7 +269,7 @@ function Start-DockerAndWait {
     } catch {}
     Start-Sleep -Seconds 3
   }
-  throw "Docker Desktop did not become ready within $TimeoutSeconds seconds."
+  throw ([string]::Format((T 'dockerTimeout'), $TimeoutSeconds))
 }
 function Ensure-Dirs {
   New-Item -ItemType Directory -Force -Path $Root | Out-Null
@@ -268,7 +320,7 @@ function ConvertTo-YamlSingleQuoted([string]$Value) {
 }
 function ConvertTo-DotEnvValue([string]$Value) {
   if ($null -eq $Value) { $Value = '' }
-  if ($Value -match '[\r\n]') { throw 'Environment values cannot contain line breaks.' }
+  if ($Value -match '[\r\n]') { throw (T 'invalidEnv') }
   return "'" + $Value.Replace("'", "\'") + "'"
 }
 function Ensure-Env-Key([string]$key,[string]$val){
@@ -538,7 +590,7 @@ function Setup-Compose-Guided {
       $p = Read-HiddenText (T 'askCifsPass')
       $d = Read-Host (T 'askCifsDomain')
       if ($u -match ',' -or $p -match ',' -or $d -match ',') {
-        throw 'CIFS username, password and domain cannot contain a comma.'
+        throw (T 'invalidCifs')
       }
       if ($u) { Ensure-Env-Key 'CIFS_USER' $u }
       if ($p) { Ensure-Env-Key 'CIFS_PASS' $p }
@@ -661,7 +713,7 @@ function Repair-ComposeCifs {
       Ok (T 'repaired')
     }
   } catch {
-    Warn ("Repair skipped: " + $_.Exception.Message)
+    Warn ([string]::Format((T 'repairSkipped'), $_.Exception.Message))
   }
 }
 
@@ -711,33 +763,33 @@ function Compose-Pull-Up {
   Ensure-SecretKey
   Repair-ComposeCifs
 
-  Info 'validate: docker compose config'
+  Info (T 'validating')
   & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath config 1>$null 2>$null
   if ($LASTEXITCODE -ne 0) { throw (T 'diagFail') }
 
   $common = @('compose','-p','minivid','-f',$ComposePath,'--env-file',$EnvPath)
 
-  Info 'docker compose pull'
+  Info (T 'pulling')
   & $Docker @common 'pull' '--progress' 'plain'
   if ($LASTEXITCODE -ne 0) {
-    Info 'retry: docker compose pull (no --progress)'
+    Info (T 'retryPull')
     & $Docker @common 'pull'
-    if ($LASTEXITCODE -ne 0) { throw 'docker compose pull failed.' }
+    if ($LASTEXITCODE -ne 0) { throw (T 'pullFailed') }
   }
 
   # A named CIFS volume must be detached before Docker can recreate it.
   $smbVolumes = & $Docker volume ls --format '{{.Name}}' 2>$null | Where-Object { $_ -match '^minivid_videos\d+$' }
   if ($smbVolumes) {
     & $Docker @common 'down'
-    if ($LASTEXITCODE -ne 0) { throw 'docker compose down failed before SMB volume refresh.' }
+    if ($LASTEXITCODE -ne 0) { throw (T 'downBeforeRefresh') }
     Purge-Smb-NamedVolumes -Docker $Docker
   }
 
-  Info 'docker compose up -d'
+  Info (T 'starting')
   & $Docker @common 'up' '-d'
-  if ($LASTEXITCODE -ne 0) { throw 'docker compose up failed.' }
+  if ($LASTEXITCODE -ne 0) { throw (T 'upFailed') }
 
-  Ok 'MiniVid started.'
+  Ok (T 'started')
 }
 
 function Open-Web { $p = Get-HostPort; $url = "http://localhost:$p"; Info ([string]::Format((T 'openUrl'), $url)); Start-Process $url | Out-Null }
@@ -749,28 +801,28 @@ function Create-Desktop-URL {
   Set-Content -Path $file -Value $content -Encoding ASCII
   Ok ([string]::Format((T 'shortcutMade'), $file))
 }
-function Confirm { param([string]$msg) $a = Read-Host "$msg [y/N]"; return ($a -match '^(y|yes|o|oui)$') }
+function Confirm { param([string]$msg) $a = Read-Host "$msg $(T 'confirmSuffix')"; return ($a -match '^(y|yes|o|oui)$') }
 function Compose-Stop { param([string]$Docker)
-  Info 'docker compose stop'; & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath stop
-  if ($LASTEXITCODE -ne 0) { throw 'docker compose stop failed.' } Ok 'Stopped.'
+  Info (T 'stopping'); & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath stop
+  if ($LASTEXITCODE -ne 0) { throw (T 'stopFailed') } Ok (T 'stopped')
 }
 function Compose-RestartQuick { param([string]$Docker)
-  Info 'docker compose restart'; & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath restart
-  if ($LASTEXITCODE -ne 0) { throw 'docker compose restart failed.' } Ok 'Restarted.'
+  Info (T 'restarting'); & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath restart
+  if ($LASTEXITCODE -ne 0) { throw (T 'restartFailed') } Ok (T 'restarted')
 }
 function Compose-DownOnly { param([string]$Docker)
-  Info 'docker compose down'; & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath down
-  if ($LASTEXITCODE -ne 0) { throw 'docker compose down failed.' } Ok 'Containers removed.'
+  Info (T 'removingContainers'); & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath down
+  if ($LASTEXITCODE -ne 0) { throw (T 'downFailed') } Ok (T 'containersRemoved')
 }
 function Compose-RemoveImages { param([string]$Docker)
-  Info 'detect project images'
+  Info (T 'detectingImages')
   $ids = & $Docker compose -p minivid -f $ComposePath --env-file $EnvPath images --quiet 2>$null | Sort-Object -Unique
-  if (-not $ids -or $ids.Count -eq 0) { Warn 'No images found for this project.'; return }
+  if (-not $ids -or $ids.Count -eq 0) { Warn (T 'noImages'); return }
   if (-not ($ids -is [array])) { $ids = @($ids) }
-  Write-Host 'Images to remove:' -ForegroundColor Yellow; foreach ($i in $ids) { Write-Host ('  ' + $i) }
-  if (-not (Confirm 'Remove these images only?')) { return }
+  Write-Host (T 'imagesToRemove') -ForegroundColor Yellow; foreach ($i in $ids) { Write-Host ('  ' + $i) }
+  if (-not (Confirm (T 'removeImages'))) { return }
   $failed = @(); foreach ($i in $ids) { & $Docker image rm $i; if ($LASTEXITCODE -ne 0) { $failed += $i } }
-  if ($failed.Count -gt 0) { Warn ('Some images could not be removed (in use?): ' + ($failed -join ', ')) } else { Ok 'Project images removed.' }
+  if ($failed.Count -gt 0) { Warn ([string]::Format((T 'imagesPartial'), ($failed -join ', '))) } else { Ok (T 'imagesRemoved') }
 }
 
 # === Menu (sequential numbering) ===
@@ -821,7 +873,7 @@ do {
     '9'  { try { Compose-RemoveImages -Docker $cli } catch { Err $_.Exception.Message } }
     '10' { try { Set-WebAuth } catch { Err $_.Exception.Message } }
     '0'  { Write-Host ""; Write-Host (T 'goingDark'); $host.SetShouldExit(0); exit }
-    Default { Warn 'Invalid choice.' }
+    Default { Warn (T 'invalidChoice') }
   }
 } while ($true)
 

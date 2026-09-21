@@ -215,6 +215,31 @@ button {
   gap: .5rem;
 }
 
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  margin-right: .25rem;
+}
+
+.language-switcher button {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: .4rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: .28rem;
+}
+
+.language-switcher button:hover,
+.language-switcher button[aria-pressed="true"] {
+  background: rgba(127, 145, 175, .2);
+  border-color: rgba(127, 145, 175, .45);
+}
+
 .roots,
 .tagbar {
   display: flex;
