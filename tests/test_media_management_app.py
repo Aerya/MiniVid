@@ -198,6 +198,50 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn("url.searchParams.set('_mv_refresh'", html)
         self.assertIn("window.location.href = refreshedBrowseUrl();", html)
 
+    def test_maintenance_includes_project_links(self):
+        response = self.client.get("/maintenance")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('href="https://github.com/Aerya/MiniVid"', html)
+        self.assertIn('href="https://github.com/Aerya/PornScout"', html)
+
+    def test_never_watched_filter_excludes_a_video_marked_unwatched_after_playback(self):
+        unseen_name = "never-watched.mkv"
+        unseen_path = os.path.join(VIDEO_ROOT, unseen_name)
+        with open(unseen_path, "wb") as handle:
+            handle.write(b"not-a-real-video")
+        try:
+            minivid.scan_media()
+            self.client.post("/api/played", json={"vid": self.vid, "played": True})
+            self.client.post("/api/played", json={"vid": self.vid, "played": False})
+            response = self.client.get("/browse?read=never")
+            html = response.get_data(as_text=True)
+            self.assertNotIn(self.video_name, html)
+            self.assertIn(unseen_name, html)
+        finally:
+            try:
+                os.remove(unseen_path)
+            except OSError:
+                pass
+            state = minivid.read_state()
+            for key in ("played", "ever_played", "progress"):
+                state.get(key, {}).pop(self.vid, None)
+            minivid.write_state(state)
+            minivid.scan_media()
+
+    def test_favorite_is_exposed_for_the_delete_warning(self):
+        self.save_config(deletion_enabled=True)
+        self.client.post("/api/fav", json={"vid": self.vid, "fav": True})
+        try:
+            management = self.client.get(f"/api/media/{self.vid}/management").get_json()
+            self.assertTrue(management["favorite"])
+            with mock.patch.object(minivid, "_is_decodable_media", return_value=True):
+                html = self.client.get(f"/watch/{self.vid}").get_data(as_text=True)
+            self.assertIn("mediaManagement.favorite", html)
+            self.assertIn("Attention : cette vidéo est dans vos favoris.", html)
+        finally:
+            self.client.post("/api/fav", json={"vid": self.vid, "fav": False})
+
     def test_corrupted_media_shows_a_clear_error_instead_of_a_player(self):
         with mock.patch.object(minivid, "_is_decodable_media", return_value=False):
             response = self.client.get(f"/watch/{self.vid}")

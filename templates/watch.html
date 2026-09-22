@@ -368,10 +368,13 @@
       if (!mediaManagement?.can_delete || button.disabled) return;
       if (!deleteArmed) {
         deleteArmed = true;
-        button.textContent = 'Confirmez la suppression';
-        message.textContent = mediaManagement.delete_mode === 'torrent'
+        button.textContent = mediaManagement.favorite ? 'Supprimer le favori' : 'Confirmez la suppression';
+        const deletionMessage = mediaManagement.delete_mode === 'torrent'
           ? `Cliquez une seconde fois pour retirer ${mediaManagement.torrents?.length || 1} torrent(s) et effacer leurs données.`
           : 'Cliquez une seconde fois pour effacer définitivement le fichier.';
+        message.textContent = mediaManagement.favorite
+          ? 'Attention : cette vidéo est dans vos favoris. ' + deletionMessage
+          : deletionMessage;
         clearTimeout(deleteArmTimer);
         deleteArmTimer = setTimeout(() => {
           deleteArmed = false;

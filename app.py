@@ -316,6 +316,7 @@ def _autoscan_loop():
 def _default_state():
     return {
         "played": {},
+        "ever_played": {},
         "progress": {},
         "fav": {},
         "utags": {},
@@ -533,11 +534,14 @@ def api_played():
             return jsonify(ok=False, error="missing_vid"), 400
         st = read_state()
         played = st.get("played", {}) or {}
+        ever_played = st.get("ever_played", {}) or {}
         if val:
             played[vid] = True
+            ever_played[vid] = True
         else:
             played.pop(vid, None)
         st["played"] = played
+        st["ever_played"] = ever_played
         write_state(st)
         return jsonify(ok=True, played=bool(played.get(vid)))
     except Exception as e:
@@ -635,6 +639,7 @@ def api_progress_get(vid):
         return jsonify(ok=False, error="auth"), 401
     st = read_state()
     progress = st.get("progress", {}) or {}
+    ever_played = st.get("ever_played", {}) or {}
     try:
         pos = float(progress.get(vid) or 0)
     except Exception:
@@ -659,7 +664,9 @@ def api_progress_set(vid):
             progress.pop(vid, None)
         else:
             progress[vid] = round(pos, 2)
+            ever_played[vid] = True
     st["progress"] = progress
+    st["ever_played"] = ever_played
     write_state(st)
     return jsonify(ok=True, progress=progress.get(vid, 0))
 
@@ -1017,7 +1024,7 @@ def _forget_media(vid):
         "last_scan": int(time.time()),
     }
     state = read_state()
-    for key in ("played", "progress", "fav", "utags", "meta"):
+    for key in ("played", "ever_played", "progress", "fav", "utags", "meta"):
         mapping = state.get(key, {}) or {}
         mapping.pop(vid, None)
         state[key] = mapping
@@ -1076,6 +1083,7 @@ def api_media_management(vid):
         result = {
             "ok": True,
             "name": item.get("name", ""),
+            "favorite": bool((read_state().get("fav", {}) or {}).get(vid)),
             "root": root_index,
             "root_name": item.get("root_name", ""),
             "file_mtime": int(os.path.getmtime(full)),
@@ -1250,7 +1258,7 @@ def browse():
     per  = (request.args.get("per") or str(prefs.get("per") or "all")).strip().lower()
     if per not in ("all","12","24","48","96"): per = "all"
     readf = (request.args.get("read") or str(prefs.get("read") or "all")).strip().lower()
-    if readf not in ("all","unread","read"): readf = "all"
+    if readf not in ("all","unread","read","never"): readf = "all"
     mix  = (request.args.get("mix") or str(prefs.get("mix") or "all")).strip().lower()
     if mix not in ("all","folders_first","videos_first"): mix = "all"
     page = int((request.args.get("page") or "1") or 1)
@@ -1273,7 +1281,7 @@ def browse():
     root_index = int(rootq_raw) if (rootq_raw is not None and str(rootq_raw).isdigit()) else None
     dirq_q = urlq(dirq) if dirq else ""
 
-    played = state.get("played",{}); fav = state.get("fav",{}); progress = state.get("progress",{}); utags_state = state.get("utags",{}); lists_state = state.get("lists",{}); meta = state.get("meta",{})
+    played = state.get("played",{}); ever_played = state.get("ever_played",{}); fav = state.get("fav",{}); progress = state.get("progress",{}); utags_state = state.get("utags",{}); lists_state = state.get("lists",{}); meta = state.get("meta",{})
     roots = [{"idx":i, "name":safe_display_name(MEDIA_NAMES[i])} for i in range(len(MEDIA_DIRS))]
 
     items = MEDIA[:]
@@ -1311,6 +1319,7 @@ def browse():
         it["fav"] = bool(fav.get(it["id"]))
         it["played"] = bool(played.get(it["id"]))
         it["progress"] = float(progress.get(it["id"], 0) or 0)
+        it["ever_played"] = bool(ever_played.get(it["id"]) or it["played"] or it["progress"] > 0)
         m = meta.get(it["id"], {})
         if isinstance(m, dict) and m.get("w") and m.get("h"):
             it["res"] = f"{m['w']}×{m['h']}"; it["p"] = p_label(m.get("h"))
@@ -1340,9 +1349,11 @@ def browse():
     if fav_only:
         items = [i for i in items if i.get("fav")]
 
+    never_only = readf == "never"
+
     # folders
     folders = []
-    if (not tag and not utag and not listq):
+    if not never_only and (not tag and not utag and not listq):
         def child_of(it):
             d = it["dir"]
             if dirq == "":
@@ -1403,6 +1414,8 @@ def browse():
         items = [i for i in items if i.get("played")]
     elif readf == "unread":
         items = [i for i in items if not i.get("played")]
+    elif never_only:
+        items = [i for i in items if not i.get("ever_played")]
 
     # sort videos
     if sort == "date":
@@ -1436,7 +1449,7 @@ def browse():
             combined.append(f)
     for v in items:
         # Only list videos for the CURRENT directory (non-recursive)
-        if (not tag and not utag and not listq):
+        if not never_only and (not tag and not utag and not listq):
             if dirq == "":
                 _tops = set([f.get("name_raw", f.get("name")) for f in folders])
                 _dir = v.get("dir", "") or ""

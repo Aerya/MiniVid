@@ -11,7 +11,7 @@ Direct playback is always attempted first. If the browser cannot decode a file, 
 
 ## Features
 
-- Browse by source and folder, search, tags, favorites, collections and watched/unwatched filters.
+- Browse by source and folder, search, tags, favorites, collections, watched/unwatched filters and a strict never-watched view.
 - Automatic thumbnails, similar videos, responsive light/dark interface and a persistent French/English language switcher.
 - Direct playback with software HLS, NVIDIA NVENC or Intel/AMD VA-API fallback.
 - Automatic rescans, optional single-user authentication, and multiple qBittorrent or ruTorrent clients.
@@ -90,7 +90,7 @@ Configure this from **Maintenance > Video sources and BitTorrent clients**:
 2. Associate each video source with its client and the path seen by that client.
 3. Choose the source deletion mode, then separately enable BitTorrent integration and deletion.
 
-MiniVid displays every torrent matching a file. "Torrent and data" deletion removes associated torrents, including matching cross-seed variants, and verifies the result before removing the video from its index. Deletion requires MiniVid authentication. Client passwords are encrypted with `SECRET_KEY`; changing that key requires entering them again.
+MiniVid displays every torrent matching a file. "Torrent and data" deletion removes associated torrents, including matching cross-seed variants, and verifies the result before removing the video from its index. Deleting a favorite displays an additional warning and still requires the final confirmation. Deletion requires MiniVid authentication. Client passwords are encrypted with `SECRET_KEY`; changing that key requires entering them again.
 
 ## Useful configuration
 
