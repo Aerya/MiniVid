@@ -3,7 +3,7 @@
   const en = {
     "Accueil MiniVid": "MiniVid home", "Rechercher une vidéo, un dossier...": "Search a video or folder...",
     "Tri": "Sort", "Récentes": "Newest", "Nom": "Name", "Taille": "Size", "Résolution ↓": "Resolution ↓", "Résolution ↑": "Resolution ↑",
-    "Non lues": "Unwatched", "Lues": "Watched", "Affichage": "Display", "Toutes": "All", "Tout": "All",
+    "Non lues": "Unwatched", "Jamais lues": "Never watched", "Lues": "Watched", "Affichage": "Display", "Toutes": "All", "Tout": "All",
     "Par page": "Per page", "Mélange": "Order", "Dossiers d'abord": "Folders first", "Vidéos d'abord": "Videos first",
     "Vignettes": "Thumbnails", "Compact": "Compact", "Confort": "Comfortable", "Large": "Large", "Grouper par période": "Group by period",
     "Groupes": "Groups", "Favoris": "Favorites", "Collections": "Collections", "Thème clair/sombre": "Light/dark theme",
@@ -30,6 +30,7 @@
     "Associez un client à une ou plusieurs sources pour afficher les statistiques du torrent. La suppression reste contrôlée par une option globale et un mode propre à chaque source.": "Associate a client with one or more sources to show torrent statistics. Deletion remains controlled by a global option and a setting for each source.",
     "Activer la liaison BitTorrent": "Enable BitTorrent integration", "Autoriser la suppression": "Allow deletion", "Clients": "Clients", "Ajouter un client": "Add client",
     "Association des sources": "Source association", "Enregistrer la configuration": "Save configuration", "Nom": "Name", "Type": "Type", "URL": "URL",
+    "Liens du projet": "Project links", "MiniVid sur GitHub": "MiniVid on GitHub", "PornScout sur GitHub": "PornScout on GitHub",
     "Tester": "Test", "Retirer": "Remove", "Aucun client": "No client", "Chemin vu par le client": "Path seen by the client", "Suppression": "Deletion",
     "Désactivée": "Disabled", "Fichier uniquement": "File only", "Torrent et données": "Torrent and data", "Conservé si vide": "Kept if empty",
     "Démarrage du scan...": "Starting scan...", "Journal en direct...": "Live log...", "Mise à jour du journal...": "Updating log...", "Aucun événement": "No events",
@@ -41,6 +42,8 @@
     "Client BitTorrent :": "BitTorrent client:", "Gestion indisponible :": "Management unavailable:", "Confirmez la suppression": "Confirm deletion",
     "Supprimer la vidéo": "Delete video", "Suppression en cours...": "Deleting...", "Suppression refusée :": "Deletion refused:",
     "Cliquez une seconde fois pour effacer définitivement le fichier.": "Click a second time to permanently delete the file.",
+    "Cliquez une seconde fois pour retirer": "Click a second time to remove", "torrent(s) et effacer leurs données.": "torrent(s) and delete their data.",
+    "Attention : cette vidéo est dans vos favoris.": "Warning: this video is in your favorites.", "Supprimer le favori": "Delete favorite",
     "Démarrage...": "Starting...", "Scan complet en cours…": "Full scan in progress...", "Scan terminé": "Scan complete",
     "Erreur :": "Error:", "Erreur réseau :": "Network error:", "Erreur réseau purge :": "Thumbnail-clear network error:",
     "Miniatures supprimées :": "Thumbnails removed:", "Aucun journal": "No log", "Statut :": "Status:", "Scan en cours": "Scan in progress",
@@ -98,6 +101,9 @@
     const stored = localStorage.getItem('minivid_lang');
     if (stored === 'en' || stored === 'fr') document.documentElement.lang = stored;
     mountSwitcher(); translate();
-    new MutationObserver(records => { if (document.documentElement.lang === 'en') records.forEach(record => record.addedNodes.forEach(node => { if (node.nodeType === Node.ELEMENT_NODE) translate(node); })); }).observe(document.body, {childList: true, subtree: true});
+    new MutationObserver(records => { if (document.documentElement.lang === 'en') records.forEach(record => record.addedNodes.forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE) translate(node);
+      if (node.nodeType === Node.TEXT_NODE) node.nodeValue = translateText(node.nodeValue);
+    })); }).observe(document.body, {childList: true, subtree: true});
   });
 })();

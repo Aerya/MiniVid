@@ -11,7 +11,7 @@ La lecture directe est toujours tentée en premier. Si le navigateur ne sait pas
 
 ## Fonctionnalités
 
-- Navigation par source et dossier, recherche, tags, favoris, collections et filtres lus/non lus.
+- Navigation par source et dossier, recherche, tags, favoris, collections, filtres lus/non lus et vue stricte des vidéos jamais lues.
 - Miniatures automatiques, vidéos similaires, interface responsive clair/sombre et sélecteur de langue français/anglais persistant.
 - Lecture directe avec fallback HLS logiciel, NVIDIA NVENC ou VA-API Intel/AMD.
 - Rescans automatiques, authentification mono-utilisateur facultative et plusieurs clients qBittorrent ou ruTorrent.
@@ -90,7 +90,7 @@ La configuration se fait dans **Maintenance > Sources vidéo et clients BitTorre
 2. Associez chaque source vidéo au client concerné et indiquez le chemin vu par celui-ci.
 3. Choisissez le mode de suppression, puis activez séparément la liaison BitTorrent et la suppression.
 
-MiniVid affiche les torrents correspondant au fichier. La suppression « torrent et données » retire les torrents associés, y compris les variantes cross-seed reconnues, et vérifie le résultat avant de retirer la vidéo de l'index. La suppression exige l'authentification MiniVid. Les mots de passe des clients sont chiffrés avec `SECRET_KEY` ; changer cette clé oblige à les saisir de nouveau.
+MiniVid affiche les torrents correspondant au fichier. La suppression « torrent et données » retire les torrents associés, y compris les variantes cross-seed reconnues, et vérifie le résultat avant de retirer la vidéo de l'index. La suppression d’un favori affiche un avertissement supplémentaire et demande toujours la confirmation finale. La suppression exige l'authentification MiniVid. Les mots de passe des clients sont chiffrés avec `SECRET_KEY` ; changer cette clé oblige à les saisir de nouveau.
 
 ## Configuration utile
 

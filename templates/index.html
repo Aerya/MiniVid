@@ -49,6 +49,7 @@
       <select name="read" id="read" onchange="this.form.submit()">
         <option value="all" {{ 'selected' if readf=='all' else '' }}>Toutes</option>
         <option value="unread" {{ 'selected' if readf=='unread' else '' }}>Non lues</option>
+        <option value="never" {{ 'selected' if readf=='never' else '' }}>Jamais lues</option>
         <option value="read" {{ 'selected' if readf=='read' else '' }}>Lues</option>
       </select>
 
