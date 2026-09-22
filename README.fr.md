@@ -76,7 +76,7 @@ docker compose up -d
 
 ## Lecture et accélération GPU
 
-MiniVid envoie d'abord le fichier original. En cas d'échec de lecture directe ou d'absence d'image décodée, le lecteur passe en HLS. La prise en charge dépend des codecs du navigateur et du système. Désactivez tout transcodage avec `MINI_TRANSCODE=0`.
+MiniVid envoie directement les fichiers pris en charge par les navigateurs. Les AVI, FLV et M2TS passent immédiatement en HLS afin de fonctionner de façon identique dans Firefox/LibreWolf, Vivaldi et Chromium. En cas d'échec de lecture directe ou d'absence d'image décodée pour un autre format, le lecteur passe en HLS. Désactivez tout transcodage avec `MINI_TRANSCODE=0`.
 
 Un helper éphémère prépare l'accès GPU avant le démarrage de MiniVid. Il teste l'encodeur dans Docker, régénère le CDI avec `nvidia-ctk` lorsqu'il est obsolète, puis expose NVIDIA ou `/dev/dri` au conteneur principal. Le conteneur MiniVid n'est pas privilégié et aucun override Compose ni `gpus: all` n'est nécessaire.
 

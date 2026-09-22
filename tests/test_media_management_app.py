@@ -227,6 +227,21 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertIn('src="/static/i18n.js"', html)
         self.client.post("/api/preferences", json={"lang": "fr"})
 
+    def test_avi_flv_and_m2ts_use_hls_without_browser_sniffing(self):
+        with minivid.app.test_request_context(), \
+             mock.patch.object(minivid, "ALLOW_TRANSCODE", True):
+            for ext in ("avi", "flv", "m2ts"):
+                url, method = minivid._get_best_playback_url("video-id", "/videos1/file." + ext, ext, "")
+                self.assertEqual(method, "hls")
+                self.assertEqual(url, "/hls/video-id/playlist.m3u8")
+
+    def test_incompatible_containers_are_explicit_when_transcoding_is_disabled(self):
+        with minivid.app.test_request_context(), \
+             mock.patch.object(minivid, "ALLOW_TRANSCODE", False):
+            url, method = minivid._get_best_playback_url("video-id", "/videos1/file.avi", "avi", "")
+        self.assertEqual(method, "unsupported")
+        self.assertEqual(url, "/stream/video-id")
+
     def test_forced_browse_refresh_rescans_media(self):
         with mock.patch.object(minivid, "scan_media") as scan:
             response = self.client.get("/browse?root=0&_mv_refresh=123")

@@ -1991,11 +1991,17 @@ def hls_segment(vid, seg):
     return send_file(cache_path, mimetype="video/mp2t")
 
 def _get_best_playback_url(vid, full, ext, ua):
-    """Essaie toujours le fichier original; le lecteur bascule en HLS si besoin.
+    """Choisit une lecture qui ne dépend pas du navigateur utilisé.
 
-    Le User-Agent ne permet pas de connaître de façon fiable les codecs réellement
-    disponibles. Le navigateur est donc laissé décider en tentant la source directe.
+    AVI, FLV et M2TS ne sont pas pris en charge directement par les navigateurs
+    modernes. Les envoyer d'abord au lecteur laisse certains d'entre eux bloqués
+    sans émettre l'événement d'erreur qui déclenche le fallback. Lorsqu'il est
+    autorisé, HLS est donc choisi côté serveur pour ces conteneurs.
     """
+    if ext in ("avi", "flv", "m2ts"):
+        if ALLOW_TRANSCODE:
+            return url_for("hls_playlist", vid=vid), "hls"
+        return url_for("stream", vid=vid), "unsupported"
     return url_for("stream", vid=vid), "direct"
 
 

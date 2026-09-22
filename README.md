@@ -76,7 +76,7 @@ docker compose up -d
 
 ## Playback and GPU acceleration
 
-MiniVid sends the original file first. If direct playback fails or no video frame is decoded, the player switches to HLS. Browser and operating-system codec support determine whether formats such as MKV/HEVC play directly. Disable all transcoding with `MINI_TRANSCODE=0`.
+MiniVid sends browser-compatible files directly. AVI, FLV and M2TS are sent straight to HLS so that playback works consistently in Firefox/LibreWolf, Vivaldi and Chromium. If another direct playback fails or no video frame is decoded, the player switches to HLS. Disable all transcoding with `MINI_TRANSCODE=0`.
 
 An ephemeral helper prepares GPU access before MiniVid starts. It tests the encoder from Docker, repairs stale NVIDIA CDI metadata with `nvidia-ctk` when needed, then exposes NVIDIA or `/dev/dri` to the main container. The MiniVid container is not privileged and no Compose override or `gpus: all` is required.
 
