@@ -30,6 +30,12 @@
     $('storage-table-wrap').hidden = layout !== 'list';
     $('storage-layout').textContent = layout === 'gallery' ? 'Affichage : vignettes' : 'Affichage : liste';
     $('storage-width').textContent = 'Largeur : ' + ({standard:'standard', wide:'large', full:'plein écran'}[width]);
+    $('storage-width').dataset.mode = width;
+    $('storage-width').setAttribute(
+      'aria-label',
+      'Changer la largeur. Largeur actuelle : ' +
+        ({standard:'standard', wide:'large', full:'plein écran'}[width])
+    );
     $('storage-layout').setAttribute('aria-pressed', String(layout === 'gallery'));
   }
   function selectBox(id) {
