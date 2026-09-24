@@ -27,6 +27,17 @@
       <progress id="storage-scan-progress" class="storage-scan-progress" max="100" value="0"></progress><div class="storage-scan-detail" id="storage-scan-detail"></div></div>
       <p class="meta storage-help">Les copies sont vérifiées par SHA‑256. Les liens physiques et torrents cross-seed ne comptent pas comme plusieurs fichiers. La place récupérable reste une estimation.</p>
     </div></section>
+    <section class="storage-source-scope" aria-label="Filtrer le stockage par source vidéo">
+      <div class="storage-source-scope-head">
+        <div>
+          <strong>Source vidéo</strong>
+          <p class="meta">Les doublons et la vue « Gain de place » suivent la source sélectionnée.</p>
+        </div>
+        <div id="storage-source-summary" class="storage-source-summary">Toutes les sources</div>
+      </div>
+      <div id="storage-root-tabs" class="storage-root-tabs" role="tablist" aria-label="Sources vidéo analysées"></div>
+    </section>
+
     <nav class="storage-section-tabs" role="tablist" aria-label="Vues du stockage">
       <button type="button" class="storage-section-tab active" id="storage-tab-duplicates"
               data-storage-section="duplicates" role="tab" aria-selected="true"

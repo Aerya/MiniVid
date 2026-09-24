@@ -1825,3 +1825,107 @@ input[type="radio"] {
     display: none;
   }
 }
+
+/* Storage source scope */
+.storage-source-scope {
+  display: grid;
+  gap: .55rem;
+  margin: 0 0 .72rem;
+  padding: .68rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.storage-source-scope-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.storage-source-scope-head .meta {
+  margin: .15rem 0 0;
+}
+
+.storage-source-summary {
+  max-width: 65%;
+  color: var(--muted);
+  font-size: .76rem;
+  text-align: right;
+}
+
+.storage-root-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.storage-root-tab {
+  display: grid;
+  gap: .08rem;
+  min-width: 150px;
+  max-width: 300px;
+  padding: .42rem .62rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-2) 52%, transparent);
+  color: var(--muted);
+  text-align: left;
+}
+
+.storage-root-tab:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.storage-root-tab.active {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
+  color: var(--text);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.storage-root-tab strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.storage-root-tab-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: .68rem;
+}
+
+.storage-source-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .55rem;
+  margin-top: .45rem;
+  padding-top: .42rem;
+  border-top: 1px solid var(--border);
+  color: var(--faint);
+  font-size: .7rem;
+}
+
+@media (max-width: 760px) {
+  .storage-source-scope-head {
+    flex-direction: column;
+  }
+
+  .storage-source-summary {
+    max-width: none;
+    text-align: left;
+  }
+
+  .storage-root-tab {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+}
