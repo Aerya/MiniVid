@@ -11,6 +11,7 @@
     ? localStorage.getItem('minivid_storage_width') : 'standard';
   let storageSection = ['duplicates', 'cleanup'].includes(localStorage.getItem('minivid_storage_section'))
     ? localStorage.getItem('minivid_storage_section') : 'duplicates';
+  let storageRoot = localStorage.getItem('minivid_storage_root') || 'all';
   const size = value => (Number(value || 0) / 1073741824).toLocaleString('fr-FR', {maximumFractionDigits: 2}) + ' Gio';
   const date = value => value ? new Date(Number(value) * 1000).toLocaleDateString('fr-FR') : 'Jamais';
   const node = (tag, label, className) => {
@@ -165,6 +166,86 @@
     const cls = file.management === 'torrent' ? 'torrent' : file.management === 'unknown' ? 'unknown' : 'local';
     return node('span', file.management_label || 'Fichier local', 'storage-origin-badge ' + cls);
   }
+  function renderSourceFilter(result) {
+    const tabs = $('storage-root-tabs');
+    tabs.replaceChildren();
+
+    storageRoot = String(result.selected_root ?? 'all');
+    localStorage.setItem('minivid_storage_root', storageRoot);
+
+    const totalFiles = (result.sources || []).reduce(
+      (sum, source) => sum + Number(source.indexed_count || 0),
+      0
+    );
+    const totalBytes = (result.sources || []).reduce(
+      (sum, source) => sum + Number(source.indexed_bytes || 0),
+      0
+    );
+
+    const makeButton = (value, title, meta) => {
+      const button = node('button', null, 'storage-root-tab');
+      button.type = 'button';
+      button.dataset.root = String(value);
+      button.setAttribute('role', 'tab');
+
+      const active = storageRoot === String(value);
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+
+      button.append(
+        node('strong', title),
+        node('span', meta, 'storage-root-tab-meta')
+      );
+
+      button.addEventListener('click', () => {
+        const nextRoot = String(value);
+        if (storageRoot === nextRoot) return;
+
+        storageRoot = nextRoot;
+        localStorage.setItem('minivid_storage_root', storageRoot);
+        selected.clear();
+        page = 1;
+        loadStorage().catch(error => alert(error.message));
+      });
+
+      tabs.append(button);
+    };
+
+    makeButton(
+      'all',
+      'Toutes les sources',
+      `${totalFiles} fichiers · ${size(totalBytes)} indexés`
+    );
+
+    (result.sources || []).forEach(source => {
+      makeButton(
+        source.root,
+        source.name,
+        `${source.duplicate_groups || 0} doublon(s) · ${size(source.recoverable_bytes || 0)} récupérables`
+      );
+    });
+
+    const activeSource = storageRoot === 'all'
+      ? null
+      : (result.sources || []).find(
+          source => String(source.root) === storageRoot
+        );
+
+    if (activeSource) {
+      $('storage-source-summary').textContent =
+        `${activeSource.name} · ${activeSource.indexed_count || 0} fichiers · ` +
+        `${size(activeSource.indexed_bytes || 0)} indexés · ` +
+        `${activeSource.duplicate_groups || 0} groupe(s) de doublons · ` +
+        `jusqu’à ${size(activeSource.recoverable_bytes || 0)} récupérables`;
+    } else {
+      const summary = result.duplicate_summary || {};
+      $('storage-source-summary').textContent =
+        `Toutes les sources · ${totalFiles} fichiers · ${size(totalBytes)} indexés · ` +
+        `${summary.groups || 0} groupe(s) de doublons · ` +
+        `jusqu’à ${size(summary.recoverable_bytes || 0)} récupérables`;
+    }
+  }
+
   function renderStorageOverview(result) {
     const sources=$('storage-sources'), volumes=$('storage-volumes'); sources.replaceChildren(); volumes.replaceChildren();
     const indexed=(result.sources||[]).reduce((sum,x)=>sum+Number(x.indexed_count||0),0);
@@ -172,7 +253,13 @@
     (result.sources||[]).forEach(source=>{const card=node('div',null,'storage-source-item'),top=node('div',null,'storage-source-top'); top.append(node('strong',source.name),node('span',`${source.indexed_count||0} vidéo(s)`,'storage-count-pill'));
       const info=node('div',null,'storage-source-meta'); info.append(node('span',source.torrent_configured?`Client configuré : ${source.client_name||source.client_type||'BitTorrent'}`:'Aucun client BitTorrent associé à la source','storage-origin-badge '+(source.torrent_configured?'torrent':'local')));
       info.append(node('span',source.read_only===true?'Montage lecture seule':source.read_only===false?'Montage accessible en écriture':'Mode d’accès indéterminé','storage-source-access'));
-      card.append(top,node('code',source.path||'','storage-path'),info); sources.append(card);});
+      const stats=node('div',null,'storage-source-stats');
+      stats.append(
+        node('span',`${source.duplicate_groups||0} groupe(s) de doublons`),
+        node('span',`jusqu’à ${size(source.recoverable_bytes||0)} récupérables`),
+        node('span',`${size(source.indexed_bytes||0)} indexés`)
+      );
+      card.append(top,node('code',source.path||'','storage-path'),info,stats); sources.append(card);});
     (result.volumes||[]).forEach((volume,index)=>{const card=node('div',null,'storage-volume-item'),free=volume.total?Number(volume.free)/Number(volume.total)*100:0,names=(volume.sources||[]).map(x=>x.name).join(' + ');
       card.append(node('strong',names||`Volume ${index+1}`),node('span',`${size(volume.free)} libres sur ${size(volume.total)} · ${free.toFixed(1)} %`,'storage-volume-space'));
       const bar=node('div',null,'storage-space-bar'),fill=node('i'); fill.style.width=`${Math.max(0,Math.min(100,free))}%`; bar.append(fill); card.append(bar); volumes.append(card);});
@@ -229,7 +316,7 @@
     const copies = $('storage-copies');
     copies.replaceChildren();
 
-    $('storage-duplicates-count').textContent = String((result.copies || []).length);
+    $('storage-duplicates-count').textContent = String(result.duplicate_summary?.groups ?? (result.copies || []).length);
     $('storage-cleanup-count').textContent = String(result.count || 0);
 
     if (!result.copies.length) {
@@ -245,7 +332,7 @@
       }));
 
       const wrap = duplicateDetails(
-        `${group.items.length} copies · jusqu’à ${size(group.estimated_bytes)} récupérables`
+        `${group.items.length} copies · jusqu’à ${size(group.display_estimated_bytes ?? group.estimated_bytes)} récupérables`
       );
 
       const body = node('div', null, 'storage-duplicate-body');
@@ -332,8 +419,33 @@
     }
   }
   async function loadStorage() {
-    const query=new URLSearchParams({filter:$('storage-filter').value,sort:$('storage-sort').value,page});const result=await json('/api/storage?'+query);lastResult=result;renderStorageOverview(result);syncScanUi(result.scan||{});renderCopies(result);renderItems(result.items,result.admin);
-    $('storage-total').textContent=`(${result.count})`;$('storage-page').textContent=`${page} / ${Math.max(1,Math.ceil(result.count/100))}`;$('storage-prev').disabled=page<=1;$('storage-next').disabled=page*100>=result.count;$('storage-select-page').disabled=!result.admin||!result.items.length;selectionStatus();displayMode();
+    const query = new URLSearchParams({
+      filter: $('storage-filter').value,
+      sort: $('storage-sort').value,
+      page,
+      root: storageRoot
+    });
+
+    const result = await json('/api/storage?' + query);
+    lastResult = result;
+
+    renderStorageOverview(result);
+    renderSourceFilter(result);
+    syncScanUi(result.scan || {});
+    renderCopies(result);
+    renderItems(result.items, result.admin);
+
+    $('storage-total').textContent =
+      `(${result.count} · ${size(result.visible_bytes || 0)})`;
+    $('storage-page').textContent =
+      `${page} / ${Math.max(1, Math.ceil(result.count / 100))}`;
+    $('storage-prev').disabled = page <= 1;
+    $('storage-next').disabled = page * 100 >= result.count;
+    $('storage-select-page').disabled =
+      !result.admin || !result.items.length;
+
+    selectionStatus();
+    displayMode();
   }
   async function loadAutomation() {
     const data=await json('/api/storage/automation');$('automation-enabled').checked=!!data.settings.enabled;$('automation-owner').value=data.settings.owner_id||'';$('automation-here').dataset.instance=data.instance_id;const list=$('automation-sources');list.replaceChildren();const selected=new Set((data.cleanup_roots||[]).map(Number));
