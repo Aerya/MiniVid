@@ -19,6 +19,23 @@
   --card-min: 230px;
 }
 
+/* Storage review */
+.storage-page > .card { margin-bottom: 1rem; }
+.storage-page .page-header h2 { margin: 0; }
+.storage-mounts { display: grid; gap: .5rem; margin-bottom: .75rem; }
+.storage-filters, .storage-pages { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; margin-bottom: 1rem; }
+.storage-pages { margin-top: 1rem; justify-content: center; }
+.storage-table { width: 100%; border-collapse: collapse; }
+.storage-table th, .storage-table td { padding: .6rem; text-align: left; border-bottom: 1px solid rgba(128,128,128,.25); }
+.storage-table td:first-child small { display: block; opacity: .65; }
+.storage-group { border-bottom: 1px solid rgba(128,128,128,.25); padding: .7rem 0; }
+.storage-group li { margin: .4rem 0; overflow-wrap: anywhere; }
+.cleanup-policy { margin-top: 1rem; border-top: 1px solid rgba(128,128,128,.3); padding-top: 1rem; }
+.cleanup-policy h3 { margin: 0 0 .4rem; }
+.cleanup-policy label { display: inline-flex; flex-direction: column; gap: .2rem; margin: .35rem .7rem .35rem 0; }
+.cleanup-policy input, .cleanup-policy select, .storage-filters select { padding: .4rem; max-width: 16rem; }
+.cleanup-policy #cleanup-status { display: inline-block; margin-left: .6rem; }
+
 html.light {
   color-scheme: light;
   --bg: #f4f6f8;
