@@ -25,7 +25,7 @@
   const post = (url, data) => json(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
 
   function displayMode() {
-    $('.storage-page').dataset.width = width;
+    document.querySelector('.storage-page').dataset.width = width;
     $('storage-gallery').hidden = layout !== 'gallery';
     $('storage-table-wrap').hidden = layout !== 'list';
     $('storage-layout').textContent = layout === 'gallery' ? 'Affichage : vignettes' : 'Affichage : liste';
