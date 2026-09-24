@@ -998,6 +998,7 @@ def _default_media_managers():
         "deletion_enabled": False,
         "clients": [],
         "sources": {},
+        "cleanup_roots": [],
     }
 
 
@@ -1032,6 +1033,8 @@ def _read_media_managers():
             base["clients"] = []
         if not isinstance(base.get("sources"), dict):
             base["sources"] = {}
+        if not isinstance(base.get("cleanup_roots"), list):
+            base["cleanup_roots"] = []
         return base
 
 
@@ -1128,11 +1131,20 @@ def _validate_media_managers(payload, previous):
             "client_root": client_root,
             "delete_mode": delete_mode,
         }
+    cleanup_roots = []
+    for value in previous.get("cleanup_roots", []):
+        try:
+            root_index = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= root_index < len(MEDIA_DIRS) and root_index not in cleanup_roots:
+            cleanup_roots.append(root_index)
     return {
         "torrent_integration_enabled": bool(payload.get("torrent_integration_enabled")),
         "deletion_enabled": bool(payload.get("deletion_enabled")),
         "clients": clients,
         "sources": sources,
+        "cleanup_roots": cleanup_roots,
     }
 
 
@@ -1355,12 +1367,57 @@ def _storage_path(vid):
     return _media_item_and_path(vid)[3]
 
 
+def _storage_file_context(vid, cfg, cache=None):
+    if cache is not None and vid in cache:
+        return cache[vid]
+    item, root, rel, full = _media_item_and_path(vid)
+    source = cfg.get("sources", {}).get(str(root), {})
+    client_id = source.get("client_id")
+    client_cfg = next((client for client in cfg.get("clients", []) if client.get("id") == client_id), None)
+    result = {
+        "id": vid,
+        "name": item.get("name", ""),
+        "root": root,
+        "root_name": MEDIA_NAMES[root] if root < len(MEDIA_NAMES) else item.get("root_name", ""),
+        "root_path": MEDIA_DIRS[root],
+        "relative_path": rel,
+        "path": MEDIA_DIRS[root].rstrip("/") + "/" + rel.lstrip("/"),
+        "management": "local",
+        "management_label": "Fichier local / non associé à BitTorrent",
+        "torrent_count": 0,
+        "torrent_client": None,
+        "cross_seed": False,
+    }
+    if client_cfg:
+        result["torrent_client"] = {"name": str(client_cfg.get("name") or "Client BitTorrent"), "type": str(client_cfg.get("type") or "")}
+    if cfg.get("torrent_integration_enabled") and client_id and client_cfg:
+        try:
+            torrents = _configured_client(cfg, client_id, MEDIA_DIRS[root]).metadata_all(rel, source.get("client_root", "/downloads"), os.path.getsize(full))
+            if torrents:
+                result["management"] = "torrent"
+                result["torrent_count"] = len(torrents)
+                result["cross_seed"] = any(bool(torrent.get("cross_seed")) for torrent in torrents)
+                suffix = f" · {len(torrents)} torrent(s)" if len(torrents) > 1 else ""
+                result["management_label"] = f"BitTorrent · {result['torrent_client']['name']}{suffix}"
+        except TorrentClientError as exc:
+            detail = str(exc)
+            if "Aucun torrent" not in detail:
+                result["management"] = "unknown"
+                result["management_label"] = f"Association BitTorrent indéterminée · {detail[:160]}"
+    if cache is not None:
+        cache[vid] = result
+    return result
+
+
 def _cleanup_status(vid, rule, cfg, full, state):
     if not rule:
         return "none", "Aucune règle"
     if rule["mode"] == "protect" or state.get("fav", {}).get(vid):
         return "protected", "Protégé / favori"
     item, root, rel, _ = _media_item_and_path(vid)
+    cleanup_roots = {int(value) for value in cfg.get("cleanup_roots", []) if str(value).lstrip("-").isdigit()}
+    if cleanup_roots and root not in cleanup_roots:
+        return "blocked", "Source vidéo non autorisée pour le nettoyage automatique"
     source = cfg.get("sources", {}).get(str(root), {})
     if not cfg.get("deletion_enabled") or not cfg.get("torrent_integration_enabled") or source.get("delete_mode") != "torrent":
         return "blocked", "Suppression BitTorrent désactivée pour cette source"
@@ -1395,6 +1452,7 @@ def _cleanup_run_once():
     # More than one configured client may seed the same physical file.
     if len(cfg.get("clients", [])) != 1 or cfg["clients"][0].get("type") != "qbittorrent":
         return
+    cleanup_roots = {int(value) for value in cfg.get("cleanup_roots", []) if str(value).lstrip("-").isdigit()}
     state = read_state()
     with storage.connect(STORAGE_DB) as db:
         rules = [dict(row) for row in db.execute("SELECT * FROM cleanup_rules WHERE mode='candidate' ORDER BY updated_at")]
@@ -1405,6 +1463,8 @@ def _cleanup_run_once():
         lock_handle = None
         try:
             _, root, rel, full = _media_item_and_path(vid)
+            if cleanup_roots and root not in cleanup_roots:
+                continue
             before = os.stat(full)
             if storage.identity(before) != rule["identity"] or state.get("fav", {}).get(vid):
                 continue
@@ -1471,22 +1531,44 @@ def _cleanup_run_once():
 def api_storage_automation():
     if not media_admin_required():
         return jsonify(ok=False, error="authenticated_admin_required"), 403
+    cfg = _read_media_managers()
+    clients = {str(client.get("id")): client for client in cfg.get("clients", [])}
+    options = []
+    for index, root_path in enumerate(MEDIA_DIRS):
+        source = cfg.get("sources", {}).get(str(index), {})
+        client = clients.get(str(source.get("client_id") or ""))
+        eligible = bool(cfg.get("torrent_integration_enabled") and source.get("delete_mode") == "torrent" and client and client.get("type") == "qbittorrent")
+        options.append({"root": index, "name": MEDIA_NAMES[index], "path": root_path, "eligible": eligible,
+                        "client_name": str(client.get("name") or "") if client else "", "delete_mode": source.get("delete_mode", "disabled")})
+    eligible_roots = [option["root"] for option in options if option["eligible"]]
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
-        # Enabling requires a named owner, a sync secret and peers. This is
-        # intentionally stricter than the former environment toggle.
         enabled = bool(data.get("enabled"))
         owner_id = str(data.get("owner_id", "")).strip()
+        raw_roots = data.get("cleanup_roots", [])
+        if not isinstance(raw_roots, list):
+            return jsonify(ok=False, error="sources_nettoyage_invalides"), 400
+        roots = []
+        for value in raw_roots:
+            try: root = int(value)
+            except (TypeError, ValueError): return jsonify(ok=False, error="source_nettoyage_invalide"), 400
+            if root not in eligible_roots: return jsonify(ok=False, error="source_nettoyage_non_eligible"), 400
+            if root not in roots: roots.append(root)
+        if enabled and not roots:
+            return jsonify(ok=False, error="selectionnez_une_source_video_pour_le_nettoyage"), 409
         if enabled and (not AUTH_ENABLED or not _sync_enabled() or not owner_id):
             return jsonify(ok=False, error="activation_exige_authentification_et_synchronisation"), 409
+        cfg["cleanup_roots"] = roots
+        _write_media_managers(cfg)
         revision = time.time_ns()
         storage.set_settings(STORAGE_DB, enabled, owner_id, revision, INSTANCE_ID)
         _emit_storage_event("settings", "", {"enabled": enabled, "owner_id": owner_id})
     settings = storage.settings(STORAGE_DB)
-    return jsonify(ok=True, settings=settings, instance_id=INSTANCE_ID,
-                   sync_configured=_sync_enabled(), peer_count=len(SYNC_PEERS),
-                   active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID))
-
+    configured = [int(v) for v in cfg.get("cleanup_roots", []) if str(v).lstrip("-").isdigit() and int(v) in eligible_roots]
+    if not configured and settings["enabled"]:
+        configured = eligible_roots
+    return jsonify(ok=True, settings=settings, instance_id=INSTANCE_ID, sync_configured=_sync_enabled(), peer_count=len(SYNC_PEERS),
+                   active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID), cleanup_roots=configured, sources=options)
 
 @app.route("/api/storage/default-rule", methods=["GET", "POST"])
 def api_storage_default_rule():
@@ -1528,100 +1610,120 @@ def storage_page():
 def api_storage_scan():
     if not media_admin_required():
         return jsonify(ok=False, error="authenticated_admin_required"), 403
+    media_snapshot = list(MEDIA)
+    source_label = ", ".join(f"{MEDIA_NAMES[i]} ({MEDIA_DIRS[i]})" for i in range(len(MEDIA_DIRS)))
     with SCAN_LOCK:
         if SCAN_STATE["running"]:
             return jsonify(ok=False, error="scan_deja_en_cours"), 409
-        SCAN_STATE.update(running=True, kind="stockage", progress=0, message="Analyse des fichiers en cours…",
-                          started=int(time.time()), finished=0)
+        SCAN_STATE.update(running=True, kind="stockage", progress=0,
+                          message=f"Préparation de {len(media_snapshot)} fichiers sur {len(MEDIA_DIRS)} sources…",
+                          phase="starting", current=0, total=len(media_snapshot), started=int(time.time()), finished=0)
+    LOG.info("Analyse doublons démarrée : %d fichiers · %d sources [%s]", len(media_snapshot), len(MEDIA_DIRS), source_label)
     def background():
-        try:
-            count = storage.inventory_scan(STORAGE_DB, list(MEDIA), _storage_path)
-            _apply_pending_storage_policies()
+        log_state = {"phase": None, "bucket": -1}
+        def update_progress(percent, message, current=0, total=0, phase=""):
             with SCAN_LOCK:
-                SCAN_STATE.update(progress=100, message=f"{count} fichiers analysés")
+                SCAN_STATE.update(progress=int(percent), message=str(message), phase=str(phase or ""), current=int(current or 0), total=int(total or 0))
+            bucket = int(percent) // 5
+            if phase != log_state["phase"] or bucket > log_state["bucket"] or percent >= 99:
+                LOG.info("Analyse doublons [%s] %d%% — %s", phase or "scan", int(percent), message)
+                log_state["phase"], log_state["bucket"] = phase, bucket
+        try:
+            count = storage.inventory_scan(STORAGE_DB, media_snapshot, _storage_path, progress=update_progress)
+            _apply_pending_storage_policies()
+            with storage.connect(STORAGE_DB) as db:
+                rows = [dict(row) for row in db.execute("SELECT * FROM inventory")]
+            copies, links = storage.duplicate_groups(rows)
+            LOG.info("Analyse doublons terminée : %d fichiers · %d groupes de copies · %d groupes de liens physiques", count, len(copies), len(links))
+            with SCAN_LOCK:
+                SCAN_STATE.update(progress=100, message=f"Terminé : {count} fichiers · {len(copies)} groupes de copies vérifiées",
+                                  phase="done", current=count, total=count)
         except Exception as exc:
             LOG.exception("Analyse du stockage impossible")
-            with SCAN_LOCK:
-                SCAN_STATE["message"] = f"Erreur : {exc}"
+            with SCAN_LOCK: SCAN_STATE.update(message=f"Erreur : {exc}", phase="error")
         finally:
-            with SCAN_LOCK:
-                SCAN_STATE.update(running=False, finished=int(time.time()))
+            with SCAN_LOCK: SCAN_STATE.update(running=False, finished=int(time.time()))
     threading.Thread(target=background, daemon=True, name="minivid-storage-scan").start()
     return jsonify(ok=True)
 
-
 @app.route("/api/storage", methods=["GET"])
 def api_storage():
-    if not auth_required():
-        return jsonify(ok=False, error="auth"), 401
-    state = read_state()
+    if not auth_required(): return jsonify(ok=False, error="auth"), 401
+    state, cfg, media_snapshot = read_state(), _read_media_managers(), list(MEDIA)
     with storage.connect(STORAGE_DB) as db:
         records = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM inventory")}
         stats = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM playback_stats")}
         rules = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM cleanup_rules")}
+    clients = {str(c.get("id")): c for c in cfg.get("clients", []) if c.get("id")}
     items = []
-    for item in list(MEDIA):
-        vid = item["id"]
-        rec = records.get(vid)
-        rule = rules.get(vid)
-        # A changed file must not inherit the previous file's cleanup rule.
+    for item in media_snapshot:
+        vid, rec, rule = item["id"], records.get(item["id"]), rules.get(item["id"])
         if rule:
             try:
-                if storage.identity(os.stat(_storage_path(vid))) != rule["identity"]:
-                    rule = None
-            except (OSError, ValueError, FileNotFoundError):
-                rule = None
+                if storage.identity(os.stat(_storage_path(vid))) != rule["identity"]: rule = None
+            except (OSError, ValueError, FileNotFoundError): rule = None
         entry = {key: item.get(key) for key in ("id", "name", "root_name", "size", "mtime")}
-        entry.update(stats.get(vid, {}))
-        entry["policy"] = rule["mode"] if rule else "none"
-        entry["favorite"] = bool(state.get("fav", {}).get(vid))
-        if rule:
-            try:
-                entry["cleanup_status"], entry["cleanup_reason"] = _cleanup_status(vid, rule, _read_media_managers(), _storage_path(vid), state)
-            except (OSError, ValueError, FileNotFoundError):
-                entry["cleanup_status"], entry["cleanup_reason"] = "blocked", "Fichier indisponible"
-        entry["inventory"] = rec is not None
-        entry["first_seen"] = rec["first_seen"] if rec else 0
-        items.append(entry)
-    copies, links = storage.duplicate_groups(list(records.values()))
-    names = {item["id"]: item["name"] for item in list(MEDIA)}
-    for group in copies:
-        group["digest"] = records[group["items"][0]]["digest"]
-        group["names"] = [names.get(vid, vid) for vid in group["items"]]
-    link_groups = [{"items": group, "names": [names.get(vid, vid) for vid in group]}
-                   for group in links]
-    mounts = []
-    seen = set()
-    for index, root in enumerate(MEDIA_DIRS):
         try:
-            dev = os.stat(root).st_dev
-            if dev in seen:
-                continue
-            seen.add(dev)
-            usage = shutil.disk_usage(root)
-            mounts.append({"name": MEDIA_NAMES[index], "path": root, "total": usage.total, "free": usage.free})
-        except OSError:
-            pass
+            root, rel = id_to_parts(vid)
+            source_cfg = cfg.get("sources", {}).get(str(root), {})
+            client = clients.get(str(source_cfg.get("client_id") or ""))
+            entry.update(root=root, root_name=MEDIA_NAMES[root], root_path=MEDIA_DIRS[root], relative_path=rel.replace("\\", "/"),
+                         source_client_name=str(client.get("name") or "") if client else "", source_delete_mode=source_cfg.get("delete_mode", "disabled"))
+        except (ValueError, IndexError): pass
+        entry.update(stats.get(vid, {})); entry["policy"] = rule["mode"] if rule else "none"; entry["favorite"] = bool(state.get("fav", {}).get(vid))
+        if rule:
+            try: entry["cleanup_status"], entry["cleanup_reason"] = _cleanup_status(vid, rule, cfg, _storage_path(vid), state)
+            except (OSError, ValueError, FileNotFoundError): entry["cleanup_status"], entry["cleanup_reason"] = "blocked", "Fichier indisponible"
+        entry["inventory"] = rec is not None; entry["first_seen"] = rec["first_seen"] if rec else 0; items.append(entry)
+    copies, links = storage.duplicate_groups(list(records.values())); cache = {}
+    for group in copies:
+        group["digest"] = records[group["items"][0]]["digest"]; group["files"] = []
+        for vid in group["items"]:
+            try: group["files"].append(_storage_file_context(vid, cfg, cache))
+            except (ValueError, OSError, FileNotFoundError) as exc:
+                group["files"].append({"id": vid, "name": next((x.get("name", vid) for x in media_snapshot if x.get("id") == vid), vid),
+                                       "management": "unknown", "management_label": f"Informations indisponibles · {exc}", "path": "", "root_name": ""})
+    link_groups = []
+    for group in links:
+        files = []
+        for vid in group:
+            try: files.append(_storage_file_context(vid, cfg, cache))
+            except (ValueError, OSError, FileNotFoundError): pass
+        link_groups.append({"items": group, "files": files})
+    counts = {i: 0 for i in range(len(MEDIA_DIRS))}
+    for item in media_snapshot:
+        try: ri = int(item.get("root", -1))
+        except (TypeError, ValueError): continue
+        if ri in counts: counts[ri] += 1
+    configured_cleanup = {int(v) for v in cfg.get("cleanup_roots", []) if str(v).lstrip("-").isdigit()}
+    sources, volumes_by_dev = [], {}
+    for i, root_path in enumerate(MEDIA_DIRS):
+        source_cfg = cfg.get("sources", {}).get(str(i), {}); client = clients.get(str(source_cfg.get("client_id") or ""))
+        info = {"root": i, "name": MEDIA_NAMES[i], "path": root_path, "indexed_count": counts.get(i, 0), "exists": os.path.isdir(root_path),
+                "client_name": str(client.get("name") or "") if client else "", "client_type": str(client.get("type") or "") if client else "",
+                "delete_mode": source_cfg.get("delete_mode", "disabled"), "torrent_configured": bool(cfg.get("torrent_integration_enabled") and client),
+                "cleanup_selected": i in configured_cleanup}
+        try: info["read_only"] = bool(os.statvfs(root_path).f_flag & getattr(os, "ST_RDONLY", 1))
+        except OSError: info["read_only"] = None
+        sources.append(info)
+        try: dev, usage = os.stat(root_path).st_dev, shutil.disk_usage(root_path)
+        except OSError: continue
+        vol = volumes_by_dev.setdefault(dev, {"device": str(dev), "total": usage.total, "free": usage.free, "sources": []})
+        vol["total"], vol["free"] = usage.total, usage.free; vol["sources"].append({"root": i, "name": MEDIA_NAMES[i], "path": root_path})
     mode = request.args.get("filter", "all")
-    if mode == "never":
-        items = [i for i in items if not i.get("starts") and not state.get("ever_played", {}).get(i["id"])]
-    elif mode == "abandoned":
-        items = [i for i in items if i.get("starts") and i.get("max_percent", 0) < 30 and not i.get("completions")]
-    elif mode in ("candidate", "protected"):
-        items = [i for i in items if i["policy"] == ("candidate" if mode == "candidate" else "protect")]
-    key = request.args.get("sort", "size")
-    sort_keys = {"size": "size", "oldest": "mtime", "first_seen": "first_seen", "last_played": "last_played", "plays": "starts", "progress": "max_percent"}
-    items.sort(key=lambda i: i.get(sort_keys.get(key, "size")) or 0,
-               reverse=key in ("size", "plays", "progress"))
-    try:
-        page = max(1, min(100000, int(request.args.get("page", 1))))
-    except ValueError:
-        page = 1
-    count = len(items)
-    return jsonify(ok=True, admin=media_admin_required(), mounts=mounts, count=count, page=page, items=items[(page-1)*100:page*100],
-                   copies=copies, links=link_groups, scanned_at=max((r["scanned_at"] for r in records.values()), default=0),
-                   scan={key: SCAN_STATE[key] for key in ("running", "kind", "progress", "message")})
-
+    if mode == "never": items = [i for i in items if not i.get("starts") and not state.get("ever_played", {}).get(i["id"])]
+    elif mode == "abandoned": items = [i for i in items if i.get("starts") and i.get("max_percent", 0) < 30 and not i.get("completions")]
+    elif mode in ("candidate", "protected"): items = [i for i in items if i["policy"] == ("candidate" if mode == "candidate" else "protect")]
+    key = request.args.get("sort", "size"); sort_keys = {"size":"size","oldest":"mtime","first_seen":"first_seen","last_played":"last_played","plays":"starts","progress":"max_percent"}
+    items.sort(key=lambda i: i.get(sort_keys.get(key, "size")) or 0, reverse=key in ("size","plays","progress"))
+    try: page = max(1, min(100000, int(request.args.get("page", 1))))
+    except ValueError: page = 1
+    count = len(items); scan_keys = ("running","kind","progress","message","phase","current","total","started","finished")
+    scan_state = {k: SCAN_STATE.get(k, 0 if k in ("progress","current","total","started","finished") else "") for k in scan_keys}
+    volumes = list(volumes_by_dev.values())
+    return jsonify(ok=True, admin=media_admin_required(), sources=sources, volumes=volumes, mounts=volumes, count=count, page=page,
+                   items=items[(page-1)*100:page*100], copies=copies, links=link_groups,
+                   scanned_at=max((r["scanned_at"] for r in records.values()), default=0), scan=scan_state)
 
 @app.route("/api/storage/rule/<vid>", methods=["GET", "POST"])
 def api_storage_rule(vid):
