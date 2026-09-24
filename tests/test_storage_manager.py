@@ -63,6 +63,19 @@ class StorageManagerTest(unittest.TestCase):
             self.assertTrue(storage.set_settings(db, True, "instance-a", 3, "instance-a"))
             self.assertEqual(storage.settings(db)["owner_id"], "instance-a")
 
+    def test_default_candidate_rule_persists_without_enabling_automation(self):
+        with tempfile.TemporaryDirectory() as root:
+            db = os.path.join(root, "storage.db")
+            self.assertEqual(storage.default_rule(db)["free_below"], 15)
+            self.assertFalse(storage.settings(db)["enabled"])
+            conditions = dict(storage.default_rule(db), ratio=2.5, free_below=10, free_until=25)
+            self.assertTrue(storage.set_default_rule(db, conditions, 10, "instance-a"))
+            self.assertFalse(storage.set_default_rule(db, dict(conditions, ratio=8), 9, "instance-b"))
+            self.assertEqual(storage.default_rule(db), conditions)
+            self.assertFalse(storage.settings(db)["enabled"])
+            with self.assertRaises(ValueError):
+                storage.set_default_rule(db, dict(conditions, free_below=30), 11, "instance-a")
+
 
 if __name__ == "__main__":
     unittest.main()

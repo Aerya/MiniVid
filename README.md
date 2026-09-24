@@ -94,11 +94,19 @@ MiniVid displays every torrent matching a file. "Torrent and data" deletion remo
 
 ## Storage review and cleanup
 
-The new **Storage** page (`/storage`) sorts videos by size, file age, playback starts, latest play and highest reached playback position. Stats start accumulating after this update; the old watched flag cannot reconstruct historical play counts. A duplicate scan hashes equal-sized, distinct physical files with SHA-256 and shows hardlinks separately. The `cross-seed` tag is displayed but never used as proof that two torrents share a file. Group deletion is limited to verified copies on unlinked, non-BitTorrent sources; individual deletion is available from the Storage page.
+The **Storage** page (`/storage`) offers a sortable list or thumbnail gallery, with standard, wide and full-width layouts saved in the browser. It sorts videos by size, file age, playback starts, latest play and highest reached playback position. Stats start accumulating after this update; the old watched flag cannot reconstruct historical play counts. A duplicate scan hashes equal-sized, distinct physical files with SHA-256 and shows hardlinks separately. The `cross-seed` tag is displayed but never used as proof that two torrents share a file. Group deletion is limited to verified copies on unlinked, non-BitTorrent sources. You can also tick videos across pages, preview eligible and blocked items, and confirm a manual bulk deletion; favorites, protected videos, hardlinks and unverifiable torrents are blocked. The global deletion switch still applies.
 
-Each video's **Cleanup candidate** policy records ratio and seeding-time requirements (AND/OR) and chooses immediate cleanup or a low-free-space threshold with a separate stop threshold. Favorites and protected videos are excluded. A rule is bound to the exact local file version and is invalidated if the file changes. When ruTorrent does not report seeding time, a time condition is unknown rather than treated as zero.
+Each video's **Cleanup candidate** policy records ratio and seeding-time requirements (AND/OR) and chooses immediate cleanup or disk-pressure cleanup. In disk-pressure mode, **start below 15% free** means cleanup may start once available space drops below 15%; **stop at 20% free** means it stops once free space reaches 20%. The stop threshold must be higher than the start threshold. Set the default values for **new** cleanup candidates on `/storage`; existing decisions do not change. Favorites and protected videos are excluded. A rule is bound to the exact local file version and is invalidated if the file changes. When ruTorrent does not report seeding time, a time condition is unknown rather than treated as zero.
 
-Automatic deletion is **off by default**, including after an image update or migration. Configure every collaborating instance with the same long random `MINI_SYNC_SECRET`, unique persistent `MINI_INSTANCE_ID` values and comma-separated `MINI_SYNC_PEERS`. The Storage page synchronizes favorites, protections, candidates, conditions and the global paused/active state by SHA-256 content identity, so Docker paths may differ without treating hardlinks as copies. Pick one listed instance as the owner in the page, then explicitly enable automation; a legacy `MINI_CLEANUP_OWNER` environment value is ignored.
+Automatic deletion is **off by default**, including after an image update or migration. To connect two instances, set the following in each instance's `.env` (loaded by Docker Compose); use a shared random secret of at least 16 characters, distinct IDs, and URLs reachable from the *other container*:
+
+| Instance A | Instance B |
+| --- | --- |
+| `MINI_INSTANCE_ID=mini-a` | `MINI_INSTANCE_ID=mini-b` |
+| `MINI_SYNC_SECRET=<same-long-random-secret>` | `MINI_SYNC_SECRET=<same-long-random-secret>` |
+| `MINI_SYNC_PEERS=http://mini-b:8080` | `MINI_SYNC_PEERS=http://mini-a:8080` |
+
+Replace the hostnames with your real peer addresses; `mini-a` and `mini-b` are examples, not Docker Compose service names. Preserve each instance's `/data/instance-id`: on an existing installation the saved ID takes precedence over `MINI_INSTANCE_ID`. Restart both containers after changing their environment. The Storage page shows the actual local ID and whether a peer is configured. Favorites, protections, candidates, conditions, the **new-candidate default rule**, and the global paused/active state are sent as signed events. Video decisions use SHA-256 content identity, so Docker paths may differ without treating hardlinks as copies. Peer delivery is best-effort: if a peer is offline when a change is made, the change is not automatically replayed later; check synchronization before enabling cleanup. Select one owner ID shown on the page, then explicitly enable automation. A legacy `MINI_CLEANUP_OWNER` value is ignored.
 
 The worker runs every ten minutes and requires authentication, configured peer synchronization, a named owner, an enabled deletion switch, a single qBittorrent client and a `torrent` source. It rechecks every associated torrent, paths, file identity and hardlinks immediately before deletion. A per-storage filesystem lock prevents simultaneous workers from deleting the same physical data. Any unavailable client or unverifiable path blocks the item and records the reason. The default Docker Compose media mount is read-only; manual file deletion requires a writable mount, while BitTorrent data deletion is performed by the BitTorrent client.
 
@@ -116,6 +124,9 @@ The worker runs every ten minutes and requires authentication, configured peer s
 | `MINI_SCAN_INTERVAL` | `3600` | Scan interval in seconds |
 | `MINI_USER` / `MINI_PASS` | empty | Enables authentication when both are set |
 | `SECRET_KEY` | random | Sessions and client-password encryption |
+| `MINI_INSTANCE_ID` | persisted in `/data/instance-id` | Distinct instance identity for federation (set before first start) |
+| `MINI_SYNC_SECRET` | empty | Shared federation signing secret (at least 16 characters) |
+| `MINI_SYNC_PEERS` | empty | Comma-separated, mutually reachable peer base URLs |
 
 ## Maintenance and updates
 

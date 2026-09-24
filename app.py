@@ -493,6 +493,9 @@ def _apply_storage_event(event):
     elif kind == "settings":
         if not storage.set_settings(STORAGE_DB, bool(value.get("enabled")), str(value.get("owner_id", "")), revision, origin):
             return False
+    elif kind == "defaults":
+        if not storage.set_default_rule(STORAGE_DB, value, revision, origin):
+            return False
     elif kind == "favorite":
         for vid, _ in _local_videos_for_content(key):
             state = read_state()
@@ -1282,12 +1285,48 @@ def api_media_management(vid):
         return jsonify(ok=False, error=str(exc)), 400
 
 
+def _delete_media_impl(vid, cfg, expected_identity=None):
+    item, root_index, rel, full = _media_item_and_path(vid)
+    if expected_identity is not None and storage.identity(os.stat(full)) != expected_identity:
+        raise ValueError("Fichier modifié depuis la prévisualisation")
+    source = cfg.get("sources", {}).get(str(root_index), {})
+    mode = source.get("delete_mode", "disabled")
+    aliases = _indexed_aliases(full, vid) if mode == "torrent" else []
+    details = {}
+    if mode == "file":
+        os.remove(full)
+    elif mode == "torrent":
+        if not cfg.get("torrent_integration_enabled"):
+            raise ValueError("integration_torrent_desactivee")
+        client_id = source.get("client_id")
+        if not client_id:
+            raise ValueError("client_non_configure")
+        details = _configured_client(cfg, client_id, MEDIA_DIRS[root_index]).delete_with_data(
+            rel, source.get("client_root", "/downloads"), os.path.getsize(full))
+        # Les montages réseau peuvent refléter la suppression avec retard.
+        for _ in range(120):
+            if not os.path.exists(full):
+                break
+            time.sleep(0.25)
+        if os.path.exists(full):
+            raise TorrentClientError("Les torrents ont été retirés, mais le fichier existe encore sur le disque")
+    else:
+        raise ValueError("suppression_interdite_pour_cette_source")
+    _forget_media(vid)
+    for alias_vid, alias_path in aliases:
+        if not os.path.exists(alias_path):
+            _forget_media(alias_vid)
+    _log_event("media_deleted", root=root_index, mode=mode, name=item.get("name", ""),
+               torrent_count=details.get("torrent_count", 0), torrent_hashes=details.get("torrent_hashes", []))
+    return {"deleted": True, "mode": mode, **details}
+
+
 @app.route("/api/media/<vid>/delete", methods=["POST"])
 def api_media_delete(vid):
     if not media_admin_required():
         return jsonify(ok=False, error="authenticated_admin_required"), 403
     try:
-        item, root_index, rel, full = _media_item_and_path(vid)
+        item, root_index, _, _ = _media_item_and_path(vid)
         data = request.get_json(force=True, silent=True) or {}
         if str(data.get("confirmation") or "") != str(item.get("name") or ""):
             return jsonify(ok=False, error="confirmation_invalide"), 400
@@ -1295,45 +1334,13 @@ def api_media_delete(vid):
         if not cfg.get("deletion_enabled"):
             return jsonify(ok=False, error="suppression_desactivee"), 403
         source = cfg.get("sources", {}).get(str(root_index), {})
-        mode = source.get("delete_mode", "disabled")
-        aliases = _indexed_aliases(full, vid) if mode == "torrent" else []
-        details = {}
-        if mode == "file":
-            os.remove(full)
-        elif mode == "torrent":
-            if not cfg.get("torrent_integration_enabled"):
-                return jsonify(ok=False, error="integration_torrent_desactivee"), 403
-            client_id = source.get("client_id")
-            if not client_id:
-                return jsonify(ok=False, error="client_non_configure"), 409
-            details = _configured_client(cfg, client_id, MEDIA_DIRS[root_index]).delete_with_data(
-                rel, source.get("client_root", "/downloads"), os.path.getsize(full)
-            )
-            # Certains montages réseau reflètent la suppression qBittorrent
-            # plusieurs secondes après la disparition des hash du client.
-            for _ in range(120):
-                if not os.path.exists(full):
-                    break
-                time.sleep(0.25)
-            if os.path.exists(full):
-                raise TorrentClientError(
-                    "Les torrents ont été retirés, mais le fichier existe encore sur le disque"
-                )
-        else:
+        if source.get("delete_mode") == "torrent" and not cfg.get("torrent_integration_enabled"):
+            return jsonify(ok=False, error="integration_torrent_desactivee"), 403
+        if source.get("delete_mode") == "torrent" and not source.get("client_id"):
+            return jsonify(ok=False, error="client_non_configure"), 409
+        if source.get("delete_mode") not in ("file", "torrent"):
             return jsonify(ok=False, error="suppression_interdite_pour_cette_source"), 403
-        _forget_media(vid)
-        for alias_vid, alias_path in aliases:
-            if not os.path.exists(alias_path):
-                _forget_media(alias_vid)
-        _log_event(
-            "media_deleted",
-            root=root_index,
-            mode=mode,
-            name=item.get("name", ""),
-            torrent_count=details.get("torrent_count", 0),
-            torrent_hashes=details.get("torrent_hashes", []),
-        )
-        return jsonify(ok=True, deleted=True, mode=mode, **details)
+        return jsonify(ok=True, **_delete_media_impl(vid, cfg))
     except FileNotFoundError as exc:
         return jsonify(ok=False, error=str(exc)), 404
     except PermissionError:
@@ -1477,7 +1484,22 @@ def api_storage_automation():
         _emit_storage_event("settings", "", {"enabled": enabled, "owner_id": owner_id})
     settings = storage.settings(STORAGE_DB)
     return jsonify(ok=True, settings=settings, instance_id=INSTANCE_ID,
-                   sync_configured=_sync_enabled(), active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID))
+                   sync_configured=_sync_enabled(), peer_count=len(SYNC_PEERS),
+                   active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID))
+
+
+@app.route("/api/storage/default-rule", methods=["GET", "POST"])
+def api_storage_default_rule():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    if request.method == "POST":
+        try:
+            conditions = storage.validate_conditions(request.get_json(silent=True) or {})
+            storage.set_default_rule(STORAGE_DB, conditions, time.time_ns(), INSTANCE_ID)
+            _emit_storage_event("defaults", "", conditions)
+        except (ValueError, TypeError) as exc:
+            return jsonify(ok=False, error=str(exc)), 400
+    return jsonify(ok=True, rule=storage.default_rule(STORAGE_DB), sync_configured=_sync_enabled())
 
 
 def _cleanup_loop():
@@ -1612,6 +1634,8 @@ def api_storage_rule(vid):
             data = request.get_json(silent=True) or {}
             if data.get("mode") == "candidate" and read_state().get("fav", {}).get(vid):
                 return jsonify(ok=False, error="Retirez d'abord ce favori pour autoriser le nettoyage"), 409
+            if data.get("mode") == "candidate":
+                data = {**storage.default_rule(STORAGE_DB), **data}
             rule = storage.set_rule(STORAGE_DB, vid, stat, data)
             key = storage.content_key(full, stat)
             # Persist first so a peer retry cannot create an unrecorded policy.
@@ -1621,10 +1645,105 @@ def api_storage_rule(vid):
             rule = storage.get_rule(STORAGE_DB, vid, stat)
         status, reason = _cleanup_status(vid, rule, _read_media_managers(), full, read_state()) if rule else ("none", "Aucune règle")
         settings = storage.settings(STORAGE_DB)
-        return jsonify(ok=True, rule=rule, status=status, reason=reason,
+        return jsonify(ok=True, rule=rule, default_rule=storage.default_rule(STORAGE_DB), status=status, reason=reason,
                        automation_active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID and AUTH_ENABLED))
     except (ValueError, FileNotFoundError, OSError) as exc:
         return jsonify(ok=False, error=str(exc)), 400
+
+
+def _storage_selection_item(vid, cfg, state):
+    item, root, rel, full = _media_item_and_path(vid)
+    stat = os.stat(full)
+    if not cfg.get("deletion_enabled"):
+        raise ValueError("Suppression désactivée dans Maintenance")
+    if state.get("fav", {}).get(vid):
+        raise ValueError("Favori : suppression individuelle requise")
+    rule = storage.get_rule(STORAGE_DB, vid, stat)
+    if rule and rule["mode"] == "protect":
+        raise ValueError("Média protégé")
+    # Group removal cannot safely interpret several names for one inode.
+    if stat.st_nlink != 1:
+        raise ValueError("Lien physique : suppression individuelle requise")
+    source = cfg.get("sources", {}).get(str(root), {})
+    mode = source.get("delete_mode", "disabled")
+    if mode == "file":
+        if source.get("client_id"):
+            raise ValueError("Source liée à BitTorrent : suppression individuelle requise")
+        torrent_count = 0
+    elif mode == "torrent":
+        if not cfg.get("torrent_integration_enabled") or not source.get("client_id"):
+            raise ValueError("Liaison BitTorrent inactive")
+        if len(cfg.get("clients", [])) != 1:
+            raise ValueError("Plusieurs clients configurés : suppression individuelle requise")
+        torrents = _configured_client(cfg, source["client_id"], MEDIA_DIRS[root]).metadata_all(
+            rel, source.get("client_root", "/downloads"), stat.st_size)
+        if not torrents:
+            raise ValueError("Aucun torrent vérifié")
+        torrent_count = len(torrents)
+    else:
+        raise ValueError("Suppression non autorisée pour cette source")
+    return {"id": vid, "name": item["name"], "size": stat.st_size,
+            "identity": storage.identity(stat), "mode": mode, "torrent_count": torrent_count}
+
+
+def _selection_ids(data):
+    raw = data.get("items")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 100:
+        raise ValueError("Sélection limitée à 100 médias")
+    ids = [item.get("id") if isinstance(item, dict) else item for item in raw]
+    if any(not isinstance(vid, str) or len(vid) > 2048 for vid in ids) or len(set(ids)) != len(ids):
+        raise ValueError("Sélection invalide ou répétée")
+    return ids
+
+
+@app.route("/api/storage/selection/preview", methods=["POST"])
+def api_storage_selection_preview():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    try:
+        ids = _selection_ids(request.get_json(silent=True) or {})
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    cfg, state = _read_media_managers(), read_state()
+    ready, blocked = [], []
+    for vid in ids:
+        try:
+            ready.append(_storage_selection_item(vid, cfg, state))
+        except (ValueError, OSError, FileNotFoundError, TorrentClientError, KeyError) as exc:
+            blocked.append({"id": vid, "reason": str(exc)})
+    return jsonify(ok=True, ready=ready, blocked=blocked)
+
+
+@app.route("/api/storage/selection/delete", methods=["POST"])
+def api_storage_selection_delete():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        ids = _selection_ids(data)
+        if data.get("confirmation") != f"SUPPRIMER {len(ids)}":
+            raise ValueError("Confirmation invalide")
+        expected = {item["id"]: item.get("identity") for item in data["items"] if isinstance(item, dict)}
+        if len(expected) != len(ids) or any(not isinstance(expected.get(vid), str) for vid in ids):
+            raise ValueError("Prévisualisation requise")
+        cfg, state = _read_media_managers(), read_state()
+        for vid in ids:
+            if _storage_selection_item(vid, cfg, state)["identity"] != expected[vid]:
+                raise ValueError("Un fichier a changé depuis la prévisualisation")
+    except (ValueError, OSError, FileNotFoundError, TorrentClientError, KeyError) as exc:
+        return jsonify(ok=False, error=str(exc), deleted=[]), 409
+    deleted = []
+    for vid in ids:
+        try:
+            current = _storage_selection_item(vid, _read_media_managers(), read_state())
+            if current["identity"] != expected[vid]:
+                raise ValueError("Fichier modifié depuis la prévisualisation")
+            _delete_media_impl(vid, _read_media_managers(), expected[vid])
+            deleted.append(vid)
+        except (ValueError, OSError, FileNotFoundError, TorrentClientError, KeyError) as exc:
+            return jsonify(ok=False, error=str(exc), deleted=deleted, blocked_id=vid), 409
+    _log_event("storage_selection_deleted", count=len(deleted))
+    return jsonify(ok=True, deleted=deleted)
 
 
 @app.route("/api/storage/duplicates/delete", methods=["POST"])

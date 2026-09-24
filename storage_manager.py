@@ -40,6 +40,11 @@ def connect(db_path):
             owner_id TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 0,
             origin TEXT NOT NULL DEFAULT '')""")
         db.execute("INSERT OR IGNORE INTO cleanup_settings(id) VALUES(1)")
+        db.execute("""CREATE TABLE IF NOT EXISTS cleanup_defaults (
+            id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL,
+            revision INTEGER NOT NULL DEFAULT 0, origin TEXT NOT NULL DEFAULT '')""")
+        db.execute("INSERT OR IGNORE INTO cleanup_defaults(id,payload) VALUES(1,?)",
+                   (json.dumps(DEFAULT_CONDITIONS),))
         if "first_seen" not in {row[1] for row in db.execute("PRAGMA table_info(inventory)")}:
             db.execute("ALTER TABLE inventory ADD COLUMN first_seen INTEGER NOT NULL DEFAULT 0")
         yield db
@@ -53,6 +58,49 @@ def connect(db_path):
 
 def identity(stat):
     return f"{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
+
+
+DEFAULT_CONDITIONS = {
+    "ratio": 1.0, "seed_seconds": 604800, "seed_operator": "and",
+    "trigger_mode": "pressure", "free_below": 15.0, "free_until": 20.0,
+}
+
+
+def validate_conditions(data):
+    if not isinstance(data, dict):
+        raise ValueError("Conditions invalides")
+    trigger = str(data.get("trigger_mode", DEFAULT_CONDITIONS["trigger_mode"]))
+    operator = str(data.get("seed_operator", DEFAULT_CONDITIONS["seed_operator"]))
+    if trigger not in ("pressure", "immediate") or operator not in ("and", "or"):
+        raise ValueError("Conditions invalides")
+    try:
+        ratio = float(data.get("ratio", DEFAULT_CONDITIONS["ratio"]))
+        seed = int(data.get("seed_seconds", DEFAULT_CONDITIONS["seed_seconds"]))
+        below = float(data.get("free_below", DEFAULT_CONDITIONS["free_below"]))
+        until = float(data.get("free_until", DEFAULT_CONDITIONS["free_until"]))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Seuil invalide") from exc
+    if not (0 <= ratio <= 1000 and 0 <= seed <= 315360000 and 0 < below < until < 100):
+        raise ValueError("Seuils invalides : la cible doit être supérieure au seuil de déclenchement")
+    return {"ratio": ratio, "seed_seconds": seed, "seed_operator": operator,
+            "trigger_mode": trigger, "free_below": below, "free_until": until}
+
+
+def default_rule(db_path):
+    with connect(db_path) as db:
+        row = db.execute("SELECT payload FROM cleanup_defaults WHERE id=1").fetchone()
+        return validate_conditions(json.loads(row[0]))
+
+
+def set_default_rule(db_path, data, revision, origin):
+    conditions = validate_conditions(data)
+    with connect(db_path) as db:
+        current = db.execute("SELECT revision,origin FROM cleanup_defaults WHERE id=1").fetchone()
+        if (revision, origin) < (current[0], current[1]):
+            return False
+        db.execute("UPDATE cleanup_defaults SET payload=?,revision=?,origin=? WHERE id=1",
+                   (json.dumps(conditions, sort_keys=True), revision, origin))
+    return True
 
 
 def get_rule(db_path, vid, stat):
@@ -69,24 +117,14 @@ def set_rule(db_path, vid, stat, data):
         with connect(db_path) as db:
             db.execute("DELETE FROM cleanup_rules WHERE vid=?", (vid,))
         return None
-    trigger = str(data.get("trigger_mode", "pressure"))
-    operator = str(data.get("seed_operator", "and"))
-    if trigger not in ("pressure", "immediate") or operator not in ("and", "or"):
-        raise ValueError("Conditions invalides")
-    try:
-        ratio = float(data.get("ratio", 1))
-        seed = int(data.get("seed_seconds", 604800))
-        below = float(data.get("free_below", 15))
-        until = float(data.get("free_until", 20))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Seuil invalide") from exc
-    if not (0 <= ratio <= 1000 and 0 <= seed <= 315360000 and 0 < below < until < 100):
-        raise ValueError("Seuil hors limites : seuil de sortie > seuil d'entrée")
+    conditions = validate_conditions(data)
     with connect(db_path) as db:
         db.execute("""INSERT OR REPLACE INTO cleanup_rules
             (vid, identity, mode, trigger_mode, ratio, seed_seconds, seed_operator,
              free_below, free_until, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (vid, identity(stat), mode, trigger, ratio, seed, operator, below, until, int(time.time())))
+            (vid, identity(stat), mode, conditions["trigger_mode"], conditions["ratio"],
+             conditions["seed_seconds"], conditions["seed_operator"],
+             conditions["free_below"], conditions["free_until"], int(time.time())))
     return get_rule(db_path, vid, stat)
 
 
