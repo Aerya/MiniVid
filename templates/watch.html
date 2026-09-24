@@ -23,6 +23,7 @@
       <strong>MiniVid</strong>
     </a>
     <div class="header-right">
+      <a href="/storage" class="icon-btn" title="Stockage" aria-label="Stockage">▤</a>
       <button id="themeToggle" class="icon-btn" title="Thème clair/sombre" aria-label="Thème clair/sombre">☾</button>
       <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
     </div>
@@ -159,6 +160,21 @@
           <button id="delete-media-button" class="btn btn-danger" type="button" hidden>Supprimer la vidéo</button>
         </div>
         <div id="media-management-stats" class="media-management-grid"></div>
+        <div id="cleanup-policy" class="cleanup-policy" hidden>
+          <h3>Candidat au nettoyage</h3>
+          <p class="meta">MiniVid ne supprime automatiquement que les vidéos autorisées ici, une fois les conditions de chaque torrent atteintes.</p>
+          <label>Décision <select id="cleanup-mode"><option value="none">Conserver sans règle</option><option value="protect">Protéger définitivement</option><option value="candidate">Autoriser le nettoyage</option></select></label>
+          <div id="cleanup-conditions">
+            <label>Ratio minimum <input id="cleanup-ratio" type="number" min="0" max="1000" step="0.1" value="1" /></label>
+            <label>Temps de seed minimum (jours) <input id="cleanup-days" type="number" min="0" max="3650" value="7" /></label>
+            <label>Condition <select id="cleanup-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
+            <label>Déclencher <select id="cleanup-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
+            <label>Espace libre sous (%) <input id="cleanup-below" type="number" min="1" max="98" value="15" /></label>
+            <label>Nettoyer jusqu'à (%) <input id="cleanup-until" type="number" min="2" max="99" value="20" /></label>
+          </div>
+          <button id="cleanup-save" type="button" class="btn btn-primary">Enregistrer la décision</button>
+          <span id="cleanup-status" role="status"></span>
+        </div>
         <div id="media-management-message" class="text-muted" style="margin-top:.65rem;"></div>
       </div>
     </details>
@@ -317,11 +333,12 @@
       grid.className = 'torrent-stats-grid';
       grid.append(
         mediaStat('Ajouté au client', formatDate(torrent.added_on)),
-        mediaStat('Temps de seed', formatDuration(torrent.seeding_time)),
+        mediaStat('Temps de seed', torrent.seeding_time == null ? 'Inconnu' : formatDuration(torrent.seeding_time)),
         mediaStat('Ratio', Number(torrent.ratio || 0).toFixed(2)),
         mediaStat('Pairs connectés', String(torrent.peers_connected ?? 0)),
         mediaStat('Seeds connectés', String(torrent.seeds_connected ?? 0)),
-        mediaStat('État', torrent.state || '—')
+        mediaStat('État', torrent.state || '—'),
+        mediaStat('Tags', (torrent.tags || []).join(', ') || '—')
       );
       block.append(title, grid);
       return block;
@@ -354,11 +371,44 @@
         message.textContent = data.torrent_error ? 'Client BitTorrent : ' + data.torrent_error : '';
         const button = document.getElementById('delete-media-button');
         button.hidden = !data.can_delete;
+        const policy = document.getElementById('cleanup-policy');
+        policy.hidden = false;
+        loadCleanupRule();
       } catch (error) {
         if (section) section.hidden = false;
         if (message) message.textContent = 'Gestion indisponible : ' + error.message;
       }
     }
+
+    async function loadCleanupRule() {
+      const message = document.getElementById('cleanup-status');
+      try {
+        const response = await fetch('/api/storage/rule/' + encodeURIComponent(VID), { credentials:'same-origin' });
+        const data = await response.json(); if (!response.ok) throw new Error(data.error);
+        const rule = data.rule || {};
+        document.getElementById('cleanup-mode').value = rule.mode || 'none';
+        document.getElementById('cleanup-ratio').value = rule.ratio ?? 1;
+        document.getElementById('cleanup-days').value = (rule.seed_seconds ?? 604800) / 86400;
+        document.getElementById('cleanup-operator').value = rule.seed_operator || 'and';
+        document.getElementById('cleanup-trigger').value = rule.trigger_mode || 'pressure';
+        document.getElementById('cleanup-below').value = rule.free_below ?? 15;
+        document.getElementById('cleanup-until').value = rule.free_until ?? 20;
+        message.textContent = data.reason + (data.automation_active ? '' : ' · Exécution automatique inactive sur cette instance.');
+      } catch (error) { message.textContent = error.message; }
+    }
+    document.getElementById('cleanup-save')?.addEventListener('click', async () => {
+      const value = id => document.getElementById(id).value;
+      const message = document.getElementById('cleanup-status');
+      const payload = { mode:value('cleanup-mode'), ratio:Number(value('cleanup-ratio')),
+        seed_seconds:Math.round(Number(value('cleanup-days')) * 86400), seed_operator:value('cleanup-operator'),
+        trigger_mode:value('cleanup-trigger'), free_below:Number(value('cleanup-below')), free_until:Number(value('cleanup-until')) };
+      try {
+        const response = await fetch('/api/storage/rule/' + encodeURIComponent(VID), { method:'POST',
+          credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        const data = await response.json(); if (!response.ok) throw new Error(data.error);
+        message.textContent = 'Décision enregistrée. ' + data.reason + (data.automation_active ? '' : ' · Exécution automatique inactive sur cette instance.');
+      } catch (error) { message.textContent = 'Enregistrement refusé : ' + error.message; }
+    });
 
     let deleteArmed = false;
     let deleteArmTimer = null;
@@ -410,6 +460,16 @@
     if (v) {
       let sentPlayed = false;
       let saveTick = 0;
+      let sessionStarted = false;
+      let watchedSinceSync = 0;
+      let lastObserved = null;
+      v.addEventListener('playing', () => {
+        if (sessionStarted) return;
+        sessionStarted = true;
+        fetch('/api/playback/' + encodeURIComponent(VID), { method:'POST', credentials:'same-origin',
+          headers:{'Content-Type':'application/json'}, body:JSON.stringify({event:'start'}) }).catch(() => {});
+      });
+      v.addEventListener('seeking', () => { lastObserved = null; });
 
       async function loadProgress() {
         try {
@@ -435,17 +495,25 @@
       }, { once: true });
 
       v.addEventListener('timeupdate', () => {
+        if (lastObserved != null) {
+          const delta = v.currentTime - lastObserved;
+          if (delta > 0 && delta < 8 && !v.paused) watchedSinceSync += delta;
+        }
+        lastObserved = v.currentTime;
         maybeMarkPlayed();
         if (++saveTick % 4) return;
+        const watched = watchedSinceSync; watchedSinceSync = 0;
         fetch('/api/progress/' + encodeURIComponent(VID), {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ progress: v.currentTime || 0 })
+          body: JSON.stringify({ progress: v.currentTime || 0, percent: v.duration ? 100 * v.currentTime / v.duration : 0, watched })
         }).catch(() => {});
       });
 
       v.addEventListener('ended', () => {
+        fetch('/api/playback/' + encodeURIComponent(VID), { method:'POST', credentials:'same-origin',
+          headers:{'Content-Type':'application/json'}, body:JSON.stringify({event:'complete'}) }).catch(() => {});
         fetch('/api/progress/' + encodeURIComponent(VID), { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
         maybeMarkPlayed();
       });

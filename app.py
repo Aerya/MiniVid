@@ -24,12 +24,14 @@ def ratelimited(key, per=1.0):
     _RATE_LIMIT[key] = now
     return False
 
-import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil, sqlite3, uuid
+import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil, sqlite3, uuid, fcntl, hmac
 from datetime import datetime
 from urllib.parse import quote_from_bytes, unquote_to_bytes, urlsplit
+from urllib.request import Request, urlopen
 from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for, Response
 from media_managers import TorrentClientError, make_torrent_client
+import storage_manager as storage
 
 APP_NAME = "MiniVid"
 DEF_EXT = ".mp4,.webm,.mkv,.avi,.flv,.m2ts"
@@ -43,10 +45,24 @@ THUMB_DIR = os.environ.get("THUMB_DIR") or "/cache/thumbs"
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(THUMB_DIR, exist_ok=True)
 STATE_DB = os.path.join(DATA_DIR, "state.db")
+STORAGE_DB = os.path.join(DATA_DIR, "storage.db")
 STATE_JSON = os.path.join(DATA_DIR, "state.json")
 STATE_LOCK = threading.RLock()
 MEDIA_MANAGERS_FILE = os.path.join(DATA_DIR, "media_managers.json")
 MEDIA_MANAGERS_LOCK = threading.RLock()
+
+# Federation is opt-in.  An instance without all three settings remains local
+# and, critically, cannot become an automatic cleanup owner by an update.
+SYNC_SECRET = os.environ.get("MINI_SYNC_SECRET", "")
+SYNC_PEERS = [p.rstrip("/") for p in os.environ.get("MINI_SYNC_PEERS", "").split(",") if p.startswith(("http://", "https://"))]
+INSTANCE_ID_FILE = os.path.join(DATA_DIR, "instance-id")
+try:
+    with open(INSTANCE_ID_FILE, "r", encoding="utf-8") as _instance_file:
+        INSTANCE_ID = _instance_file.read().strip()
+except OSError:
+    INSTANCE_ID = os.environ.get("MINI_INSTANCE_ID", "").strip() or str(uuid.uuid4())
+    with open(INSTANCE_ID_FILE, "w", encoding="utf-8") as _instance_file:
+        _instance_file.write(INSTANCE_ID + "\n")
 
 MINI_USER = os.environ.get("MINI_USER")
 MINI_PASS = os.environ.get("MINI_PASS")
@@ -421,6 +437,106 @@ def write_state(st):
 
 _bootstrap_state_db()
 
+# ---------- Storage federation ----------
+def _sync_enabled():
+    return bool(SYNC_SECRET and len(SYNC_SECRET) >= 16 and SYNC_PEERS)
+
+
+def _sync_signature(payload):
+    return hmac.new(SYNC_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def _emit_storage_event(kind, content_key, value):
+    """Best-effort fan-out. Local changes remain durable if a peer is down."""
+    if not _sync_enabled():
+        return
+    event = {"kind": kind, "content_key": content_key, "value": value,
+             "revision": time.time_ns(), "origin": INSTANCE_ID}
+    raw = json.dumps(event, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = _sync_signature(raw)
+    for peer in SYNC_PEERS:
+        try:
+            req = Request(peer + "/api/storage/sync", data=raw, method="POST",
+                          headers={"Content-Type": "application/json", "X-MiniVid-Sync": signature})
+            with urlopen(req, timeout=4) as response:
+                if response.status != 200:
+                    raise OSError("réponse synchronisation invalide")
+        except Exception as exc:
+            LOG.warning("Synchronisation stockage vers %s reportée: %s", peer, exc)
+
+
+def _local_videos_for_content(content_key):
+    matches = []
+    for item in list(MEDIA):
+        try:
+            full = _storage_path(item["id"])
+            st = os.stat(full)
+            if storage.content_key(full, st) == content_key:
+                matches.append((item["id"], st))
+        except (OSError, ValueError, FileNotFoundError):
+            continue
+    return matches
+
+
+def _apply_storage_event(event):
+    kind, key, value = event["kind"], event["content_key"], event["value"]
+    revision, origin = int(event["revision"]), event["origin"]
+    if kind == "policy":
+        if not storage.set_synced_policy(STORAGE_DB, key, value, revision, origin):
+            return False
+        for vid, stat in _local_videos_for_content(key):
+            # A local favorite always wins over a remotely proposed candidate.
+            policy = dict(value)
+            if policy.get("mode") == "candidate" and read_state().get("fav", {}).get(vid):
+                policy["mode"] = "protect"
+            storage.set_rule(STORAGE_DB, vid, stat, policy)
+    elif kind == "settings":
+        if not storage.set_settings(STORAGE_DB, bool(value.get("enabled")), str(value.get("owner_id", "")), revision, origin):
+            return False
+    elif kind == "favorite":
+        for vid, _ in _local_videos_for_content(key):
+            state = read_state()
+            fav = state.get("fav", {}) or {}
+            if value:
+                fav[vid] = True
+            else:
+                fav.pop(vid, None)
+            state["fav"] = fav
+            write_state(state)
+    else:
+        raise ValueError("Type de synchronisation invalide")
+    return True
+
+
+def _apply_pending_storage_policies():
+    """A newly mounted/indexed copy receives an already replicated decision."""
+    with storage.connect(STORAGE_DB) as db:
+        rows = [dict(row) for row in db.execute("SELECT content_key,payload FROM synced_policies")]
+    for row in rows:
+        payload = json.loads(row["payload"])
+        for vid, stat in _local_videos_for_content(row["content_key"]):
+            if payload.get("mode") == "candidate" and read_state().get("fav", {}).get(vid):
+                payload = dict(payload, mode="protect")
+            storage.set_rule(STORAGE_DB, vid, stat, payload)
+
+
+@app.route("/api/storage/sync", methods=["POST"])
+def api_storage_sync():
+    if not SYNC_SECRET or len(SYNC_SECRET) < 16:
+        return jsonify(ok=False, error="synchronisation_non_configuree"), 403
+    raw = request.get_data(cache=False)
+    signature = request.headers.get("X-MiniVid-Sync", "")
+    if not hmac.compare_digest(signature, _sync_signature(raw)):
+        return jsonify(ok=False, error="signature_invalide"), 403
+    try:
+        event = json.loads(raw)
+        if not isinstance(event, dict) or event.get("origin") == INSTANCE_ID or not isinstance(event.get("value"), (dict, bool)):
+            raise ValueError("Événement invalide")
+        _apply_storage_event(event)
+        return jsonify(ok=True)
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
 # ---------- Banned tags (ENV + UI) ----------
 # Cache global pour banned_tags (évite 100+ appels par page)
 _BANNED_TAGS_CACHE = {"tags": None, "mtime": 0}
@@ -518,6 +634,12 @@ def api_fav():
             fav.pop(vid, None)
         st["fav"] = fav
         write_state(st)
+        try:
+            full = _storage_path(vid)
+            _emit_storage_event("favorite", storage.content_key(full), bool(fav.get(vid)))
+        except (ValueError, OSError, FileNotFoundError):
+            # Favoriting is never blocked by a temporarily unavailable file.
+            pass
         return jsonify(ok=True, fav=bool(fav.get(vid)))
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
@@ -652,6 +774,7 @@ def api_progress_set(vid):
         return jsonify(ok=False, error="auth"), 401
     st = read_state()
     progress = st.get("progress", {}) or {}
+    ever_played = st.get("ever_played", {}) or {}
     if request.method == "DELETE":
         progress.pop(vid, None)
     else:
@@ -665,10 +788,27 @@ def api_progress_set(vid):
         else:
             progress[vid] = round(pos, 2)
             ever_played[vid] = True
+            try:
+                storage.playback(STORAGE_DB, vid, percent=data.get("percent", 0), watched=data.get("watched", 0))
+            except (ValueError, TypeError):
+                return jsonify(ok=False, error="progression_invalide"), 400
     st["progress"] = progress
     st["ever_played"] = ever_played
     write_state(st)
     return jsonify(ok=True, progress=progress.get(vid, 0))
+
+@app.route("/api/playback/<vid>", methods=["POST"])
+def api_playback_event(vid):
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    if not any(item["id"] == vid for item in MEDIA):
+        return jsonify(ok=False, error="video_introuvable"), 404
+    event = (request.get_json(silent=True) or {}).get("event")
+    if event not in ("start", "complete"):
+        return jsonify(ok=False, error="evenement_invalide"), 400
+    storage.playback(STORAGE_DB, vid, start=event == "start", complete=event == "complete",
+                     percent=100 if event == "complete" else 0)
+    return jsonify(ok=True)
 
 # --- Banned tags API ---
 @app.route("/api/banned_tags", methods=["GET"])
@@ -993,11 +1133,14 @@ def _validate_media_managers(payload, previous):
     }
 
 
-def _configured_client(cfg, client_id):
+def _configured_client(cfg, client_id, local_root=None):
     client_cfg = next((c for c in cfg.get("clients", []) if c.get("id") == client_id), None)
     if not client_cfg:
         raise TorrentClientError("Client BitTorrent introuvable")
-    return make_torrent_client(client_cfg, _decrypt_password(client_cfg.get("password_enc", "")))
+    client = make_torrent_client(client_cfg, _decrypt_password(client_cfg.get("password_enc", "")))
+    if local_root:
+        client.local_root = local_root
+    return client
 
 
 def _media_item_and_path(vid):
@@ -1029,6 +1172,9 @@ def _forget_media(vid):
         mapping.pop(vid, None)
         state[key] = mapping
     write_state(state)
+    with storage.connect(STORAGE_DB) as db:
+        for table in ("cleanup_rules", "playback_stats", "inventory"):
+            db.execute(f"DELETE FROM {table} WHERE vid=?", (vid,))
     thumb = os.path.join(THUMB_DIR, vid + ".jpg")
     hls_dir = os.path.join(HLS_SEGMENT_DIR, vid) if "HLS_SEGMENT_DIR" in globals() else ""
     try:
@@ -1037,6 +1183,20 @@ def _forget_media(vid):
         pass
     if hls_dir:
         shutil.rmtree(hls_dir, ignore_errors=True)
+
+
+def _indexed_aliases(full, vid):
+    aliases = []
+    for other in list(MEDIA):
+        if other["id"] == vid:
+            continue
+        try:
+            path = _storage_path(other["id"])
+            if os.path.samefile(full, path):
+                aliases.append((other["id"], path))
+        except (OSError, ValueError, FileNotFoundError):
+            continue
+    return aliases
 
 
 @app.route("/api/settings/media-managers", methods=["GET", "POST"])
@@ -1104,7 +1264,7 @@ def api_media_management(vid):
             }
         if cfg.get("torrent_integration_enabled") and client_id:
             try:
-                torrent_client = _configured_client(cfg, client_id)
+                torrent_client = _configured_client(cfg, client_id, MEDIA_DIRS[root_index])
                 result["torrents"] = torrent_client.metadata_all(
                     rel, source.get("client_root", "/downloads"), os.path.getsize(full)
                 )
@@ -1136,6 +1296,7 @@ def api_media_delete(vid):
             return jsonify(ok=False, error="suppression_desactivee"), 403
         source = cfg.get("sources", {}).get(str(root_index), {})
         mode = source.get("delete_mode", "disabled")
+        aliases = _indexed_aliases(full, vid) if mode == "torrent" else []
         details = {}
         if mode == "file":
             os.remove(full)
@@ -1145,7 +1306,7 @@ def api_media_delete(vid):
             client_id = source.get("client_id")
             if not client_id:
                 return jsonify(ok=False, error="client_non_configure"), 409
-            details = _configured_client(cfg, client_id).delete_with_data(
+            details = _configured_client(cfg, client_id, MEDIA_DIRS[root_index]).delete_with_data(
                 rel, source.get("client_root", "/downloads"), os.path.getsize(full)
             )
             # Certains montages réseau reflètent la suppression qBittorrent
@@ -1161,6 +1322,9 @@ def api_media_delete(vid):
         else:
             return jsonify(ok=False, error="suppression_interdite_pour_cette_source"), 403
         _forget_media(vid)
+        for alias_vid, alias_path in aliases:
+            if not os.path.exists(alias_path):
+                _forget_media(alias_vid)
         _log_event(
             "media_deleted",
             root=root_index,
@@ -1177,6 +1341,338 @@ def api_media_delete(vid):
     except (ValueError, OSError, TorrentClientError) as exc:
         LOG.warning("Suppression vidéo refusée: %s", exc)
         return jsonify(ok=False, error=str(exc)), 502
+
+
+# ---------- Storage and cleanup ----------
+def _storage_path(vid):
+    return _media_item_and_path(vid)[3]
+
+
+def _cleanup_status(vid, rule, cfg, full, state):
+    if not rule:
+        return "none", "Aucune règle"
+    if rule["mode"] == "protect" or state.get("fav", {}).get(vid):
+        return "protected", "Protégé / favori"
+    item, root, rel, _ = _media_item_and_path(vid)
+    source = cfg.get("sources", {}).get(str(root), {})
+    if not cfg.get("deletion_enabled") or not cfg.get("torrent_integration_enabled") or source.get("delete_mode") != "torrent":
+        return "blocked", "Suppression BitTorrent désactivée pour cette source"
+    if len(cfg.get("clients", [])) != 1 or cfg["clients"][0].get("type") != "qbittorrent":
+        return "blocked", "Nettoyage automatique disponible avec un seul client qBittorrent configuré"
+    try:
+        torrents = _configured_client(cfg, source["client_id"], MEDIA_DIRS[root]).metadata_all(
+            rel, source.get("client_root", "/downloads"), os.path.getsize(full))
+    except (TorrentClientError, KeyError) as exc:
+        return "blocked", str(exc)
+    if not storage.seed_ready(torrents, rule):
+        return "waiting_seed", "Ratio / durée de seed insuffisants pour au moins un torrent"
+    if os.stat(full).st_nlink > 1:
+        return "blocked", "Plusieurs liens physiques : vérification manuelle requise"
+    if rule["trigger_mode"] == "pressure":
+        free = 100 * shutil.disk_usage(full).free / shutil.disk_usage(full).total
+        if free >= rule["free_below"]:
+            return "waiting_space", f"Espace libre {free:.1f} % (déclenchement sous {rule['free_below']} %)"
+    return "ready", "Conditions réunies"
+
+
+def _cleanup_run_once():
+    """Only an explicitly designated owner may delete. Recheck everything at execution time."""
+    cfg = _read_media_managers()
+    settings = storage.settings(STORAGE_DB)
+    # MINI_CLEANUP_OWNER was intentionally retired: it was local-only and
+    # could make two automatically updated instances destructive at once.
+    if not settings["enabled"] or settings["owner_id"] != INSTANCE_ID:
+        return
+    if not cfg.get("deletion_enabled") or not cfg.get("torrent_integration_enabled"):
+        return
+    # More than one configured client may seed the same physical file.
+    if len(cfg.get("clients", [])) != 1 or cfg["clients"][0].get("type") != "qbittorrent":
+        return
+    state = read_state()
+    with storage.connect(STORAGE_DB) as db:
+        rules = [dict(row) for row in db.execute("SELECT * FROM cleanup_rules WHERE mode='candidate' ORDER BY updated_at")]
+        recently_played = {row["vid"]: row["last_played"] for row in db.execute("SELECT vid,last_played FROM playback_stats")}
+    pressure_active = set()
+    for rule in rules:
+        vid = rule["vid"]
+        lock_handle = None
+        try:
+            _, root, rel, full = _media_item_and_path(vid)
+            before = os.stat(full)
+            if storage.identity(before) != rule["identity"] or state.get("fav", {}).get(vid):
+                continue
+            if recently_played.get(vid, 0) > time.time() - 3600:
+                continue
+            source = cfg.get("sources", {}).get(str(root), {})
+            if source.get("delete_mode") != "torrent" or source.get("client_id") != cfg["clients"][0]["id"]:
+                continue
+            if before.st_nlink != 1:
+                continue
+            # A filesystem lock is shared by aliases of the same mounted
+            # storage and protects the short execution window across workers.
+            lock_path = os.path.join(os.path.dirname(full), ".minivid-cleanup.lock")
+            try:
+                lock_handle = open(lock_path, "a+")
+                fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (OSError, BlockingIOError):
+                continue
+            # A source alias can expose the same inode via several configured paths.
+            if any(other["id"] != vid and os.path.exists(_storage_path(other["id"]))
+                   and os.path.samefile(full, _storage_path(other["id"])) for other in list(MEDIA)):
+                continue
+            usage = shutil.disk_usage(full)
+            free_percent = 100 * usage.free / usage.total
+            if rule["trigger_mode"] == "pressure":
+                dev = before.st_dev
+                if free_percent < rule["free_below"]:
+                    pressure_active.add(dev)
+                if dev not in pressure_active or free_percent >= rule["free_until"]:
+                    continue
+            torrent_client = _configured_client(cfg, source["client_id"], MEDIA_DIRS[root])
+            torrents = torrent_client.metadata_all(rel, source.get("client_root", "/downloads"), before.st_size)
+            if not storage.seed_ready(torrents, rule):
+                continue
+            # Recheck immediately before the client removes torrents and data.
+            fresh = storage.get_rule(STORAGE_DB, vid, os.stat(full))
+            current_cfg = _read_media_managers()
+            if not fresh or fresh != rule or fresh["mode"] != "candidate" or \
+                    not current_cfg.get("deletion_enabled") or not current_cfg.get("torrent_integration_enabled") or \
+                    current_cfg.get("sources", {}).get(str(root)) != source or read_state().get("fav", {}).get(vid):
+                continue
+            details = torrent_client.delete_with_data(rel, source.get("client_root", "/downloads"), before.st_size)
+            for _ in range(120):
+                if not os.path.exists(full):
+                    break
+                time.sleep(0.25)
+            if os.path.exists(full):
+                raise TorrentClientError("Torrents retirés, données encore présentes : vérification manuelle nécessaire")
+            _forget_media(vid)
+            _log_event("cleanup_auto_deleted", name=os.path.basename(full), torrent_count=details["torrent_count"])
+        except (OSError, ValueError, FileNotFoundError, TorrentClientError, KeyError) as exc:
+            LOG.warning("Nettoyage ignoré pour %s : %s", vid, exc)
+            _log_event("cleanup_auto_blocked", vid=vid, error=str(exc)[:200])
+        finally:
+            if lock_handle is not None:
+                try:
+                    fcntl.flock(lock_handle, fcntl.LOCK_UN)
+                    lock_handle.close()
+                except OSError:
+                    pass
+
+
+@app.route("/api/storage/automation", methods=["GET", "POST"])
+def api_storage_automation():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        # Enabling requires a named owner, a sync secret and peers. This is
+        # intentionally stricter than the former environment toggle.
+        enabled = bool(data.get("enabled"))
+        owner_id = str(data.get("owner_id", "")).strip()
+        if enabled and (not AUTH_ENABLED or not _sync_enabled() or not owner_id):
+            return jsonify(ok=False, error="activation_exige_authentification_et_synchronisation"), 409
+        revision = time.time_ns()
+        storage.set_settings(STORAGE_DB, enabled, owner_id, revision, INSTANCE_ID)
+        _emit_storage_event("settings", "", {"enabled": enabled, "owner_id": owner_id})
+    settings = storage.settings(STORAGE_DB)
+    return jsonify(ok=True, settings=settings, instance_id=INSTANCE_ID,
+                   sync_configured=_sync_enabled(), active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID))
+
+
+def _cleanup_loop():
+    with open(os.path.join(DATA_DIR, "cleanup-owner.lock"), "a+") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            LOG.error("Nettoyage auto ignoré : propriétaire du stockage déjà actif")
+            return
+        while True:
+            try:
+                _cleanup_run_once()
+            except Exception:
+                LOG.exception("Cycle de nettoyage interrompu")
+            time.sleep(600)
+
+
+@app.route("/storage")
+def storage_page():
+    if not auth_required():
+        return redirect(url_for("login"))
+    return render_template("storage.html")
+
+
+@app.route("/api/storage/scan", methods=["POST"])
+def api_storage_scan():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    with SCAN_LOCK:
+        if SCAN_STATE["running"]:
+            return jsonify(ok=False, error="scan_deja_en_cours"), 409
+        SCAN_STATE.update(running=True, kind="stockage", progress=0, message="Analyse des fichiers en cours…",
+                          started=int(time.time()), finished=0)
+    def background():
+        try:
+            count = storage.inventory_scan(STORAGE_DB, list(MEDIA), _storage_path)
+            _apply_pending_storage_policies()
+            with SCAN_LOCK:
+                SCAN_STATE.update(progress=100, message=f"{count} fichiers analysés")
+        except Exception as exc:
+            LOG.exception("Analyse du stockage impossible")
+            with SCAN_LOCK:
+                SCAN_STATE["message"] = f"Erreur : {exc}"
+        finally:
+            with SCAN_LOCK:
+                SCAN_STATE.update(running=False, finished=int(time.time()))
+    threading.Thread(target=background, daemon=True, name="minivid-storage-scan").start()
+    return jsonify(ok=True)
+
+
+@app.route("/api/storage", methods=["GET"])
+def api_storage():
+    if not auth_required():
+        return jsonify(ok=False, error="auth"), 401
+    state = read_state()
+    with storage.connect(STORAGE_DB) as db:
+        records = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM inventory")}
+        stats = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM playback_stats")}
+        rules = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM cleanup_rules")}
+    items = []
+    for item in list(MEDIA):
+        vid = item["id"]
+        rec = records.get(vid)
+        rule = rules.get(vid)
+        # A changed file must not inherit the previous file's cleanup rule.
+        if rule:
+            try:
+                if storage.identity(os.stat(_storage_path(vid))) != rule["identity"]:
+                    rule = None
+            except (OSError, ValueError, FileNotFoundError):
+                rule = None
+        entry = {key: item.get(key) for key in ("id", "name", "root_name", "size", "mtime")}
+        entry.update(stats.get(vid, {}))
+        entry["policy"] = rule["mode"] if rule else "none"
+        entry["favorite"] = bool(state.get("fav", {}).get(vid))
+        if rule:
+            try:
+                entry["cleanup_status"], entry["cleanup_reason"] = _cleanup_status(vid, rule, _read_media_managers(), _storage_path(vid), state)
+            except (OSError, ValueError, FileNotFoundError):
+                entry["cleanup_status"], entry["cleanup_reason"] = "blocked", "Fichier indisponible"
+        entry["inventory"] = rec is not None
+        entry["first_seen"] = rec["first_seen"] if rec else 0
+        items.append(entry)
+    copies, links = storage.duplicate_groups(list(records.values()))
+    names = {item["id"]: item["name"] for item in list(MEDIA)}
+    for group in copies:
+        group["digest"] = records[group["items"][0]]["digest"]
+        group["names"] = [names.get(vid, vid) for vid in group["items"]]
+    link_groups = [{"items": group, "names": [names.get(vid, vid) for vid in group]}
+                   for group in links]
+    mounts = []
+    seen = set()
+    for index, root in enumerate(MEDIA_DIRS):
+        try:
+            dev = os.stat(root).st_dev
+            if dev in seen:
+                continue
+            seen.add(dev)
+            usage = shutil.disk_usage(root)
+            mounts.append({"name": MEDIA_NAMES[index], "path": root, "total": usage.total, "free": usage.free})
+        except OSError:
+            pass
+    mode = request.args.get("filter", "all")
+    if mode == "never":
+        items = [i for i in items if not i.get("starts") and not state.get("ever_played", {}).get(i["id"])]
+    elif mode == "abandoned":
+        items = [i for i in items if i.get("starts") and i.get("max_percent", 0) < 30 and not i.get("completions")]
+    elif mode in ("candidate", "protected"):
+        items = [i for i in items if i["policy"] == ("candidate" if mode == "candidate" else "protect")]
+    key = request.args.get("sort", "size")
+    sort_keys = {"size": "size", "oldest": "mtime", "first_seen": "first_seen", "last_played": "last_played", "plays": "starts", "progress": "max_percent"}
+    items.sort(key=lambda i: i.get(sort_keys.get(key, "size")) or 0,
+               reverse=key in ("size", "plays", "progress"))
+    try:
+        page = max(1, min(100000, int(request.args.get("page", 1))))
+    except ValueError:
+        page = 1
+    count = len(items)
+    return jsonify(ok=True, admin=media_admin_required(), mounts=mounts, count=count, page=page, items=items[(page-1)*100:page*100],
+                   copies=copies, links=link_groups, scanned_at=max((r["scanned_at"] for r in records.values()), default=0),
+                   scan={key: SCAN_STATE[key] for key in ("running", "kind", "progress", "message")})
+
+
+@app.route("/api/storage/rule/<vid>", methods=["GET", "POST"])
+def api_storage_rule(vid):
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    try:
+        _, _, _, full = _media_item_and_path(vid)
+        stat = os.stat(full)
+        if request.method == "POST":
+            data = request.get_json(silent=True) or {}
+            if data.get("mode") == "candidate" and read_state().get("fav", {}).get(vid):
+                return jsonify(ok=False, error="Retirez d'abord ce favori pour autoriser le nettoyage"), 409
+            rule = storage.set_rule(STORAGE_DB, vid, stat, data)
+            key = storage.content_key(full, stat)
+            # Persist first so a peer retry cannot create an unrecorded policy.
+            storage.set_synced_policy(STORAGE_DB, key, data, time.time_ns(), INSTANCE_ID)
+            _emit_storage_event("policy", key, data)
+        else:
+            rule = storage.get_rule(STORAGE_DB, vid, stat)
+        status, reason = _cleanup_status(vid, rule, _read_media_managers(), full, read_state()) if rule else ("none", "Aucune règle")
+        settings = storage.settings(STORAGE_DB)
+        return jsonify(ok=True, rule=rule, status=status, reason=reason,
+                       automation_active=bool(settings["enabled"] and settings["owner_id"] == INSTANCE_ID and AUTH_ENABLED))
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+
+@app.route("/api/storage/duplicates/delete", methods=["POST"])
+def api_storage_duplicate_delete():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    data = request.get_json(silent=True) or {}
+    if data.get("confirmation") != "SUPPRIMER":
+        return jsonify(ok=False, error="confirmation_invalide"), 400
+    digest, keep = data.get("digest"), data.get("keep")
+    cfg = _read_media_managers()
+    if not cfg.get("deletion_enabled"):
+        return jsonify(ok=False, error="suppression_desactivee"), 403
+    state = read_state()
+    with storage.connect(STORAGE_DB) as db:
+        rows = [dict(row) for row in db.execute("SELECT * FROM inventory WHERE digest=?", (digest,))] if isinstance(digest, str) and len(digest) == 64 else []
+    if not rows or keep not in {r["vid"] for r in rows} or len({(r["dev"], r["ino"]) for r in rows}) < 2:
+        return jsonify(ok=False, error="groupe_invalide"), 400
+    deleted = []
+    try:
+        # Verify the complete group before deleting the first copy.
+        for row in rows:
+            item, root, rel, full = _media_item_and_path(row["vid"])
+            st = os.stat(full)
+            if storage.identity(st) != f"{row['dev']}:{row['ino']}:{row['size']}:{row['mtime_ns']}":
+                raise ValueError("Fichier changé depuis l'inventaire")
+            if storage._hash(full) != digest:
+                raise ValueError("Empreinte du fichier modifiée")
+            if row["vid"] != keep:
+                source = cfg.get("sources", {}).get(str(root), {})
+                if source.get("delete_mode") != "file" or source.get("client_id"):
+                    raise ValueError("Groupe lié à BitTorrent : suppression individuelle requise")
+                if st.st_nlink != 1 or state.get("fav", {}).get(row["vid"]) or storage.get_rule(STORAGE_DB, row["vid"], st):
+                    raise ValueError("Fichier protégé, candidat ou lié physiquement : suppression refusée")
+        for row in rows:
+            if row["vid"] == keep:
+                continue
+            _, _, _, full = _media_item_and_path(row["vid"])
+            st = os.stat(full)
+            if storage.identity(st) != f"{row['dev']}:{row['ino']}:{row['size']}:{row['mtime_ns']}" or storage._hash(full) != digest:
+                raise ValueError("Un fichier a changé pendant la suppression du groupe")
+            os.remove(full)
+            _forget_media(row["vid"])
+            deleted.append(row["vid"])
+        _log_event("storage_duplicates_deleted", count=len(deleted), kept=keep)
+        return jsonify(ok=True, deleted=deleted)
+    except (ValueError, OSError, FileNotFoundError) as exc:
+        return jsonify(ok=False, error=str(exc), deleted=deleted), 409
 
 # ---------- Routes ----------
 @app.route("/")
@@ -2363,6 +2859,11 @@ def ensure_thumbs_background():
 
 # Initial scan + autoscan thread
 scan_media()
+# The worker is harmless while automation is disabled (the persisted default).
+# Starting it unconditionally lets a later explicit UI activation take effect
+# without a restart, but never turns deletion on during an image update.
+if AUTH_ENABLED:
+    threading.Thread(target=_cleanup_loop, daemon=True, name="minivid-cleanup-owner").start()
 try:
     if AUTOSCAN and SCAN_INTERVAL > 0:
         t_autoscan = threading.Thread(target=_autoscan_loop, daemon=True)

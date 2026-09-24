@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY app.py /app/
 COPY media_managers.py /app/
+COPY storage_manager.py /app/
 COPY gpu_bootstrap.py /app/
 COPY templates /app/templates
 COPY static /app/static

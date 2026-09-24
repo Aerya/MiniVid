@@ -1,6 +1,21 @@
 /* MiniVid UI language switcher. French is the original/default language. */
 (() => {
   const en = {
+    "Stockage": "Storage", "← Retour": "← Back", "Ouvrir la page Stockage": "Open Storage",
+    "Trier, examiner et protéger vos vidéos avant de libérer de la place.": "Sort, review and protect videos before freeing space.",
+    "Analyser les doublons": "Scan for duplicates", "Copies vérifiées": "Verified copies", "Liens vers un même fichier physique": "Links to the same physical file",
+    "Afficher": "Show", "Tous": "All", "Jamais lancés": "Never started", "Arrêtés avant 30 %": "Stopped before 30%", "Candidats": "Candidates", "Protégés": "Protected",
+    "Taille décroissante": "Largest first", "Plus anciens fichiers": "Oldest file dates", "Détectés le plus tôt": "First detected", "Dernier visionnage le plus ancien": "Oldest viewing date", "Nombre de démarrages": "Playback starts", "Progression maximale": "Highest reached position",
+    "Vidéo": "Video", "Fichier du": "File dated", "Lectures": "Plays", "Max.": "Max.", "Dernière fois": "Last played", "Décision": "Decision",
+    "Candidat au nettoyage": "Cleanup candidate", "Conserver sans règle": "Keep without a rule", "Protéger définitivement": "Protect", "Autoriser le nettoyage": "Allow cleanup",
+    "Ratio minimum": "Minimum ratio", "Temps de seed minimum (jours)": "Minimum seeding time (days)", "Condition": "Condition", "Ratio ET durée": "Ratio AND time", "Ratio OU durée": "Ratio OR time",
+    "Déclencher": "Trigger", "Lorsque le stockage manque de place": "When storage is low", "Dès que les conditions sont atteintes": "As soon as conditions are met",
+    "Espace libre sous (%)": "Free space below (%)", "Nettoyer jusqu'à (%)": "Clean until free (%)", "Enregistrer la décision": "Save decision",
+    "Supprimer les autres copies": "Delete other copies", "Aucune copie physique vérifiée.": "No verified physical copies.",
+    "Aucun lien physique partagé dans les sources.": "No shared physical link within the sources.",
+    "Lancez une analyse pour vérifier les copies.": "Run a scan to verify copies.", "Analyse à lancer.": "Scan required.",
+    "MiniVid ne supprime automatiquement que les vidéos autorisées ici, une fois les conditions de chaque torrent atteintes.": "MiniVid only deletes videos explicitly authorized here after all torrent conditions are met.",
+    "Les copies sont vérifiées par SHA‑256. Les liens physiques et torrents cross-seed ne comptent pas comme plusieurs fichiers. La place indiquée reste une estimation sur les volumes avec snapshots ou reflinks.": "Copies are verified with SHA-256. Hardlinks and cross-seed torrents are not counted as separate files. Reclaimable space is an estimate on volumes with snapshots or reflinks.",
     "Accueil MiniVid": "MiniVid home", "Rechercher une vidéo, un dossier...": "Search a video or folder...",
     "Tri": "Sort", "Récentes": "Newest", "Nom": "Name", "Taille": "Size", "Résolution ↓": "Resolution ↓", "Résolution ↑": "Resolution ↑",
     "Non lues": "Unwatched", "Jamais lues": "Never watched", "Lues": "Watched", "Affichage": "Display", "Toutes": "All", "Tout": "All",

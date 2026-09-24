@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import http.cookiejar
 import json
+import os
 import posixpath
 import time
 import urllib.error
@@ -120,24 +121,26 @@ class QBittorrentClient(_HttpClient):
                     verified.append(torrent)
                     break
         matches = exact + verified
-        if expected_size:
-            target_name = posixpath.basename(target).casefold()
-            known_hashes = {str(torrent.get("hash") or "") for torrent in matches}
+        # A name and size match on another path is not evidence of identity.
+        # This also applies to torrents tagged cross-seed.
+        local_root = getattr(self, "local_root", None)
+        if local_root and os.path.isfile(os.path.join(local_root, rel)):
+            root_real = os.path.realpath(local_root)
+            local_target = os.path.join(root_real, rel)
+            known = {str(torrent.get("hash") or "") for torrent in matches}
             for torrent in torrents if isinstance(torrents, list) else []:
                 info_hash = str(torrent.get("hash") or "")
-                if not info_hash or info_hash in known_hashes:
+                if not info_hash or info_hash in known:
                     continue
-                torrent_name = posixpath.basename(str(torrent.get("name") or "")).casefold()
-                if torrent_name != target_name and int(torrent.get("total_size") or 0) != int(expected_size):
+                remote_path = posixpath.normpath(str(torrent.get("content_path") or ""))
+                if not remote_path.startswith(client_root.rstrip("/") + "/"):
                     continue
-                files = self._json("/api/v2/torrents/files?" + urllib.parse.urlencode({"hash": info_hash}))
-                if any(
-                    posixpath.basename(str(item.get("name") or "")).casefold() == target_name
-                    and int(item.get("size") or 0) == int(expected_size)
-                    for item in files if isinstance(files, list)
-                ):
+                candidate = os.path.realpath(os.path.join(root_real, posixpath.relpath(remote_path, client_root)))
+                if not candidate.startswith(root_real + os.sep) or not os.path.isfile(candidate):
+                    continue
+                if os.path.samefile(candidate, local_target):
                     matches.append(torrent)
-                    known_hashes.add(info_hash)
+                    known.add(info_hash)
         if matches:
             unique = {str(torrent.get("hash") or ""): torrent for torrent in matches}
             return list(unique.values()), target
@@ -157,6 +160,8 @@ class QBittorrentClient(_HttpClient):
             "peers_total": int(torrent.get("num_incomplete") or 0),
             "seeds_total": int(torrent.get("num_complete") or 0),
             "state": str(torrent.get("state") or ""),
+            "tags": [tag.strip() for tag in str(torrent.get("tags") or "").split(",") if tag.strip()],
+            "cross_seed": "cross-seed" in {tag.strip().casefold() for tag in str(torrent.get("tags") or "").split(",")},
         }
 
     def metadata_all(self, rel: str, client_root: str, expected_size: int | None = None):
@@ -167,7 +172,22 @@ class QBittorrentClient(_HttpClient):
         return self.metadata_all(rel, client_root, expected_size)[0]
 
     def delete_with_data(self, rel: str, client_root: str, expected_size: int | None = None):
-        torrents, _ = self._find_torrents(rel, client_root, expected_size)
+        torrents, target = self._find_torrents(rel, client_root, expected_size)
+        local_root = getattr(self, "local_root", None)
+        for torrent in torrents:
+            files = self._json("/api/v2/torrents/files?" + urllib.parse.urlencode({"hash": torrent["hash"]}))
+            save_path = posixpath.normpath(str(torrent.get("save_path") or ""))
+            if not isinstance(files, list) or len(files) != 1:
+                raise TorrentClientError("Torrent multi-fichiers ou chemin non vérifié : suppression refusée")
+            remote_file = posixpath.normpath(posixpath.join(save_path, str(files[0].get("name") or "")))
+            if remote_file != target:
+                if not local_root or not remote_file.startswith(client_root.rstrip("/") + "/"):
+                    raise TorrentClientError("Chemin torrent non vérifié : suppression refusée")
+                root_real = os.path.realpath(local_root)
+                candidate = os.path.realpath(os.path.join(root_real, posixpath.relpath(remote_file, client_root)))
+                if not candidate.startswith(root_real + os.sep) or not os.path.isfile(candidate) or not os.path.samefile(
+                        candidate, os.path.join(root_real, rel)):
+                    raise TorrentClientError("Chemin torrent non vérifié : suppression refusée")
         info_hashes = [str(torrent.get("hash") or "") for torrent in torrents]
         if not info_hashes or any(not info_hash for info_hash in info_hashes):
             raise TorrentClientError("Hash qBittorrent manquant")
@@ -255,15 +275,9 @@ class RutorrentClient(_HttpClient):
 
     def _find_torrents(self, rel: str, client_root: str, expected_size: int | None = None):
         target = _client_path(client_root, rel)
-        target_name = posixpath.basename(target).casefold()
         matches = [
             torrent for torrent in self._list()
             if posixpath.normpath(str(torrent.get("base_path") or "")) == target
-            or (
-                expected_size
-                and posixpath.basename(str(torrent.get("base_path") or "")).casefold() == target_name
-                and int(torrent.get("size") or 0) == int(expected_size)
-            )
         ]
         if not matches:
             raise TorrentClientError("Aucun torrent ruTorrent ne correspond exactement à cette vidéo")
@@ -281,7 +295,9 @@ class RutorrentClient(_HttpClient):
             # Ne pas présenter la date de création du .torrent comme un ajout.
             "added_on": 0,
             "torrent_created_on": int(torrent.get("creation_date") or 0),
-            "seeding_time": 0,
+            "seeding_time": None,
+            "tags": [],
+            "cross_seed": False,
             "ratio": ratio_raw / 1000.0,
             "peers_connected": int(torrent.get("peers_connected") or 0),
             "seeds_connected": int(torrent.get("seeds_connected") or 0),

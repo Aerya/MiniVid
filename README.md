@@ -92,6 +92,16 @@ Configure this from **Maintenance > Video sources and BitTorrent clients**:
 
 MiniVid displays every torrent matching a file. "Torrent and data" deletion removes associated torrents, including matching cross-seed variants, and verifies the result before removing the video from its index. Deleting a favorite displays an additional warning and still requires the final confirmation. Deletion requires MiniVid authentication. Client passwords are encrypted with `SECRET_KEY`; changing that key requires entering them again.
 
+## Storage review and cleanup
+
+The new **Storage** page (`/storage`) sorts videos by size, file age, playback starts, latest play and highest reached playback position. Stats start accumulating after this update; the old watched flag cannot reconstruct historical play counts. A duplicate scan hashes equal-sized, distinct physical files with SHA-256 and shows hardlinks separately. The `cross-seed` tag is displayed but never used as proof that two torrents share a file. Group deletion is limited to verified copies on unlinked, non-BitTorrent sources; individual deletion is available from the Storage page.
+
+Each video's **Cleanup candidate** policy records ratio and seeding-time requirements (AND/OR) and chooses immediate cleanup or a low-free-space threshold with a separate stop threshold. Favorites and protected videos are excluded. A rule is bound to the exact local file version and is invalidated if the file changes. When ruTorrent does not report seeding time, a time condition is unknown rather than treated as zero.
+
+Automatic deletion is **off by default**, including after an image update or migration. Configure every collaborating instance with the same long random `MINI_SYNC_SECRET`, unique persistent `MINI_INSTANCE_ID` values and comma-separated `MINI_SYNC_PEERS`. The Storage page synchronizes favorites, protections, candidates, conditions and the global paused/active state by SHA-256 content identity, so Docker paths may differ without treating hardlinks as copies. Pick one listed instance as the owner in the page, then explicitly enable automation; a legacy `MINI_CLEANUP_OWNER` environment value is ignored.
+
+The worker runs every ten minutes and requires authentication, configured peer synchronization, a named owner, an enabled deletion switch, a single qBittorrent client and a `torrent` source. It rechecks every associated torrent, paths, file identity and hardlinks immediately before deletion. A per-storage filesystem lock prevents simultaneous workers from deleting the same physical data. Any unavailable client or unverifiable path blocks the item and records the reason. The default Docker Compose media mount is read-only; manual file deletion requires a writable mount, while BitTorrent data deletion is performed by the BitTorrent client.
+
 ## Useful configuration
 
 | Variable | Default | Purpose |

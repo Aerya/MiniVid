@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import threading
 import unittest
 import urllib.parse
@@ -146,14 +148,29 @@ class TorrentClientsTest(unittest.TestCase):
         self.assertEqual(result["torrent_count"], 2)
         self.assertEqual(FakeTorrentServer.deleted[-1]["hashes"], ["abc123|abc456"])
 
-    def test_qbittorrent_includes_same_name_and_size_cross_seed_alias(self):
+    def test_qbittorrent_rejects_same_name_and_size_on_another_path(self):
         FakeTorrentServer.alias_qbit = True
         client = QBittorrentClient(self.base_url, "user", "password")
         metadata = client.metadata_all("video.mkv", "/downloads", expected_size=123)
-        self.assertEqual([item["torrent_hash"] for item in metadata], ["abc123", "alias789"])
+        self.assertEqual([item["torrent_hash"] for item in metadata], ["abc123"])
         result = client.delete_with_data("video.mkv", "/downloads", expected_size=123)
-        self.assertEqual(result["torrent_count"], 2)
-        self.assertEqual(FakeTorrentServer.deleted[-1]["hashes"], ["abc123|alias789"])
+        self.assertEqual(result["torrent_count"], 1)
+        self.assertEqual(FakeTorrentServer.deleted[-1]["hashes"], ["abc123"])
+
+    def test_qbittorrent_includes_verified_hardlink_alias(self):
+        FakeTorrentServer.alias_qbit = True
+        with tempfile.TemporaryDirectory() as root:
+            os.mkdir(os.path.join(root, "cross-seed"))
+            original = os.path.join(root, "video.mkv")
+            with open(original, "wb") as handle:
+                handle.write(b"video")
+            os.link(original, os.path.join(root, "cross-seed", "video.mkv"))
+            client = QBittorrentClient(self.base_url, "user", "password")
+            client.local_root = root
+            matches = client.metadata_all("video.mkv", "/downloads")
+            self.assertEqual([m["torrent_hash"] for m in matches], ["abc123", "alias789"])
+            result = client.delete_with_data("video.mkv", "/downloads")
+            self.assertEqual(result["torrent_count"], 2)
 
     def test_qbittorrent_refuses_non_matching_path(self):
         client = QBittorrentClient(self.base_url, "user", "password")
