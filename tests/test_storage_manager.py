@@ -77,5 +77,38 @@ class StorageManagerTest(unittest.TestCase):
                 storage.set_default_rule(db, dict(conditions, free_below=30), 11, "instance-a")
 
 
+    def test_inventory_hashing_does_not_hold_sqlite_write_lock(self):
+        with tempfile.TemporaryDirectory() as root:
+            db = os.path.join(root, "storage.db")
+            first = os.path.join(root, "first.mkv")
+            second = os.path.join(root, "second.mkv")
+            for filename in (first, second):
+                with open(filename, "wb") as handle:
+                    handle.write(b"same content")
+
+            paths = {"first": first, "second": second}
+            original_hash = storage._hash
+            checked = {"count": 0}
+
+            def hash_while_writing(path):
+                with storage.connect(db) as con:
+                    con.execute(
+                        "UPDATE cleanup_settings SET revision=revision WHERE id=1"
+                    )
+                checked["count"] += 1
+                return original_hash(path)
+
+            storage._hash = hash_while_writing
+            try:
+                storage.inventory_scan(
+                    db,
+                    [{"id": vid} for vid in paths],
+                    paths.__getitem__,
+                )
+            finally:
+                storage._hash = original_hash
+
+            self.assertGreater(checked["count"], 0)
+
 if __name__ == "__main__":
     unittest.main()

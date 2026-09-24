@@ -11,9 +11,10 @@ from contextlib import contextmanager
 
 @contextmanager
 def connect(db_path):
-    db = sqlite3.connect(db_path, timeout=15)
+    db = sqlite3.connect(db_path, timeout=30)
     try:
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA busy_timeout=30000")
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("""CREATE TABLE IF NOT EXISTS cleanup_rules (
             vid TEXT PRIMARY KEY, identity TEXT NOT NULL, mode TEXT NOT NULL,
@@ -47,6 +48,8 @@ def connect(db_path):
                    (json.dumps(DEFAULT_CONDITIONS),))
         if "first_seen" not in {row[1] for row in db.execute("PRAGMA table_info(inventory)")}:
             db.execute("ALTER TABLE inventory ADD COLUMN first_seen INTEGER NOT NULL DEFAULT 0")
+        # Commit bootstrap writes before callers do slow work.
+        db.commit()
         yield db
         db.commit()
     except Exception:
@@ -191,9 +194,10 @@ def synced_policy(db_path, key):
 
 
 def inventory_scan(db_path, entries, path_for):
-    """Hash only equal-sized physical candidates; discard results if a file changed."""
+    # Hash duplicate candidates outside SQLite, then persist in one short transaction.
     records = []
     sizes = defaultdict(set)
+
     for item in entries:
         try:
             path = path_for(item["id"])
@@ -202,46 +206,78 @@ def inventory_scan(db_path, entries, path_for):
                 continue
         except (OSError, ValueError, FileNotFoundError):
             continue
-        rec = (item["id"], path, st)
-        records.append(rec)
+
+        records.append((item["id"], path, st))
         sizes[st.st_size].add((st.st_dev, st.st_ino))
+
+    # Read and close SQLite before potentially slow SHA-256 work.
+    with connect(db_path) as db:
+        previous = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM inventory")}
+
     now = int(time.time())
     valid = set()
     digest_cache = {}
-    with connect(db_path) as db:
-        previous = {r["vid"]: r for r in db.execute("SELECT * FROM inventory")}
-        for vid, path, st in records:
-            digest = None
-            old = previous.get(vid)
-            same_version = bool(old and (old["dev"], old["ino"], old["size"], old["mtime_ns"]) == (
-                st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns))
-            if len(sizes[st.st_size]) > 1:
-                if same_version:
-                    digest = old["digest"]
-                cache_key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-                if digest is None and cache_key in digest_cache:
-                    digest = digest_cache[cache_key]
-                if digest is None:
-                    try:
-                        digest = _hash(path)
-                        if identity(os.stat(path)) != identity(st):
-                            digest = None
-                    except OSError:
-                        digest = None
-                if digest is not None:
-                    digest_cache[cache_key] = digest
-            db.execute("""INSERT OR REPLACE INTO inventory
-                (vid,dev,ino,size,allocated,links,mtime_ns,digest,scanned_at,first_seen)
-                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (vid, st.st_dev, st.st_ino, st.st_size,
-                 st.st_blocks * 512 if hasattr(st, "st_blocks") else st.st_size,
-                 st.st_nlink, st.st_mtime_ns, digest, now,
-                 (old["first_seen"] or now) if same_version else now))
-            valid.add(vid)
-        for vid in previous.keys() - valid:
-            db.execute("DELETE FROM inventory WHERE vid=?", (vid,))
-    return len(records)
+    prepared = []
 
+    for vid, path, st in records:
+        digest = None
+        old = previous.get(vid)
+        same_version = bool(
+            old
+            and (old["dev"], old["ino"], old["size"], old["mtime_ns"])
+            == (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+        )
+
+        if len(sizes[st.st_size]) > 1:
+            if same_version:
+                digest = old["digest"]
+
+            cache_key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+
+            if digest is None and cache_key in digest_cache:
+                digest = digest_cache[cache_key]
+
+            if digest is None:
+                try:
+                    digest = _hash(path)
+                    if identity(os.stat(path)) != identity(st):
+                        digest = None
+                except OSError:
+                    digest = None
+
+            if digest is not None:
+                digest_cache[cache_key] = digest
+
+        prepared.append((
+            vid,
+            st.st_dev,
+            st.st_ino,
+            st.st_size,
+            st.st_blocks * 512 if hasattr(st, "st_blocks") else st.st_size,
+            st.st_nlink,
+            st.st_mtime_ns,
+            digest,
+            now,
+            (old["first_seen"] or now) if same_version else now,
+        ))
+        valid.add(vid)
+
+    # Hold the SQLite writer only for the actual writes.
+    with connect(db_path) as db:
+        db.executemany(
+            "INSERT OR REPLACE INTO inventory "
+            "(vid,dev,ino,size,allocated,links,mtime_ns,digest,scanned_at,first_seen) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            prepared,
+        )
+        stale = previous.keys() - valid
+        if stale:
+            db.executemany(
+                "DELETE FROM inventory WHERE vid=?",
+                ((vid,) for vid in stale),
+            )
+
+    return len(records)
 
 def duplicate_groups(rows):
     """Only verified equal SHA-256 files with distinct inodes count as copies."""
