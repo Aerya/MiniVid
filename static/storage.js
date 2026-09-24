@@ -18,8 +18,14 @@
   };
   async function json(url, options = {}) {
     const response = await fetch(url, {credentials:'same-origin', ...options});
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || String(response.status));
+    const raw = await response.text();
+    let data;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      throw new Error(`Erreur serveur HTTP ${response.status} : réponse non JSON`);
+    }
+    if (!response.ok || !data.ok) throw new Error(data.error || `Erreur HTTP ${response.status}`);
     return data;
   }
   const post = (url, data) => json(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
