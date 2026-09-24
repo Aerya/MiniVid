@@ -9,6 +9,8 @@
   let layout = localStorage.getItem('minivid_storage_layout') === 'gallery' ? 'gallery' : 'list';
   let width = ['standard', 'wide', 'full'].includes(localStorage.getItem('minivid_storage_width'))
     ? localStorage.getItem('minivid_storage_width') : 'standard';
+  let storageSection = ['duplicates', 'cleanup'].includes(localStorage.getItem('minivid_storage_section'))
+    ? localStorage.getItem('minivid_storage_section') : 'duplicates';
   const size = value => (Number(value || 0) / 1073741824).toLocaleString('fr-FR', {maximumFractionDigits: 2}) + ' Gio';
   const date = value => value ? new Date(Number(value) * 1000).toLocaleDateString('fr-FR') : 'Jamais';
   const node = (tag, label, className) => {
@@ -30,6 +32,40 @@
     return data;
   }
   const post = (url, data) => json(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+
+  function setStorageSection(section) {
+    storageSection = section === 'cleanup' ? 'cleanup' : 'duplicates';
+    localStorage.setItem('minivid_storage_section', storageSection);
+
+    document.querySelectorAll('[data-storage-section]').forEach(button => {
+      const active = button.dataset.storageSection === storageSection;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+
+    $('storage-panel-duplicates').hidden = storageSection !== 'duplicates';
+    $('storage-panel-cleanup').hidden = storageSection !== 'cleanup';
+  }
+
+  function pathLabel(value) {
+    const text = value || 'Chemin indisponible';
+    const item = node('code', text, 'storage-copy-path');
+    item.title = text;
+    return item;
+  }
+
+  function duplicateOrigin(file) {
+    const wrap = node('div', null, 'storage-copy-badges');
+    wrap.append(storageOriginBadge(file));
+
+    if (file.cross_seed) {
+      const note = node('span', 'Torrent tagué cross-seed', 'storage-cross-seed-note');
+      note.title = 'Tag du torrent associé. Cela ne signifie pas que le fichier est un hardlink.';
+      wrap.append(note);
+    }
+
+    return wrap;
+  }
 
   function displayMode() {
     document.querySelector('.storage-page').dataset.width = width;
@@ -147,13 +183,144 @@
     $('storage-scan-detail').textContent=running?`${percent} %${countText}${scan?.phase?' · '+scan.phase:''}`:(scan?.phase==='error'?'Le dernier scan s’est terminé sur une erreur.':percent===100?'Dernière analyse terminée.':'');
     if(running&&!scanTimer){scanTimer=setInterval(()=>loadStorage().catch(error=>{clearInterval(scanTimer);scanTimer=null;button.disabled=false;$('storage-scan-status').textContent=error.message;}),1500);} else if(!running&&scanTimer){clearInterval(scanTimer);scanTimer=null;}
   }
-  function appendDuplicateFile(list,file,digest,index){const li=node('li',null,'storage-copy-item'),main=node('div',null,'storage-copy-main'),keep=document.createElement('input');keep.type='radio';keep.name='keep-'+digest;keep.value=file.id;keep.checked=index===0;
-    const link=node('a',file.name||file.id);link.href='/watch/'+encodeURIComponent(file.id);main.append(keep,node('span','Garder','storage-keep-label'),link);const details=node('div',null,'storage-copy-details');details.append(node('span',file.root_name||'Source inconnue','storage-source-name'),node('code',file.path||file.relative_path||'Chemin indisponible','storage-copy-path'),storageOriginBadge(file));if(file.cross_seed)details.append(node('span','cross-seed','storage-origin-badge cross-seed'));li.append(main,details);list.append(li);}
+  function appendDuplicateFile(list, file, digest, index) {
+    const li = node('li', null, 'storage-copy-item');
+    const main = node('div', null, 'storage-copy-main');
+    const keep = document.createElement('input');
+    keep.type = 'radio';
+    keep.name = 'keep-' + digest;
+    keep.value = file.id;
+    keep.checked = index === 0;
+
+    const keepLabel = node('span', 'Garder', 'storage-keep-label');
+    const link = node('a', file.name || file.id, 'storage-copy-name');
+    link.href = '/watch/' + encodeURIComponent(file.id);
+    link.title = file.name || file.id;
+
+    main.append(keep, keepLabel, link);
+
+    const details = node('div', null, 'storage-copy-details');
+    details.append(
+      node('span', file.root_name || 'Source inconnue', 'storage-source-name'),
+      pathLabel(file.path || file.relative_path),
+      duplicateOrigin(file)
+    );
+
+    li.append(main, details);
+    list.append(li);
+  }
+
+  function duplicateDetails(summaryText, className = '') {
+    const details = node('details', null, `storage-duplicate-group ${className}`.trim());
+    const summary = node('summary', null, 'storage-duplicate-summary');
+    summary.append(
+      node('span', summaryText, 'storage-duplicate-summary-title'),
+      node('span', 'Afficher', 'storage-duplicate-toggle')
+    );
+    details.append(summary);
+    details.addEventListener('toggle', () => {
+      const toggle = details.querySelector('.storage-duplicate-toggle');
+      if (toggle) toggle.textContent = details.open ? 'Replier' : 'Afficher';
+    });
+    return details;
+  }
+
   function renderCopies(result) {
-    const copies=$('storage-copies');copies.replaceChildren();if(!result.copies.length)copies.textContent='Aucune copie physique vérifiée.';
-    result.copies.forEach(group=>{const wrap=node('div',null,'storage-group');wrap.append(node('strong',`${group.items.length} chemins · jusqu’à ${size(group.estimated_bytes)} récupérables`));const list=node('ul',null,'storage-copy-list');const files=group.files||group.items.map(id=>({id,name:id,management:'unknown',management_label:'Informations non disponibles'}));files.forEach((file,index)=>appendDuplicateFile(list,file,group.digest,index));wrap.append(list);
-      if(result.admin){const button=node('button','Supprimer les autres copies','btn btn-danger');button.onclick=async()=>{const keep=wrap.querySelector('input:checked')?.value,kept=files.find(f=>f.id===keep);if(!keep)return;if(!confirm(`Conserver ${kept?.name||keep} et supprimer les autres copies ? Les contrôles serveur restent appliqués.`))return;button.disabled=true;try{await post('/api/storage/duplicates/delete',{digest:group.digest,keep,confirmation:'SUPPRIMER'});await loadStorage();}catch(error){alert('Suppression refusée : '+error.message);button.disabled=false;}};wrap.append(button);}copies.append(wrap);});
-    const links=$('storage-links');links.replaceChildren();if(!result.links.length)links.textContent='Aucun lien physique partagé dans les sources.';result.links.forEach(group=>{const wrap=node('div',null,'storage-group');wrap.append(node('strong',`${group.items.length} chemins · même fichier physique · aucune copie supplémentaire`));const list=node('ul',null,'storage-copy-list');(group.files||[]).forEach(file=>{const li=node('li',null,'storage-copy-item'),link=node('a',file.name||file.id);link.href='/watch/'+encodeURIComponent(file.id);const details=node('div',null,'storage-copy-details');details.append(node('span',file.root_name||'Source inconnue','storage-source-name'),node('code',file.path||file.relative_path||'','storage-copy-path'),storageOriginBadge(file));li.append(link,details);list.append(li);});wrap.append(list);links.append(wrap);});
+    const copies = $('storage-copies');
+    copies.replaceChildren();
+
+    $('storage-duplicates-count').textContent = String((result.copies || []).length);
+    $('storage-cleanup-count').textContent = String(result.count || 0);
+
+    if (!result.copies.length) {
+      copies.append(node('p', 'Aucune copie physique vérifiée.', 'meta'));
+    }
+
+    result.copies.forEach(group => {
+      const files = group.files || group.items.map(id => ({
+        id,
+        name: id,
+        management: 'unknown',
+        management_label: 'Informations non disponibles'
+      }));
+
+      const wrap = duplicateDetails(
+        `${group.items.length} copies · jusqu’à ${size(group.estimated_bytes)} récupérables`
+      );
+
+      const body = node('div', null, 'storage-duplicate-body');
+      const list = node('ul', null, 'storage-copy-list');
+      files.forEach((file, index) => appendDuplicateFile(list, file, group.digest, index));
+      body.append(list);
+
+      if (result.admin) {
+        const button = node('button', 'Supprimer les autres copies', 'btn btn-danger');
+        button.onclick = async () => {
+          const keep = wrap.querySelector('input:checked')?.value;
+          const kept = files.find(file => file.id === keep);
+          if (!keep) return;
+
+          if (!confirm(
+            `Conserver ${kept?.name || keep} et supprimer les autres copies ? ` +
+            `Les contrôles serveur restent appliqués.`
+          )) return;
+
+          button.disabled = true;
+          try {
+            await post('/api/storage/duplicates/delete', {
+              digest: group.digest,
+              keep,
+              confirmation: 'SUPPRIMER'
+            });
+            await loadStorage();
+          } catch (error) {
+            alert('Suppression refusée : ' + error.message);
+            button.disabled = false;
+          }
+        };
+        body.append(button);
+      }
+
+      wrap.append(body);
+      copies.append(wrap);
+    });
+
+    const links = $('storage-links');
+    links.replaceChildren();
+
+    if (!result.links.length) {
+      links.append(node('p', 'Aucun lien physique partagé dans les sources.', 'meta'));
+    }
+
+    result.links.forEach(group => {
+      const wrap = duplicateDetails(
+        `${group.items.length} chemins · même fichier physique · aucune copie supplémentaire`,
+        'storage-hardlink-group'
+      );
+      const body = node('div', null, 'storage-duplicate-body');
+      const list = node('ul', null, 'storage-copy-list');
+
+      (group.files || []).forEach(file => {
+        const li = node('li', null, 'storage-copy-item');
+        const link = node('a', file.name || file.id, 'storage-copy-name');
+        link.href = '/watch/' + encodeURIComponent(file.id);
+        link.title = file.name || file.id;
+
+        const details = node('div', null, 'storage-copy-details');
+        details.append(
+          node('span', file.root_name || 'Source inconnue', 'storage-source-name'),
+          pathLabel(file.path || file.relative_path),
+          duplicateOrigin(file)
+        );
+
+        li.append(link, details);
+        list.append(li);
+      });
+
+      body.append(list);
+      wrap.append(body);
+      links.append(wrap);
+    });
   }
   function selectionStatus() {
     $('storage-selected-count').textContent = `${selected.size} sélectionné(s)`;
@@ -206,6 +373,10 @@
   }
   document.addEventListener('DOMContentLoaded', () => {
     displayMode();
+    setStorageSection(storageSection);
+    document.querySelectorAll('[data-storage-section]').forEach(button => {
+      button.addEventListener('click', () => setStorageSection(button.dataset.storageSection));
+    });
     $('storage-layout').onclick = () => { layout = layout === 'list' ? 'gallery' : 'list'; localStorage.setItem('minivid_storage_layout', layout); displayMode(); };
     $('storage-width').onclick = () => { width = ({standard:'wide', wide:'full', full:'standard'})[width]; localStorage.setItem('minivid_storage_width', width); displayMode(); };
     document.querySelectorAll('#storage-sort,#storage-filter').forEach(el => el.addEventListener('change', () => { page = 1; loadStorage().catch(error => alert(error.message)); }));
