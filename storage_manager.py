@@ -193,90 +193,84 @@ def synced_policy(db_path, key):
     return (json.loads(row[0]), row[1], row[2]) if row else None
 
 
-def inventory_scan(db_path, entries, path_for):
-    # Hash duplicate candidates outside SQLite, then persist in one short transaction.
+def inventory_scan(db_path, entries, path_for, progress=None):
+    entries = list(entries)
+    total_entries = len(entries)
+
+    def report(percent, message, current=0, total=0, phase=""):
+        if progress:
+            progress(max(0, min(100, int(percent))), str(message), int(current or 0), int(total or 0), str(phase or ""))
+
+    report(1, "Préparation de l’inventaire…", 0, total_entries, "inventory")
     records = []
     sizes = defaultdict(set)
+    inventory_step = max(1, total_entries // 20) if total_entries else 1
 
-    for item in entries:
+    for index, item in enumerate(entries, 1):
         try:
-            path = path_for(item["id"])
-            st = os.stat(path)
-            if not os.path.isfile(path):
+            file_path = path_for(item["id"])
+            st = os.stat(file_path)
+            if not os.path.isfile(file_path):
                 continue
         except (OSError, ValueError, FileNotFoundError):
             continue
-
-        records.append((item["id"], path, st))
+        records.append((item["id"], file_path, st))
         sizes[st.st_size].add((st.st_dev, st.st_ino))
+        if index == total_entries or index % inventory_step == 0:
+            report(1 + int(9 * index / max(1, total_entries)), f"Inventaire : {index}/{total_entries} entrées examinées", index, total_entries, "inventory")
 
-    # Read and close SQLite before potentially slow SHA-256 work.
     with connect(db_path) as db:
         previous = {row["vid"]: dict(row) for row in db.execute("SELECT * FROM inventory")}
 
+    hash_total = sum(1 for _, _, st in records if len(sizes[st.st_size]) > 1)
+    report(10, f"{len(records)} fichiers indexés · {hash_total} candidats SHA-256", 0, hash_total, "hash")
     now = int(time.time())
     valid = set()
     digest_cache = {}
     prepared = []
+    hashed_seen = 0
+    hash_step = max(1, hash_total // 100) if hash_total else 1
 
-    for vid, path, st in records:
+    for vid, file_path, st in records:
         digest = None
         old = previous.get(vid)
-        same_version = bool(
-            old
-            and (old["dev"], old["ino"], old["size"], old["mtime_ns"])
-            == (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-        )
-
+        same_version = bool(old and (old["dev"], old["ino"], old["size"], old["mtime_ns"]) == (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns))
         if len(sizes[st.st_size]) > 1:
             if same_version:
                 digest = old["digest"]
-
             cache_key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-
             if digest is None and cache_key in digest_cache:
                 digest = digest_cache[cache_key]
-
             if digest is None:
                 try:
-                    digest = _hash(path)
-                    if identity(os.stat(path)) != identity(st):
+                    digest = _hash(file_path)
+                    if identity(os.stat(file_path)) != identity(st):
                         digest = None
                 except OSError:
                     digest = None
-
             if digest is not None:
                 digest_cache[cache_key] = digest
+            hashed_seen += 1
+            if hashed_seen == hash_total or hashed_seen == 1 or hashed_seen % hash_step == 0:
+                report(10 + int(82 * hashed_seen / max(1, hash_total)), f"Vérification SHA-256 : {hashed_seen}/{hash_total} fichiers candidats", hashed_seen, hash_total, "hash")
 
-        prepared.append((
-            vid,
-            st.st_dev,
-            st.st_ino,
-            st.st_size,
-            st.st_blocks * 512 if hasattr(st, "st_blocks") else st.st_size,
-            st.st_nlink,
-            st.st_mtime_ns,
-            digest,
-            now,
-            (old["first_seen"] or now) if same_version else now,
-        ))
+        prepared.append((vid, st.st_dev, st.st_ino, st.st_size,
+                         st.st_blocks * 512 if hasattr(st, "st_blocks") else st.st_size,
+                         st.st_nlink, st.st_mtime_ns, digest, now,
+                         (old["first_seen"] or now) if same_version else now))
         valid.add(vid)
 
-    # Hold the SQLite writer only for the actual writes.
+    if not hash_total:
+        report(92, "Aucun fichier de même taille à comparer par SHA-256", 0, 0, "hash")
+    report(95, "Enregistrement de l’inventaire…", len(prepared), len(prepared), "write")
+
     with connect(db_path) as db:
-        db.executemany(
-            "INSERT OR REPLACE INTO inventory "
-            "(vid,dev,ino,size,allocated,links,mtime_ns,digest,scanned_at,first_seen) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            prepared,
-        )
+        db.executemany("INSERT OR REPLACE INTO inventory (vid,dev,ino,size,allocated,links,mtime_ns,digest,scanned_at,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?)", prepared)
         stale = previous.keys() - valid
         if stale:
-            db.executemany(
-                "DELETE FROM inventory WHERE vid=?",
-                ((vid,) for vid in stale),
-            )
+            db.executemany("DELETE FROM inventory WHERE vid=?", ((vid,) for vid in stale))
 
+    report(99, f"{len(records)} fichiers enregistrés", len(records), len(records), "write")
     return len(records)
 
 def duplicate_groups(rows):

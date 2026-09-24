@@ -5,6 +5,7 @@
   let page = 1;
   let lastResult = null;
   let preview = null;
+  let scanTimer = null;
   let layout = localStorage.getItem('minivid_storage_layout') === 'gallery' ? 'gallery' : 'list';
   let width = ['standard', 'wide', 'full'].includes(localStorage.getItem('minivid_storage_width'))
     ? localStorage.getItem('minivid_storage_width') : 'standard';
@@ -124,43 +125,35 @@
       card.append(body); gallery.append(card);
     }
   }
+  function storageOriginBadge(file) {
+    const cls = file.management === 'torrent' ? 'torrent' : file.management === 'unknown' ? 'unknown' : 'local';
+    return node('span', file.management_label || 'Fichier local', 'storage-origin-badge ' + cls);
+  }
+  function renderStorageOverview(result) {
+    const sources=$('storage-sources'), volumes=$('storage-volumes'); sources.replaceChildren(); volumes.replaceChildren();
+    const indexed=(result.sources||[]).reduce((sum,x)=>sum+Number(x.indexed_count||0),0);
+    $('storage-source-count').textContent=`${(result.sources||[]).length} source(s) · ${indexed} vidéos`;
+    (result.sources||[]).forEach(source=>{const card=node('div',null,'storage-source-item'),top=node('div',null,'storage-source-top'); top.append(node('strong',source.name),node('span',`${source.indexed_count||0} vidéo(s)`,'storage-count-pill'));
+      const info=node('div',null,'storage-source-meta'); info.append(node('span',source.torrent_configured?`Client configuré : ${source.client_name||source.client_type||'BitTorrent'}`:'Aucun client BitTorrent associé à la source','storage-origin-badge '+(source.torrent_configured?'torrent':'local')));
+      info.append(node('span',source.read_only===true?'Montage lecture seule':source.read_only===false?'Montage accessible en écriture':'Mode d’accès indéterminé','storage-source-access'));
+      card.append(top,node('code',source.path||'','storage-path'),info); sources.append(card);});
+    (result.volumes||[]).forEach((volume,index)=>{const card=node('div',null,'storage-volume-item'),free=volume.total?Number(volume.free)/Number(volume.total)*100:0,names=(volume.sources||[]).map(x=>x.name).join(' + ');
+      card.append(node('strong',names||`Volume ${index+1}`),node('span',`${size(volume.free)} libres sur ${size(volume.total)} · ${free.toFixed(1)} %`,'storage-volume-space'));
+      const bar=node('div',null,'storage-space-bar'),fill=node('i'); fill.style.width=`${Math.max(0,Math.min(100,free))}%`; bar.append(fill); card.append(bar); volumes.append(card);});
+  }
+  function syncScanUi(scan) {
+    const running=!!scan?.running,button=$('scan-storage'),progress=$('storage-scan-progress'),percent=Number(scan?.progress||0); button.disabled=running; button.textContent=running?'Analyse en cours…':'Analyser les doublons'; progress.value=Math.max(0,Math.min(100,percent));
+    const current=Number(scan?.current||0),total=Number(scan?.total||0),countText=total?` · ${current}/${total}`:''; $('storage-scan-status').textContent=scan?.message||'Analyse à lancer.';
+    $('storage-scan-detail').textContent=running?`${percent} %${countText}${scan?.phase?' · '+scan.phase:''}`:(scan?.phase==='error'?'Le dernier scan s’est terminé sur une erreur.':percent===100?'Dernière analyse terminée.':'');
+    if(running&&!scanTimer){scanTimer=setInterval(()=>loadStorage().catch(error=>{clearInterval(scanTimer);scanTimer=null;button.disabled=false;$('storage-scan-status').textContent=error.message;}),1500);} else if(!running&&scanTimer){clearInterval(scanTimer);scanTimer=null;}
+  }
+  function appendDuplicateFile(list,file,digest,index){const li=node('li',null,'storage-copy-item'),main=node('div',null,'storage-copy-main'),keep=document.createElement('input');keep.type='radio';keep.name='keep-'+digest;keep.value=file.id;keep.checked=index===0;
+    const link=node('a',file.name||file.id);link.href='/watch/'+encodeURIComponent(file.id);main.append(keep,node('span','Garder','storage-keep-label'),link);const details=node('div',null,'storage-copy-details');details.append(node('span',file.root_name||'Source inconnue','storage-source-name'),node('code',file.path||file.relative_path||'Chemin indisponible','storage-copy-path'),storageOriginBadge(file));if(file.cross_seed)details.append(node('span','cross-seed','storage-origin-badge cross-seed'));li.append(main,details);list.append(li);}
   function renderCopies(result) {
-    const copies = $('storage-copies'); copies.replaceChildren();
-    if (!result.copies.length) copies.textContent = 'Aucune copie physique vérifiée.';
-    result.copies.forEach(group => {
-      const wrap = node('div', null, 'storage-group');
-      wrap.append(node('strong', `${group.items.length} chemins · jusqu’à ${size(group.estimated_bytes)} récupérables`));
-      const list = node('ul');
-      group.items.forEach((id, index) => {
-        const li = node('li'), keep = document.createElement('input'), link = node('a', group.names[index]);
-        keep.type = 'radio'; keep.name = 'keep-' + group.digest; keep.value = id; keep.checked = index === 0;
-        link.href = '/watch/' + encodeURIComponent(id); li.append(keep, ' Garder ', link); list.append(li);
-      });
-      wrap.append(list);
-      if (result.admin) {
-        const button = node('button', 'Supprimer les autres copies', 'btn btn-danger');
-        button.onclick = async () => {
-          const keep = wrap.querySelector('input:checked')?.value;
-          if (!confirm(`Conserver ${group.names[group.items.indexOf(keep)]} et supprimer les autres copies ? Les médias liés à BitTorrent ou protégés sont bloqués.`)) return;
-          button.disabled = true;
-          try { await post('/api/storage/duplicates/delete', {digest:group.digest, keep, confirmation:'SUPPRIMER'}); await loadStorage(); }
-          catch (error) { alert('Suppression refusée : ' + error.message); button.disabled = false; }
-        };
-        wrap.append(button);
-      }
-      copies.append(wrap);
-    });
-    const links = $('storage-links'); links.replaceChildren();
-    if (!result.links.length) links.textContent = 'Aucun lien physique partagé dans les sources.';
-    result.links.forEach(group => {
-      const wrap = node('div', null, 'storage-group');
-      wrap.append(node('strong', `${group.items.length} chemins · même fichier physique · aucune copie supplémentaire`));
-      const list = node('ul');
-      group.items.forEach((id, index) => {
-        const li = node('li'), link = node('a', group.names[index]); link.href = '/watch/' + encodeURIComponent(id);
-        li.append(link); list.append(li);
-      }); wrap.append(list); links.append(wrap);
-    });
+    const copies=$('storage-copies');copies.replaceChildren();if(!result.copies.length)copies.textContent='Aucune copie physique vérifiée.';
+    result.copies.forEach(group=>{const wrap=node('div',null,'storage-group');wrap.append(node('strong',`${group.items.length} chemins · jusqu’à ${size(group.estimated_bytes)} récupérables`));const list=node('ul',null,'storage-copy-list');const files=group.files||group.items.map(id=>({id,name:id,management:'unknown',management_label:'Informations non disponibles'}));files.forEach((file,index)=>appendDuplicateFile(list,file,group.digest,index));wrap.append(list);
+      if(result.admin){const button=node('button','Supprimer les autres copies','btn btn-danger');button.onclick=async()=>{const keep=wrap.querySelector('input:checked')?.value,kept=files.find(f=>f.id===keep);if(!keep)return;if(!confirm(`Conserver ${kept?.name||keep} et supprimer les autres copies ? Les contrôles serveur restent appliqués.`))return;button.disabled=true;try{await post('/api/storage/duplicates/delete',{digest:group.digest,keep,confirmation:'SUPPRIMER'});await loadStorage();}catch(error){alert('Suppression refusée : '+error.message);button.disabled=false;}};wrap.append(button);}copies.append(wrap);});
+    const links=$('storage-links');links.replaceChildren();if(!result.links.length)links.textContent='Aucun lien physique partagé dans les sources.';result.links.forEach(group=>{const wrap=node('div',null,'storage-group');wrap.append(node('strong',`${group.items.length} chemins · même fichier physique · aucune copie supplémentaire`));const list=node('ul',null,'storage-copy-list');(group.files||[]).forEach(file=>{const li=node('li',null,'storage-copy-item'),link=node('a',file.name||file.id);link.href='/watch/'+encodeURIComponent(file.id);const details=node('div',null,'storage-copy-details');details.append(node('span',file.root_name||'Source inconnue','storage-source-name'),node('code',file.path||file.relative_path||'','storage-copy-path'),storageOriginBadge(file));li.append(link,details);list.append(li);});wrap.append(list);links.append(wrap);});
   }
   function selectionStatus() {
     $('storage-selected-count').textContent = `${selected.size} sélectionné(s)`;
@@ -172,29 +165,13 @@
     }
   }
   async function loadStorage() {
-    const query = new URLSearchParams({filter:$('storage-filter').value, sort:$('storage-sort').value, page});
-    const result = await json('/api/storage?' + query);
-    lastResult = result;
-    const mounts = $('storage-mounts'); mounts.replaceChildren();
-    result.mounts.forEach(mount => mounts.append(node('div', `${mount.name} (${mount.path}) — ${size(mount.free)} libres sur ${size(mount.total)} (${(mount.free / mount.total * 100).toFixed(1)} %)`)));
-    $('storage-scan-status').textContent = result.scan.running ? result.scan.message :
-      result.scanned_at ? `Dernière analyse : ${date(result.scanned_at)}. ${result.scan.message || ''}` : 'Analyse à lancer.';
-    renderCopies(result); renderItems(result.items, result.admin);
-    $('storage-total').textContent = `(${result.count})`;
-    $('storage-page').textContent = `${page} / ${Math.max(1, Math.ceil(result.count / 100))}`;
-    $('storage-prev').disabled = page <= 1;
-    $('storage-next').disabled = page * 100 >= result.count;
-    $('storage-select-page').disabled = !result.admin || !result.items.length;
-    selectionStatus(); displayMode();
+    const query=new URLSearchParams({filter:$('storage-filter').value,sort:$('storage-sort').value,page});const result=await json('/api/storage?'+query);lastResult=result;renderStorageOverview(result);syncScanUi(result.scan||{});renderCopies(result);renderItems(result.items,result.admin);
+    $('storage-total').textContent=`(${result.count})`;$('storage-page').textContent=`${page} / ${Math.max(1,Math.ceil(result.count/100))}`;$('storage-prev').disabled=page<=1;$('storage-next').disabled=page*100>=result.count;$('storage-select-page').disabled=!result.admin||!result.items.length;selectionStatus();displayMode();
   }
   async function loadAutomation() {
-    const data = await json('/api/storage/automation');
-    $('automation-enabled').checked = !!data.settings.enabled;
-    $('automation-owner').value = data.settings.owner_id || '';
-    $('automation-here').dataset.instance = data.instance_id;
-    $('automation-status').textContent = data.active ? 'Actif sur cette instance.' :
-      data.sync_configured ? 'Suspendu ou exécuté par une autre instance.' : 'Synchronisation non configurée : activation impossible.';
-    $('federation-status').textContent = `Fédération : ${data.sync_configured ? data.peer_count + ' pair(s) configuré(s)' : 'non configurée'} · Identifiant de cette instance : ${data.instance_id}`;
+    const data=await json('/api/storage/automation');$('automation-enabled').checked=!!data.settings.enabled;$('automation-owner').value=data.settings.owner_id||'';$('automation-here').dataset.instance=data.instance_id;const list=$('automation-sources');list.replaceChildren();const selected=new Set((data.cleanup_roots||[]).map(Number));
+    (data.sources||[]).forEach(source=>{const label=node('label',null,'automation-source-item'),box=document.createElement('input');box.type='checkbox';box.value=String(source.root);box.checked=selected.has(Number(source.root));box.disabled=!source.eligible;label.append(box,node('span',`${source.name} (${source.path})${source.client_name?' · '+source.client_name:''}${source.eligible?'':' · non éligible au nettoyage auto'}`));list.append(label);});
+    $('automation-status').textContent=data.active?'Actif sur cette instance.':data.sync_configured?'Suspendu ou exécuté par une autre instance.':'Synchronisation non configurée : activation impossible.';$('federation-status').textContent=`Fédération : ${data.sync_configured?data.peer_count+' pair(s) configuré(s)':'non configurée'} · Identifiant de cette instance : ${data.instance_id}`;
   }
   function defaultPayload() {
     return {ratio:Number($('default-ratio').value), seed_seconds:Math.round(Number($('default-days').value) * 86400),
@@ -267,17 +244,12 @@
     };
     $('scan-storage').onclick = async () => {
       const button = $('scan-storage'); button.disabled = true;
-      try {
-        await json('/api/storage/scan', {method:'POST'});
-        const timer = setInterval(async () => {
-          try { await loadStorage(); if (!lastResult.scan.running) { clearInterval(timer); button.disabled = false; } }
-          catch (error) { clearInterval(timer); button.disabled = false; alert(error.message); }
-        }, 2500);
-      } catch (error) { button.disabled = false; alert(error.message); }
+      try { await json('/api/storage/scan', {method:'POST'}); await loadStorage(); }
+      catch (error) { button.disabled = false; alert(error.message); }
     };
     $('automation-here').onclick = event => { $('automation-owner').value = event.currentTarget.dataset.instance || ''; };
     $('automation-save').onclick = async () => {
-      try { await post('/api/storage/automation', {enabled:$('automation-enabled').checked, owner_id:$('automation-owner').value}); await loadAutomation(); }
+      try { const cleanupRoots=[...document.querySelectorAll('#automation-sources input:checked')].map(box=>Number(box.value)); await post('/api/storage/automation', {enabled:$('automation-enabled').checked, owner_id:$('automation-owner').value, cleanup_roots:cleanupRoots}); await loadAutomation(); }
       catch (error) { $('automation-status').textContent = 'Enregistrement refusé : ' + error.message; }
     };
     $('default-trigger').onchange = () => { $('default-space-thresholds').hidden = $('default-trigger').value !== 'pressure'; };

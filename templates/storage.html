@@ -20,15 +20,17 @@
       <div class="storage-view-controls"><button type="button" class="btn" id="storage-layout" aria-label="Changer l'affichage">Affichage : liste</button>
         <button type="button" class="btn" id="storage-width" aria-label="Changer la largeur">Largeur : standard</button></div>
     </div>
-    <section class="card"><div class="card-body">
-      <div id="storage-mounts" class="storage-mounts"></div>
-      <button class="btn btn-primary" id="scan-storage">Analyser les doublons</button>
-      <span class="text-muted" id="storage-scan-status" role="status"></span>
-      <p class="meta">Les copies sont vérifiées par SHA‑256. Les liens physiques et torrents cross-seed ne comptent pas comme plusieurs fichiers. La place indiquée reste une estimation sur les volumes avec snapshots ou reflinks.</p>
+    <section class="card storage-scope-card"><header class="card-header"><h3 class="card-title">Périmètre du stockage</h3></header><div class="card-body">
+      <div class="storage-overview-grid"><div><div class="storage-overview-heading"><strong>Sources vidéo analysées</strong><span class="storage-count-pill" id="storage-source-count">—</span></div><div id="storage-sources" class="storage-source-list"></div></div>
+      <div><div class="storage-overview-heading"><strong>Stockage physique</strong><span class="meta storage-inline-meta">Une seule fois par volume.</span></div><div id="storage-volumes" class="storage-volume-list"></div></div></div>
+      <div class="storage-scan-box"><div class="storage-scan-actions"><button class="btn btn-primary" id="scan-storage">Analyser les doublons</button><span class="text-muted" id="storage-scan-status" role="status">Analyse à lancer.</span></div>
+      <progress id="storage-scan-progress" class="storage-scan-progress" max="100" value="0"></progress><div class="storage-scan-detail" id="storage-scan-detail"></div></div>
+      <p class="meta storage-help">Les copies sont vérifiées par SHA‑256. Les liens physiques et torrents cross-seed ne comptent pas comme plusieurs fichiers. La place récupérable reste une estimation.</p>
     </div></section>
     <section class="card"><header class="card-header"><h3 class="card-title">Nettoyage automatique</h3></header><div class="card-body">
       <p class="meta">Désactivé par défaut. L’activation exige une synchronisation configurée et une seule instance propriétaire. La file reste consultable ci-dessous.</p>
       <label><input type="checkbox" id="automation-enabled"> Autoriser le nettoyage automatique</label>
+      <div class="automation-source-scope"><strong>Sources vidéo autorisées</strong><p class="meta">Le nettoyage auto ne pourra agir que sur les sources sélectionnées.</p><div id="automation-sources" class="automation-source-list"></div></div>
       <label>Propriétaire <input id="automation-owner" autocomplete="off" placeholder="Identifiant d’instance"></label>
       <button class="btn" id="automation-here">Définir cette instance</button>
       <button class="btn btn-primary" id="automation-save">Enregistrer</button>
