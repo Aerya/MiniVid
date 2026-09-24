@@ -27,47 +27,150 @@
       <progress id="storage-scan-progress" class="storage-scan-progress" max="100" value="0"></progress><div class="storage-scan-detail" id="storage-scan-detail"></div></div>
       <p class="meta storage-help">Les copies sont vérifiées par SHA‑256. Les liens physiques et torrents cross-seed ne comptent pas comme plusieurs fichiers. La place récupérable reste une estimation.</p>
     </div></section>
-    <section class="card"><header class="card-header"><h3 class="card-title">Nettoyage automatique</h3></header><div class="card-body">
-      <p class="meta">Désactivé par défaut. L’activation exige une synchronisation configurée et une seule instance propriétaire. La file reste consultable ci-dessous.</p>
-      <label><input type="checkbox" id="automation-enabled"> Autoriser le nettoyage automatique</label>
-      <div class="automation-source-scope"><strong>Sources vidéo autorisées</strong><p class="meta">Le nettoyage auto ne pourra agir que sur les sources sélectionnées.</p><div id="automation-sources" class="automation-source-list"></div></div>
-      <label>Propriétaire <input id="automation-owner" autocomplete="off" placeholder="Identifiant d’instance"></label>
-      <button class="btn" id="automation-here">Définir cette instance</button>
-      <button class="btn btn-primary" id="automation-save">Enregistrer</button>
-      <p class="meta" id="automation-status"></p>
-      <p class="meta" id="federation-status"></p>
-    </div></section>
-    <section class="card" id="cleanup-defaults"><header class="card-header"><h3 class="card-title">Règle par défaut des nouveaux candidats</h3></header><div class="card-body">
-      <p class="meta">Appliquée lorsque vous choisissez « Autoriser le nettoyage » pour une nouvelle vidéo. Les règles déjà enregistrées ne changent pas. L'automatisation reste désactivée tant que vous ne l'activez pas séparément.</p>
-      <div class="cleanup-policy storage-default-form">
-        <label>Ratio minimum <input id="default-ratio" type="number" min="0" max="1000" step="0.1" value="1"></label>
-        <label>Temps de seed minimum (jours) <input id="default-days" type="number" min="0" max="3650" value="7"></label>
-        <label>Condition <select id="default-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
-        <label>Déclencher <select id="default-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
-        <div id="default-space-thresholds"><label>Démarrer si l’espace libre passe sous (%) <input id="default-below" type="number" min="1" max="98" value="15"></label>
-          <label>Arrêter une fois l’espace libre remonté à (%) <input id="default-until" type="number" min="2" max="99" value="20"></label>
-          <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
+    <nav class="storage-section-tabs" role="tablist" aria-label="Vues du stockage">
+      <button type="button" class="storage-section-tab active" id="storage-tab-duplicates"
+              data-storage-section="duplicates" role="tab" aria-selected="true"
+              aria-controls="storage-panel-duplicates">
+        Doublons <span id="storage-duplicates-count" class="storage-tab-count">—</span>
+      </button>
+      <button type="button" class="storage-section-tab" id="storage-tab-cleanup"
+              data-storage-section="cleanup" role="tab" aria-selected="false"
+              aria-controls="storage-panel-cleanup">
+        Gain de place <span id="storage-cleanup-count" class="storage-tab-count">—</span>
+      </button>
+    </nav>
+
+    <section id="storage-panel-duplicates" class="storage-section-panel"
+             role="tabpanel" aria-labelledby="storage-tab-duplicates">
+      <section class="card">
+        <header class="card-header">
+          <h3 class="card-title">Copies vérifiées</h3>
+        </header>
+        <div class="card-body">
+          <p class="meta storage-duplicates-help">
+            Chaque groupe correspond à des fichiers distincts dont le contenu SHA‑256 est identique.
+            Le libellé « Torrent tagué cross-seed » décrit uniquement le torrent associé :
+            il ne signifie pas que les fichiers sont des hardlinks.
+          </p>
+          <div id="storage-copies">Lancez une analyse pour vérifier les copies.</div>
         </div>
-      </div>
-      <button class="btn btn-primary" id="default-save" type="button">Enregistrer la règle par défaut</button>
-      <span id="default-status" role="status"></span>
-    </div></section>
-    <section class="card"><header class="card-header"><h3 class="card-title">Copies vérifiées</h3></header>
-      <div class="card-body" id="storage-copies">Lancez une analyse pour vérifier les copies.</div></section>
-    <section class="card"><header class="card-header"><h3 class="card-title">Liens vers un même fichier physique</h3></header>
-      <div class="card-body" id="storage-links">—</div></section>
-    <section class="card"><header class="card-header"><h3 class="card-title">Fichiers <span id="storage-total"></span></h3></header>
-      <div class="card-body"><div class="storage-filters">
-        <label>Afficher <select id="storage-filter"><option value="all">Tous</option><option value="never">Jamais lancés</option><option value="abandoned">Arrêtés avant 30 %</option><option value="candidate">Candidats</option><option value="protected">Protégés</option></select></label>
-        <label>Trier <select id="storage-sort"><option value="size">Taille décroissante</option><option value="oldest">Plus anciens fichiers</option><option value="first_seen">Détectés le plus tôt</option><option value="last_played">Dernier visionnage le plus ancien</option><option value="plays">Nombre de démarrages</option><option value="progress">Progression maximale</option></select></label>
-      </div><div class="storage-selection-bar"><label><input type="checkbox" id="storage-select-page"> Sélectionner la page</label>
-        <span id="storage-selected-count">0 sélectionné</span>
-        <button id="storage-clear-selection" type="button" class="btn">Effacer la sélection</button>
-        <button id="storage-preview-selection" type="button" class="btn btn-danger" disabled>Examiner la suppression…</button></div>
-      <div class="table-responsive" id="storage-table-wrap"><table class="storage-table"><thead><tr><th><span class="visually-hidden">Sélection</span></th><th>Vidéo</th><th>Taille</th><th>Fichier du</th><th>Lectures</th><th>Max.</th><th>Dernière fois</th><th>Décision</th><th>Action</th></tr></thead><tbody id="storage-rows"></tbody></table></div>
-      <div id="storage-gallery" class="storage-gallery" hidden></div>
-      <div class="storage-pages"><button id="storage-prev" class="btn">Précédent</button><span id="storage-page"></span><button id="storage-next" class="btn">Suivant</button></div>
-    </div></section>
+      </section>
+
+      <section class="card">
+        <header class="card-header">
+          <h3 class="card-title">Liens vers un même fichier physique</h3>
+        </header>
+        <div class="card-body">
+          <p class="meta">
+            Ces chemins pointent vers le même inode et ne représentent pas plusieurs copies physiques.
+          </p>
+          <div id="storage-links">—</div>
+        </div>
+      </section>
+    </section>
+
+    <section id="storage-panel-cleanup" class="storage-section-panel"
+             role="tabpanel" aria-labelledby="storage-tab-cleanup" hidden>
+      <section class="card">
+        <header class="card-header"><h3 class="card-title">Nettoyage automatique</h3></header>
+        <div class="card-body">
+          <p class="meta">Désactivé par défaut. L’activation exige une synchronisation configurée et une seule instance propriétaire. La file reste consultable ci-dessous.</p>
+          <label><input type="checkbox" id="automation-enabled"> Autoriser le nettoyage automatique</label>
+          <div class="automation-source-scope">
+            <strong>Sources vidéo autorisées</strong>
+            <p class="meta">Le nettoyage auto ne pourra agir que sur les sources sélectionnées.</p>
+            <div id="automation-sources" class="automation-source-list"></div>
+          </div>
+          <label>Propriétaire <input id="automation-owner" autocomplete="off" placeholder="Identifiant d’instance"></label>
+          <button class="btn" id="automation-here">Définir cette instance</button>
+          <button class="btn btn-primary" id="automation-save">Enregistrer</button>
+          <p class="meta" id="automation-status"></p>
+          <p class="meta" id="federation-status"></p>
+        </div>
+      </section>
+
+      <section class="card" id="cleanup-defaults">
+        <header class="card-header"><h3 class="card-title">Règle par défaut des nouveaux candidats</h3></header>
+        <div class="card-body">
+          <p class="meta">Appliquée lorsque vous choisissez « Autoriser le nettoyage » pour une nouvelle vidéo. Les règles déjà enregistrées ne changent pas. L'automatisation reste désactivée tant que vous ne l'activez pas séparément.</p>
+          <div class="cleanup-policy storage-default-form">
+            <label>Ratio minimum <input id="default-ratio" type="number" min="0" max="1000" step="0.1" value="1"></label>
+            <label>Temps de seed minimum (jours) <input id="default-days" type="number" min="0" max="3650" value="7"></label>
+            <label>Condition <select id="default-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
+            <label>Déclencher <select id="default-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
+            <div id="default-space-thresholds">
+              <label>Démarrer si l’espace libre passe sous (%) <input id="default-below" type="number" min="1" max="98" value="15"></label>
+              <label>Arrêter une fois l’espace libre remonté à (%) <input id="default-until" type="number" min="2" max="99" value="20"></label>
+              <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="default-save" type="button">Enregistrer la règle par défaut</button>
+          <span id="default-status" role="status"></span>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card-header">
+          <h3 class="card-title">Fichiers <span id="storage-total"></span></h3>
+        </header>
+        <div class="card-body">
+          <div class="storage-filters">
+            <label>Afficher
+              <select id="storage-filter">
+                <option value="all">Tous</option>
+                <option value="never">Jamais lancés</option>
+                <option value="abandoned">Arrêtés avant 30 %</option>
+                <option value="candidate">Candidats</option>
+                <option value="protected">Protégés</option>
+              </select>
+            </label>
+            <label>Trier
+              <select id="storage-sort">
+                <option value="size">Taille décroissante</option>
+                <option value="oldest">Plus anciens fichiers</option>
+                <option value="first_seen">Détectés le plus tôt</option>
+                <option value="last_played">Dernier visionnage le plus ancien</option>
+                <option value="plays">Nombre de démarrages</option>
+                <option value="progress">Progression maximale</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="storage-selection-bar">
+            <label><input type="checkbox" id="storage-select-page"> Sélectionner la page</label>
+            <span id="storage-selected-count">0 sélectionné</span>
+            <button id="storage-clear-selection" type="button" class="btn">Effacer la sélection</button>
+            <button id="storage-preview-selection" type="button" class="btn btn-danger" disabled>Examiner la suppression…</button>
+          </div>
+
+          <div class="table-responsive" id="storage-table-wrap">
+            <table class="storage-table">
+              <thead>
+                <tr>
+                  <th><span class="visually-hidden">Sélection</span></th>
+                  <th>Vidéo</th>
+                  <th>Taille</th>
+                  <th>Fichier du</th>
+                  <th>Lectures</th>
+                  <th>Max.</th>
+                  <th>Dernière fois</th>
+                  <th>Décision</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="storage-rows"></tbody>
+            </table>
+          </div>
+
+          <div id="storage-gallery" class="storage-gallery" hidden></div>
+          <div class="storage-pages">
+            <button id="storage-prev" class="btn">Précédent</button>
+            <span id="storage-page"></span>
+            <button id="storage-next" class="btn">Suivant</button>
+          </div>
+        </div>
+      </section>
+    </section>
   </main>
   <dialog id="storage-selection-dialog" class="storage-dialog"><h3>Examiner la sélection</h3><div id="storage-selection-summary"></div>
     <label>Confirmation <input id="storage-selection-confirm" autocomplete="off" placeholder="SUPPRIMER 3"></label>
