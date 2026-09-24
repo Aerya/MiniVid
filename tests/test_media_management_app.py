@@ -333,6 +333,75 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertFalse(response.get_json()["ok"])
 
+    def test_default_rule_is_saved_and_signed_sync_applies_without_enabling_automation(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.object(minivid, "STORAGE_DB", os.path.join(root, "storage.db")):
+            desired = {"ratio": 2, "seed_seconds": 3600, "seed_operator": "or",
+                       "trigger_mode": "pressure", "free_below": 12, "free_until": 22}
+            with mock.patch.object(minivid, "_emit_storage_event") as emit:
+                response = self.client.post("/api/storage/default-rule", json=desired)
+            self.assertEqual(response.status_code, 200, response.get_json())
+            emit.assert_called_once_with("defaults", "", desired)
+            self.assertEqual(self.client.get("/api/storage/default-rule").get_json()["rule"], desired)
+            self.assertFalse(minivid.storage.settings(minivid.STORAGE_DB)["enabled"])
+            self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+            with mock.patch.object(minivid, "_configured_client", return_value=FakeTorrentClient()):
+                candidate = self.client.post(f"/api/storage/rule/{self.vid}", json={"mode": "candidate"})
+            self.assertEqual(candidate.status_code, 200, candidate.get_json())
+            self.assertEqual(candidate.get_json()["rule"]["ratio"], 2)
+            self.assertEqual(candidate.get_json()["rule"]["free_until"], 22)
+            remote = dict(desired, ratio=3)
+            event = {"kind": "defaults", "content_key": "", "value": remote,
+                     "revision": 5 * 10**18, "origin": "remote-instance"}
+            raw = json.dumps(event, separators=(",", ":"), sort_keys=True).encode()
+            with mock.patch.object(minivid, "SYNC_SECRET", "s" * 32):
+                result = self.client.post("/api/storage/sync", data=raw,
+                                          headers={"X-MiniVid-Sync": minivid._sync_signature(raw)})
+            self.assertEqual(result.status_code, 200, result.get_json())
+            self.assertEqual(minivid.storage.default_rule(minivid.STORAGE_DB)["ratio"], 3)
+            self.assertEqual(minivid.storage.get_rule(minivid.STORAGE_DB, self.vid, os.stat(self.video_path))["ratio"], 2)
+            self.assertFalse(minivid.storage.settings(minivid.STORAGE_DB)["enabled"])
+
+    def test_storage_selection_previews_blocked_items_and_checks_file_identity(self):
+        second_name = "second.mkv"
+        second_path = os.path.join(VIDEO_ROOT, second_name)
+        with open(second_path, "wb") as handle:
+            handle.write(b"another video")
+        try:
+            minivid.scan_media()
+            second_id = minivid.id_for(0, second_name)
+            self.save_config(deletion_enabled=True, delete_mode="file")
+            html = self.client.get("/storage").get_data(as_text=True)
+            self.assertIn('id="storage-gallery"', html)
+            self.assertIn('id="storage-width"', html)
+            self.assertIn('id="storage-select-page"', html)
+            self.client.post("/api/fav", json={"vid": second_id, "fav": True})
+            preview = self.client.post("/api/storage/selection/preview", json={"items": [self.vid, second_id]})
+            self.assertEqual(preview.status_code, 200, preview.get_json())
+            self.assertEqual(len(preview.get_json()["ready"]), 1)
+            self.assertEqual(len(preview.get_json()["blocked"]), 1)
+            self.assertEqual(self.client.post("/api/storage/selection/delete", json={
+                "items": preview.get_json()["ready"] + [{"id": second_id, "identity": "blocked"}],
+                "confirmation": "SUPPRIMER 2"}).status_code, 409)
+            self.assertTrue(os.path.exists(self.video_path))
+            self.client.post("/api/fav", json={"vid": second_id, "fav": False})
+            ready = self.client.post("/api/storage/selection/preview", json={"items": [self.vid]}).get_json()["ready"]
+            with open(self.video_path, "ab") as handle:
+                handle.write(b"changed")
+            changed = self.client.post("/api/storage/selection/delete", json={
+                "items": ready, "confirmation": "SUPPRIMER 1"})
+            self.assertEqual(changed.status_code, 409)
+            self.assertTrue(os.path.exists(self.video_path))
+            ready = self.client.post("/api/storage/selection/preview", json={"items": [self.vid]}).get_json()["ready"]
+            deleted = self.client.post("/api/storage/selection/delete", json={
+                "items": ready, "confirmation": "SUPPRIMER 1"})
+            self.assertEqual(deleted.status_code, 200, deleted.get_json())
+            self.assertFalse(os.path.exists(self.video_path))
+            self.assertTrue(os.path.exists(second_path))
+        finally:
+            self.client.post("/api/fav", json={"vid": minivid.id_for(0, second_name), "fav": False})
+            os.remove(second_path)
+            minivid.scan_media()
+
     def test_corrupted_media_shows_a_clear_error_instead_of_a_player(self):
         with mock.patch.object(minivid, "_is_decodable_media", return_value=False):
             response = self.client.get(f"/watch/{self.vid}")

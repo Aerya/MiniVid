@@ -35,6 +35,34 @@
 .cleanup-policy label { display: inline-flex; flex-direction: column; gap: .2rem; margin: .35rem .7rem .35rem 0; }
 .cleanup-policy input, .cleanup-policy select, .storage-filters select { padding: .4rem; max-width: 16rem; }
 .cleanup-policy #cleanup-status { display: inline-block; margin-left: .6rem; }
+.storage-page { width: min(calc(100% - 2rem), 1180px); max-width: none; }
+.storage-page[data-width="wide"] { width: min(calc(100% - 2rem), 1760px); }
+.storage-page[data-width="full"] { width: calc(100% - 2rem); }
+.storage-view-controls, .storage-selection-bar, .storage-dialog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
+.storage-selection-bar { padding: .5rem 0 1rem; }
+.storage-selection-bar label { display: inline-flex; align-items: center; gap: .35rem; }
+.storage-media-cell { min-width: 210px; }
+.storage-media-content { display: flex; align-items: center; gap: .7rem; }
+.storage-row-image { display: block; flex: 0 0 88px; height: 52px; overflow: hidden; border-radius: 6px; background: var(--surface-3); }
+.storage-row-image img, .storage-card-image img { width: 100%; height: 100%; object-fit: cover; }
+.storage-media-content div { min-width: 0; overflow-wrap: anywhere; }
+.storage-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 1rem; }
+.storage-gallery[hidden], .table-responsive[hidden], #default-space-thresholds[hidden], #cleanup-space-thresholds[hidden], #cleanup-conditions[hidden] { display: none !important; }
+.storage-media-card { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); overflow: hidden; min-width: 0; }
+.storage-image-wrap { position: relative; }
+.storage-card-image { display: block; height: 160px; background: var(--surface-3); }
+.storage-no-image { background: var(--surface-3); }
+.storage-card-check { position: absolute; top: .5rem; left: .5rem; border-radius: 5px; background: var(--surface); padding: .3rem .5rem; }
+.storage-card-content { padding: .8rem; display: grid; gap: .35rem; min-width: 0; }
+.storage-card-content small { color: var(--muted); }
+.storage-card-title { font-weight: 700; overflow-wrap: anywhere; }
+.storage-card-content .btn { justify-self: start; margin-top: .4rem; }
+.storage-dialog { color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; max-height: min(85vh, 850px); width: min(92vw, 650px); overflow: auto; }
+.storage-dialog::backdrop { background: rgba(0, 0, 0, .7); }
+.storage-dialog li { margin: .35rem 0; overflow-wrap: anywhere; }
+.storage-dialog-actions { justify-content: end; margin-top: 1rem; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+@media (max-width: 760px) { .storage-page, .storage-page[data-width="wide"], .storage-page[data-width="full"] { width: calc(100% - 1rem); } }
 
 html.light {
   color-scheme: light;

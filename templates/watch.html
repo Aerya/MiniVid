@@ -169,9 +169,13 @@
             <label>Temps de seed minimum (jours) <input id="cleanup-days" type="number" min="0" max="3650" value="7" /></label>
             <label>Condition <select id="cleanup-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
             <label>Déclencher <select id="cleanup-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
-            <label>Espace libre sous (%) <input id="cleanup-below" type="number" min="1" max="98" value="15" /></label>
-            <label>Nettoyer jusqu'à (%) <input id="cleanup-until" type="number" min="2" max="99" value="20" /></label>
+            <div id="cleanup-space-thresholds">
+              <label>Démarrer si l’espace libre passe sous (%) <input id="cleanup-below" type="number" min="1" max="98" value="15" /></label>
+              <label>Arrêter une fois l’espace libre remonté à (%) <input id="cleanup-until" type="number" min="2" max="99" value="20" /></label>
+              <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
+            </div>
           </div>
+          <p class="meta">La règle par défaut des nouveaux candidats se configure sur <a href="/storage#cleanup-defaults">Stockage</a>. Modifier ce défaut ne change pas les décisions déjà enregistrées.</p>
           <button id="cleanup-save" type="button" class="btn btn-primary">Enregistrer la décision</button>
           <span id="cleanup-status" role="status"></span>
         </div>
@@ -380,19 +384,36 @@
       }
     }
 
+    let cleanupDefaults = null;
+    let savedCleanupCandidate = false;
+    function showCleanupThresholds() {
+      document.getElementById('cleanup-conditions').hidden = document.getElementById('cleanup-mode').value !== 'candidate';
+      document.getElementById('cleanup-space-thresholds').hidden = document.getElementById('cleanup-trigger').value !== 'pressure';
+    }
+    function fillCleanupConditions(rule) {
+      document.getElementById('cleanup-ratio').value = rule.ratio ?? 1;
+      document.getElementById('cleanup-days').value = (rule.seed_seconds ?? 604800) / 86400;
+      document.getElementById('cleanup-operator').value = rule.seed_operator || 'and';
+      document.getElementById('cleanup-trigger').value = rule.trigger_mode || 'pressure';
+      document.getElementById('cleanup-below').value = rule.free_below ?? 15;
+      document.getElementById('cleanup-until').value = rule.free_until ?? 20;
+      showCleanupThresholds();
+    }
+    document.getElementById('cleanup-mode')?.addEventListener('change', event => {
+      if (event.target.value === 'candidate' && !savedCleanupCandidate && cleanupDefaults) fillCleanupConditions(cleanupDefaults);
+      showCleanupThresholds();
+    });
+    document.getElementById('cleanup-trigger')?.addEventListener('change', showCleanupThresholds);
     async function loadCleanupRule() {
       const message = document.getElementById('cleanup-status');
       try {
         const response = await fetch('/api/storage/rule/' + encodeURIComponent(VID), { credentials:'same-origin' });
         const data = await response.json(); if (!response.ok) throw new Error(data.error);
         const rule = data.rule || {};
+        cleanupDefaults = data.default_rule || {};
+        savedCleanupCandidate = rule.mode === 'candidate';
         document.getElementById('cleanup-mode').value = rule.mode || 'none';
-        document.getElementById('cleanup-ratio').value = rule.ratio ?? 1;
-        document.getElementById('cleanup-days').value = (rule.seed_seconds ?? 604800) / 86400;
-        document.getElementById('cleanup-operator').value = rule.seed_operator || 'and';
-        document.getElementById('cleanup-trigger').value = rule.trigger_mode || 'pressure';
-        document.getElementById('cleanup-below').value = rule.free_below ?? 15;
-        document.getElementById('cleanup-until').value = rule.free_until ?? 20;
+        fillCleanupConditions(savedCleanupCandidate ? rule : cleanupDefaults);
         message.textContent = data.reason + (data.automation_active ? '' : ' · Exécution automatique inactive sur cette instance.');
       } catch (error) { message.textContent = error.message; }
     }
@@ -406,6 +427,7 @@
         const response = await fetch('/api/storage/rule/' + encodeURIComponent(VID), { method:'POST',
           credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         const data = await response.json(); if (!response.ok) throw new Error(data.error);
+        savedCleanupCandidate = data.rule?.mode === 'candidate';
         message.textContent = 'Décision enregistrée. ' + data.reason + (data.automation_active ? '' : ' · Exécution automatique inactive sur cette instance.');
       } catch (error) { message.textContent = 'Enregistrement refusé : ' + error.message; }
     });

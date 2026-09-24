@@ -92,6 +92,26 @@ La configuration se fait dans **Maintenance > Sources vidéo et clients BitTorre
 
 MiniVid affiche les torrents correspondant au fichier. La suppression « torrent et données » retire les torrents associés, y compris les variantes cross-seed reconnues, et vérifie le résultat avant de retirer la vidéo de l'index. La suppression d’un favori affiche un avertissement supplémentaire et demande toujours la confirmation finale. La suppression exige l'authentification MiniVid. Les mots de passe des clients sont chiffrés avec `SECRET_KEY` ; changer cette clé oblige à les saisir de nouveau.
 
+## Stockage et nettoyage
+
+La page **Stockage** (`/storage`) propose une liste triable ou une galerie avec vignettes. Un bouton choisit une largeur standard, large ou plein écran ; ces préférences d'affichage sont conservées dans le navigateur. La page trie les vidéos par taille, date du fichier, démarrages, dernière lecture et position maximale atteinte. Les statistiques de lecture commencent à être collectées après cette mise à jour : l'ancien état « lu » ne permet pas de reconstituer le nombre de lectures. La position maximale peut inclure un saut dans la vidéo ; le temps regardé est mesuré séparément.
+
+Le bouton **Analyser les doublons** lit et hache avec SHA-256 les fichiers de même taille placés sur des inodes distincts. Deux chemins vers un même inode sont signalés comme liens physiques, sans compter pour deux copies. Les tags `cross-seed` de qBittorrent sont affichés ; MiniVid vérifie les chemins et, si les fichiers sont accessibles dans une même source montée, les inodes avant de rapprocher les torrents. La place récupérable reste une estimation (snapshots et reflinks peuvent la modifier). Vous pouvez cocher des médias sur plusieurs pages pour prévisualiser une suppression manuelle : les favoris, vidéos protégées, liens physiques et torrents non vérifiables sont bloqués. L'option globale de suppression reste obligatoire.
+
+Sur chaque vidéo, **Candidat au nettoyage** enregistre un ratio et un temps de seed minimum (ET/OU), avec un déclenchement immédiat ou selon l'espace libre. **Démarrer sous 15 % libres** signifie que le nettoyage peut commencer lorsque l'espace disponible passe sous 15 % ; **arrêter à 20 % libres** signifie qu'il s'arrête une fois 20 % libres retrouvés. Le seuil d'arrêt doit dépasser celui de démarrage. La règle par défaut des **nouveaux** candidats se configure sur `/storage` ; elle ne modifie pas les décisions existantes. **Protéger** exclut le fichier ; les favoris sont toujours exclus. Une règle s'applique à la version exacte du fichier (inode, taille, date de modification). Une vidéo remplacée doit être réautorisée.
+
+L'exécution automatique est **désactivée par défaut**, même après une mise à jour ou une migration. Pour fédérer deux instances, renseignez leur fichier `.env` (chargé par Docker Compose) avec le même secret aléatoire d'au moins 16 caractères, deux identifiants distincts et des URL joignables *depuis l'autre conteneur* :
+
+| Instance A | Instance B |
+| --- | --- |
+| `MINI_INSTANCE_ID=mini-a` | `MINI_INSTANCE_ID=mini-b` |
+| `MINI_SYNC_SECRET=<meme-long-secret-aleatoire>` | `MINI_SYNC_SECRET=<meme-long-secret-aleatoire>` |
+| `MINI_SYNC_PEERS=http://mini-b:8080` | `MINI_SYNC_PEERS=http://mini-a:8080` |
+
+Remplacez les noms d'hôtes par les adresses réelles : `mini-a` et `mini-b` sont des exemples, pas des noms de services Docker Compose. Conservez `/data/instance-id` sur chaque installation : si ce fichier existe déjà, son identifiant prime sur `MINI_INSTANCE_ID`. Redémarrez les conteneurs après modification de leur environnement. La page Stockage indique l'identifiant local effectif et si des pairs sont configurés. Les favoris, protections, candidatures, conditions, **règle par défaut des nouveaux candidats** et état global arrêté/actif sont transmis sous forme d'événements signés. Les décisions vidéo utilisent l'empreinte SHA-256 du contenu : des chemins Docker différents ne créent pas de copies fictives. La transmission est au mieux : un pair indisponible lors d'un changement ne récupère pas automatiquement cet événement ultérieurement. Vérifiez la synchronisation avant d'activer le nettoyage. Choisissez un seul propriétaire dans Stockage, puis activez explicitement l'automatisation ; l'ancienne variable `MINI_CLEANUP_OWNER` est ignorée.
+
+Le traitement toutes les dix minutes exige une authentification, des pairs configurés, un propriétaire nommé, la suppression BitTorrent autorisée, exactement un client qBittorrent et une source en mode `torrent`. Il revérifie les torrents associés, chemins, identité du fichier et liens physiques juste avant la suppression. Un verrou du système de fichiers par stockage évite deux traitements simultanés des mêmes données. Un client indisponible ou un chemin invérifiable bloque le fichier et journalise la raison. Avec ruTorrent, le temps de seed est inconnu et ne satisfait jamais une condition temporelle. Le montage média Docker Compose par défaut est en lecture seule : la suppression manuelle de fichiers exige un montage inscriptible, tandis que les données BitTorrent sont supprimées par le client.
+
 ## Configuration utile
 
 | Variable | Défaut | Rôle |
@@ -106,6 +126,9 @@ MiniVid affiche les torrents correspondant au fichier. La suppression « torrent
 | `MINI_SCAN_INTERVAL` | `3600` | Intervalle de scan en secondes |
 | `MINI_USER` / `MINI_PASS` | vides | Active l'authentification si les deux sont définis |
 | `SECRET_KEY` | aléatoire | Sessions et chiffrement des identifiants clients |
+| `MINI_INSTANCE_ID` | conservé dans `/data/instance-id` | Identifiant distinct (à définir avant le premier démarrage) |
+| `MINI_SYNC_SECRET` | vide | Secret commun de signature (16 caractères minimum) |
+| `MINI_SYNC_PEERS` | vide | URL de base des pairs joignables, séparées par des virgules |
 
 ## Maintenance et mises à jour
 
@@ -127,14 +150,3 @@ Le script est fourni **tel quel** (« as is »). Il n'a pas été testé sur une
 ## Vie privée
 
 Les vidéos, l'index, les miniatures et les préférences restent sur votre installation. Le chargement de `hls.js` depuis son CDN nécessite un accès externe.
-# Stockage et nettoyage
-
-La page **Stockage** (`/storage`) trie les vidéos par taille, date du fichier, démarrages, dernière lecture et position maximale atteinte. Les statistiques de lecture commencent à être collectées après cette mise à jour : l'ancien état « lu » ne permet pas de reconstituer le nombre de lectures ni leur progression historique. La position maximale est une position atteinte, qui peut inclure un saut dans la vidéo ; le temps regardé est mesuré séparément.
-
-Le bouton **Analyser les doublons** lit et hache avec SHA‑256 les fichiers de même taille placés sur des inodes distincts. Deux chemins vers un même inode sont signalés comme liens physiques sans être comptés comme deux copies. Les tags `cross-seed` de qBittorrent sont affichés ; MiniVid vérifie les chemins et, si les fichiers sont accessibles dans une même source montée, les inodes avant de rapprocher les torrents. Le chiffre d'espace récupérable est une estimation (snapshots et reflinks peuvent la modifier).
-
-Sur chaque vidéo, **Candidat au nettoyage** enregistre les seuils de ratio et de temps de seed (ET/OU), puis un déclenchement immédiat ou sous un pourcentage d'espace libre. **Protéger** exclut le fichier du nettoyage ; les favoris sont toujours exclus. L'option globale de suppression et le mode `torrent` de la source restent obligatoires. Les règles s'appliquent à la version exacte du fichier (inode, taille, date de modification). Une vidéo remplacée doit être réautorisée.
-
-L'exécution automatique est **désactivée par défaut**, y compris après une mise à jour ou une migration. Configurez chaque instance associée avec le même `MINI_SYNC_SECRET` aléatoire et long, des `MINI_INSTANCE_ID` persistants et distincts, puis les URL `MINI_SYNC_PEERS` séparées par des virgules. La page Stockage synchronise les favoris, protections, candidatures, conditions et l'état global arrêté/actif par empreinte SHA-256 du contenu : les chemins Docker peuvent donc différer sans confondre des liens physiques avec des copies. Désignez ensuite une seule instance propriétaire dans cette page et activez explicitement l'automatisation ; l'ancienne variable `MINI_CLEANUP_OWNER` est ignorée.
-
-Le traitement toutes les dix minutes exige une authentification, la synchronisation des pairs, un propriétaire nommé, la suppression BitTorrent autorisée, exactement un client qBittorrent et une source en mode `torrent`. Il revérifie tous les torrents associés, les chemins, l'identité du fichier et les liens physiques juste avant la suppression. Un verrou du système de fichiers par stockage empêche deux traitements de supprimer simultanément les mêmes données. Un client indisponible ou un chemin invérifiable bloque le fichier et journalise la raison. Avec ruTorrent, le temps de seed est inconnu et ne satisfait jamais une condition temporelle.
