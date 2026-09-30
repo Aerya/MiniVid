@@ -25,7 +25,7 @@ def ratelimited(key, per=1.0):
     return False
 
 import re, json, logging, base64, mimetypes, unicodedata, hashlib, subprocess, threading, time, shutil, sqlite3, uuid, fcntl, hmac
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote_from_bytes, unquote_to_bytes, urlsplit
 from urllib.request import Request, urlopen
 from cryptography.fernet import Fernet, InvalidToken
@@ -2279,8 +2279,7 @@ def smart_group_items(items, mode="date"):
     - 'folder': par dossier parent
     - 'size': par catégorie de taille
     """
-    now = time.time()
-    day = 86400
+    now = datetime.now().astimezone()
     
     if mode == "date":
         groups = [
@@ -2290,16 +2289,18 @@ def smart_group_items(items, mode="date"):
             {"key": "older", "label": "Plus ancien", "videos": []},
         ]
 
+        today = now.date()
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
         for item in items:
             # Dossiers : on utilise leur mtime réel (stocké dans "latest")
             mtime = item.get("latest", 0) if item.get("kind") == "folder" else item.get("mtime", 0)
-            age = now - mtime
-
-            if age < day:
+            item_date = datetime.fromtimestamp(mtime).astimezone().date()
+            if item_date == today:
                 groups[0]["videos"].append(item)
-            elif age < 7 * day:
+            elif item_date >= week_start:
                 groups[1]["videos"].append(item)
-            elif age < 30 * day:
+            elif item_date >= month_start:
                 groups[2]["videos"].append(item)
             else:
                 groups[3]["videos"].append(item)
