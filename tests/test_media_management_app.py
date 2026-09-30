@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from unittest import mock
 
 
@@ -489,6 +490,11 @@ class MediaManagementApiTest(unittest.TestCase):
         finally:
             os.remove(video)
             os.rmdir(folder)
+
+    def test_today_group_uses_calendar_day_not_last_twenty_four_hours(self):
+        yesterday = (datetime.now().astimezone() - timedelta(days=1)).replace(hour=23, minute=59, second=0, microsecond=0)
+        groups = minivid.smart_group_items([{"kind": "video", "mtime": yesterday.timestamp()}])
+        self.assertNotIn("today", {group["key"] for group in groups})
 
     def test_incompatible_containers_are_explicit_when_transcoding_is_disabled(self):
         with minivid.app.test_request_context(), \
