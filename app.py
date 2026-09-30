@@ -40,6 +40,14 @@ MEDIA_NAMES = [p for p in (os.environ.get("MEDIA_NAMES") or "").split("|") if p.
 if not MEDIA_NAMES or len(MEDIA_NAMES) != len(MEDIA_DIRS):
     MEDIA_NAMES = [f"Dossier {i+1}" for i in range(len(MEDIA_DIRS))]
 ALLOWED_EXT = set([(os.environ.get("MINI_ALLOWED_EXT") or DEF_EXT).lower().split(",")][0])
+# cross-seed materializes hardlinks below this directory.  It belongs to the
+# torrent client, not to the human-facing media library; indexing it makes the
+# same file appear again and lets link-directory mtimes distort recent sorting.
+EXCLUDED_MEDIA_DIRS = {
+    name.strip().casefold()
+    for name in (os.environ.get("MINI_EXCLUDED_DIRS") or "cross-seed-links").split(",")
+    if name.strip()
+}
 DATA_DIR = os.environ.get("DATA_DIR") or "/data"
 THUMB_DIR = os.environ.get("THUMB_DIR") or "/cache/thumbs"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -283,7 +291,10 @@ def scan_media():
     for ridx, root in enumerate(MEDIA_DIRS):
         if not root or not os.path.isdir(root):
             continue
-        for dp, _, files in os.walk(root):
+        for dp, dirs, files in os.walk(root):
+            # Prune before descending: excluded directories must neither be
+            # listed nor contribute their hardlinked media to the library.
+            dirs[:] = [name for name in dirs if name.casefold() not in EXCLUDED_MEDIA_DIRS]
             for fn in files:
                 ext = os.path.splitext(fn)[1].lower()
                 if ext not in ALLOWED_EXT:
@@ -2439,18 +2450,10 @@ def browse():
                 buckets.setdefault(chid, []).append(it)
         
         for name_raw, vids in buckets.items():
-            # Mtime réel du dossier sur le disque (pas le max du contenu)
-            latest = 0
-            try:
-                root_i = vids[0]["root"] if vids else 0
-                folder_fs_path = os.path.join(
-                    MEDIA_DIRS[root_i],
-                    (dirq + os.sep if dirq else "") + name_raw
-                )
-                latest = os.path.getmtime(folder_fs_path)
-            except Exception:
-                # Fallback : max mtime des vidéos
-                latest = max(v["mtime"] for v in vids) if vids else 0
+            # A directory mtime changes whenever an entry is created or
+            # renamed (cross-seed does this too).  "Recent" must describe the
+            # newest video visible in that directory, not that metadata.
+            latest = max((v["mtime"] for v in vids), default=0)
             # Feature 1: Read status
             total_count = len(vids)
             read_count = sum(1 for v in vids if v.get("played"))
@@ -3081,7 +3084,11 @@ def _get_best_playback_url(vid, full, ext, ua):
     sans émettre l'événement d'erreur qui déclenche le fallback. Lorsqu'il est
     autorisé, HLS est donc choisi côté serveur pour ces conteneurs.
     """
-    if ext in ("avi", "flv", "m2ts"):
+    # HEVC/H.265 in an MP4 container is just as incompatible as AVI/FLV/M2TS
+    # for the browsers MiniVid supports.  The extension alone is insufficient;
+    # inspect the video stream and select HLS when transcoding is available.
+    incompatible_codec = _probe_all(full).get("vcodec", "").lower() in ("hevc", "h265")
+    if ext in ("avi", "flv", "m2ts") or incompatible_codec:
         if ALLOW_TRANSCODE:
             return url_for("hls_playlist", vid=vid), "hls"
         return url_for("stream", vid=vid), "unsupported"

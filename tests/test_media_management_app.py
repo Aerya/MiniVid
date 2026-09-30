@@ -433,11 +433,62 @@ class MediaManagementApiTest(unittest.TestCase):
 
     def test_avi_flv_and_m2ts_use_hls_without_browser_sniffing(self):
         with minivid.app.test_request_context(), \
-             mock.patch.object(minivid, "ALLOW_TRANSCODE", True):
+             mock.patch.object(minivid, "ALLOW_TRANSCODE", True), \
+             mock.patch.object(minivid, "_probe_all", return_value={"vcodec": "h264"}):
             for ext in ("avi", "flv", "m2ts"):
                 url, method = minivid._get_best_playback_url("video-id", "/videos1/file." + ext, ext, "")
                 self.assertEqual(method, "hls")
                 self.assertEqual(url, "/hls/video-id/playlist.m3u8")
+
+    def test_hevc_mp4_uses_hls_when_transcoding_is_enabled(self):
+        with minivid.app.test_request_context(), \
+             mock.patch.object(minivid, "ALLOW_TRANSCODE", True), \
+             mock.patch.object(minivid, "_probe_all", return_value={"vcodec": "hevc"}):
+            url, method = minivid._get_best_playback_url("video-id", "/videos1/file.mp4", "mp4", "")
+        self.assertEqual(method, "hls")
+        self.assertEqual(url, "/hls/video-id/playlist.m3u8")
+
+    def test_hevc_mp4_is_explicit_when_transcoding_is_disabled(self):
+        with minivid.app.test_request_context(), \
+             mock.patch.object(minivid, "ALLOW_TRANSCODE", False), \
+             mock.patch.object(minivid, "_probe_all", return_value={"vcodec": "hevc"}):
+            _, method = minivid._get_best_playback_url("video-id", "/videos1/file.mp4", "mp4", "")
+        self.assertEqual(method, "unsupported")
+
+    def test_scan_excludes_cross_seed_links_by_default(self):
+        cross_seed = os.path.join(VIDEO_ROOT, "cross-seed-links")
+        os.makedirs(cross_seed, exist_ok=True)
+        linked_video = os.path.join(cross_seed, "duplicate.mp4")
+        with open(linked_video, "wb") as handle:
+            handle.write(b"not-a-real-video")
+        try:
+            minivid.scan_media()
+            self.assertNotIn(minivid.id_for(0, "cross-seed-links/duplicate.mp4"),
+                             {item["id"] for item in minivid.MEDIA})
+        finally:
+            os.remove(linked_video)
+            os.rmdir(cross_seed)
+
+    def test_folder_recent_date_comes_from_its_videos_not_directory_mtime(self):
+        folder = os.path.join(VIDEO_ROOT, "old-collection")
+        os.makedirs(folder, exist_ok=True)
+        video = os.path.join(folder, "old.mp4")
+        with open(video, "wb") as handle:
+            handle.write(b"not-a-real-video")
+        old = 1
+        os.utime(self.video_path, (old, old))
+        os.utime(video, (old, old))
+        try:
+            minivid.scan_media()
+            with mock.patch.object(minivid, "render_template", return_value="ok") as render:
+                response = self.client.get("/browse?smart=1&sort=date")
+            self.assertEqual(response.status_code, 200)
+            smart_groups = render.call_args.kwargs["smart_groups"]
+            today = next((group for group in smart_groups if group["key"] == "today"), None)
+            self.assertIsNone(today)
+        finally:
+            os.remove(video)
+            os.rmdir(folder)
 
     def test_incompatible_containers_are_explicit_when_transcoding_is_disabled(self):
         with minivid.app.test_request_context(), \
