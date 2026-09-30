@@ -543,6 +543,13 @@ class HardwareTranscodingTest(unittest.TestCase):
         self.assertIn("h264_vaapi", args)
         self.assertIn("/dev/dri/renderD128", args)
 
+    def test_software_fallback_ignores_available_hardware(self):
+        with mock.patch.object(minivid, "HAS_NVENC", True), \
+             mock.patch.object(minivid, "HAS_VAAPI", True), \
+             mock.patch.object(minivid, "_probe_all", return_value={"vcodec": "hevc"}):
+            args = minivid._vcodec_args("video.mp4", software=True)
+        self.assertIn("libx264", args)
+
 
 if __name__ == "__main__":
     unittest.main()

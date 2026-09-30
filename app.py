@@ -2976,14 +2976,14 @@ def hls_playlist(vid):
     playlist += "#EXT-X-ENDLIST\n"
     return Response(playlist, mimetype="application/vnd.apple.mpegurl")
 
-def _vcodec_args(full):
+def _vcodec_args(full, software=False):
     """Retourne les arguments ffmpeg pour le codec vidéo selon la source et le matériel."""
     info = _probe_all(full)
     if info["vcodec"] in ("h264", "avc1"):
         return ["-c:v", "copy"]
-    if HAS_NVENC:
+    if HAS_NVENC and not software:
         return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-cq", "23"]
-    if HAS_VAAPI:
+    if HAS_VAAPI and not software:
         return [
             "-vaapi_device", os.environ.get("MINI_VAAPI_DEVICE", "/dev/dri/renderD128"),
             "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "23",
@@ -2994,21 +2994,36 @@ def _build_segment_file(full, cache_path, seg_index):
     """Lance ffmpeg pour générer un segment .ts, retourne True si succès."""
     start_time = seg_index * HLS_SEGMENT_DURATION
     temp_path = f"{cache_path}.tmp.{os.getpid()}.{threading.get_ident()}"
-    cmd = [
+    prefix = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-ss", str(start_time), "-i", full,
         "-t", str(HLS_SEGMENT_DURATION),
         "-avoid_negative_ts", "1",
-    ] + _vcodec_args(full) + [
+    ]
+    suffix = [
         "-c:a", "aac", "-ac", "2", "-b:a", "128k",
         "-f", "mpegts", temp_path
     ]
     try:
-        subprocess.run(cmd, check=True, timeout=60)
+        subprocess.run(prefix + _vcodec_args(full) + suffix, check=True, timeout=60)
         # Le fichier final n'apparaît qu'une fois complètement écrit. Une requête
         # HLS concurrente ne peut donc plus recevoir un segment tronqué.
         os.replace(temp_path, cache_path)
         return True
+    except subprocess.CalledProcessError as e:
+        # Hardware availability can change after the startup probe (CDI/NVIDIA
+        # runtime reload, exhausted encoder, etc.).  A failed NVENC/VA-API
+        # attempt must not turn a playable video into an HTTP 500.
+        if HAS_NVENC or HAS_VAAPI:
+            LOG.warning("HLS segment %d hardware encoding failed; retrying with libx264: %s", seg_index, e)
+            try:
+                subprocess.run(prefix + _vcodec_args(full, software=True) + suffix, check=True, timeout=60)
+                os.replace(temp_path, cache_path)
+                return True
+            except Exception as fallback_error:
+                LOG.error("HLS segment %d software fallback error: %s", seg_index, fallback_error)
+        else:
+            LOG.error("HLS segment %d error: %s", seg_index, e)
     except Exception as e:
         LOG.error("HLS segment %d error: %s", seg_index, e)
         try:
