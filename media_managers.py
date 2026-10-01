@@ -144,7 +144,10 @@ class QBittorrentClient(_HttpClient):
         if matches:
             unique = {str(torrent.get("hash") or ""): torrent for torrent in matches}
             return list(unique.values()), target
-        raise TorrentClientError("Aucun torrent ne correspond exactement à cette vidéo")
+        raise TorrentClientError(
+            "Aucun torrent ne correspond exactement à cette vidéo "
+            "(vérifiez le chemin de la source vu par le client BitTorrent)"
+        )
 
     def _metadata(self, torrent: dict, target: str):
         return {

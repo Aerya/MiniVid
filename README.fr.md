@@ -87,7 +87,7 @@ NVIDIA nécessite le pilote hôte et NVIDIA Container Toolkit. Intel/AMD nécess
 La configuration se fait dans **Maintenance > Sources vidéo et clients BitTorrent** :
 
 1. Ajoutez un client qBittorrent ou ruTorrent et testez sa connexion.
-2. Associez chaque source vidéo au client concerné et indiquez le chemin vu par celui-ci.
+2. Associez chaque source vidéo au client concerné et indiquez le chemin vu par celui-ci. Il doit correspondre exactement au préfixe de `content_path` retourné par le client (par exemple `/data/qbittorrentdirect`, et non le chemin de montage MiniVid ou un ancien `/downloads`).
 3. Choisissez le mode de suppression, puis activez séparément la liaison BitTorrent et la suppression.
 
 MiniVid affiche les torrents correspondant au fichier. La suppression « torrent et données » retire les torrents associés, y compris les variantes cross-seed reconnues, et vérifie le résultat avant de retirer la vidéo de l'index. La suppression d’un favori affiche un avertissement supplémentaire et demande toujours la confirmation finale. La suppression exige l'authentification MiniVid. Les mots de passe des clients sont chiffrés avec `SECRET_KEY` ; changer cette clé oblige à les saisir de nouveau.

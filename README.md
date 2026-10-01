@@ -87,7 +87,7 @@ NVIDIA requires the host driver and NVIDIA Container Toolkit. Intel/AMD requires
 Configure this from **Maintenance > Video sources and BitTorrent clients**:
 
 1. Add a qBittorrent or ruTorrent client and test its connection.
-2. Associate each video source with its client and the path seen by that client.
+2. Associate each video source with its client and the path seen by that client. It must exactly match the prefix of the `content_path` returned by the client (for example `/data/qbittorrentdirect`, not MiniVid's mount path or a stale `/downloads`).
 3. Choose the source deletion mode, then separately enable BitTorrent integration and deletion.
 
 MiniVid displays every torrent matching a file. "Torrent and data" deletion removes associated torrents, including matching cross-seed variants, and verifies the result before removing the video from its index. Deleting a favorite displays an additional warning and still requires the final confirmation. Deletion requires MiniVid authentication. Client passwords are encrypted with `SECRET_KEY`; changing that key requires entering them again.
