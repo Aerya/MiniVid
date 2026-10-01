@@ -786,30 +786,78 @@ html.ratio-16-9 .folder .thumb {
   height: auto;
 }
 
-.zoom-reset-button {
+.player-controls {
   position: absolute;
-  right: 104px;
-  bottom: 12px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 4;
-  min-height: 28px;
-  padding: .2rem .45rem;
-  border: 1px solid color-mix(in srgb, #fff 65%, transparent);
-  border-radius: 5px;
-  background: rgba(0, 0, 0, .68);
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: 48px;
+  padding: .55rem .7rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .86) 46%);
   color: #fff;
-  font-size: .75rem;
-  font-weight: 650;
+}
+
+.player-controls button {
+  min-width: 30px;
+  min-height: 30px;
+  padding: .2rem .35rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
 }
 
-.zoom-reset-button:hover,
-.zoom-reset-button:focus-visible {
-  background: var(--accent);
-  border-color: var(--accent);
+.player-controls button:hover,
+.player-controls button:focus-visible {
+  background: rgba(255, 255, 255, .2);
 }
 
-.zoom-reset-button[hidden] {
-  display: none;
+.player-controls input[type="range"] { accent-color: var(--accent); }
+.player-controls #player-progress { flex: 1 1 120px; min-width: 60px; }
+.player-controls #player-volume { width: 72px; }
+.player-time { min-width: 88px; font-size: .75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.player-options {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% - 4px);
+  display: grid;
+  gap: 2px;
+  min-width: 68px;
+  padding: .3rem;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 6px;
+  background: rgba(16, 12, 15, .94);
+}
+
+.player-options[hidden] { display: none; }
+
+.player-wrap:fullscreen,
+.player-wrap:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  background: #000;
+}
+
+.player-wrap:fullscreen video,
+.player-wrap:-webkit-full-screen video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+
+@media (max-width: 640px) {
+  .player-controls { gap: .2rem; padding: .45rem; }
+  .player-controls #player-volume,
+  .player-time { display: none; }
 }
 
 .zoom-bar,
@@ -894,16 +942,16 @@ html.ratio-16-9 .folder .thumb {
 }
 
 .shortcuts-hint {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 90;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
 }
 
 .shortcuts-panel {
   position: absolute;
   right: 0;
-  bottom: calc(100% + .5rem);
+  top: calc(100% + .5rem);
   width: 230px;
   padding: .85rem;
   border: 1px solid var(--border);
