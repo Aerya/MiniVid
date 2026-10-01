@@ -799,7 +799,11 @@ html.ratio-16-9 .folder .thumb {
   padding: .55rem .7rem;
   background: linear-gradient(transparent, rgba(0, 0, 0, .86) 46%);
   color: #fff;
+  opacity: 1;
+  transition: opacity .2s ease;
 }
+
+.player-wrap.controls-hidden .player-controls { opacity: 0; pointer-events: none; }
 
 .player-controls button {
   min-width: 30px;

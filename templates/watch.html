@@ -640,6 +640,13 @@
       if (!video || !wrap) return;
       const enterFullscreen = () => (wrap.requestFullscreen || wrap.webkitRequestFullscreen)?.call(wrap);
       const exitFullscreen = () => (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+      let clickTimer = 0;
+      let idleTimer = 0;
+      const showControls = () => {
+        wrap.classList.remove('controls-hidden');
+        clearTimeout(idleTimer);
+        if (!video.paused) idleTimer = setTimeout(() => wrap.classList.add('controls-hidden'), 2400);
+      };
       const formatTime = seconds => {
         if (!Number.isFinite(seconds)) return '0:00';
         const minutes = Math.floor(seconds / 60);
@@ -653,9 +660,24 @@
         if (volume) volume.value = String(Math.round((video.muted ? 0 : video.volume) * 100));
       };
       play?.addEventListener('click', () => video.paused ? video.play() : video.pause());
-      video.addEventListener('play', refresh); video.addEventListener('pause', refresh);
+      video.addEventListener('play', () => { refresh(); showControls(); });
+      video.addEventListener('pause', () => { refresh(); wrap.classList.remove('controls-hidden'); clearTimeout(idleTimer); });
       video.addEventListener('timeupdate', refresh); video.addEventListener('loadedmetadata', refresh);
       video.addEventListener('volumechange', refresh);
+      video.addEventListener('click', () => {
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => video.paused ? video.play() : video.pause(), 220);
+      });
+      video.addEventListener('dblclick', event => {
+        event.preventDefault();
+        clearTimeout(clickTimer);
+        document.fullscreenElement || document.webkitFullscreenElement ? exitFullscreen() : enterFullscreen();
+      });
+      wrap.addEventListener('mousemove', showControls, { passive: true });
+      wrap.addEventListener('touchstart', showControls, { passive: true });
+      wrap.addEventListener('mouseleave', () => { if (!video.paused) showControls(); }, { passive: true });
+      document.addEventListener('fullscreenchange', showControls);
+      document.addEventListener('webkitfullscreenchange', showControls);
       progress?.addEventListener('input', () => { if (Number.isFinite(video.duration)) video.currentTime = Number(progress.value) / 1000 * video.duration; });
       mute?.addEventListener('click', () => { video.muted = !video.muted; });
       volume?.addEventListener('input', () => { video.volume = Number(volume.value) / 100; video.muted = video.volume === 0; });
@@ -667,6 +689,7 @@
       document.addEventListener('fullscreenchange', refresh);
       document.addEventListener('webkitfullscreenchange', refresh);
       refresh();
+      showControls();
     })();
 
     (function zoomBar() {
