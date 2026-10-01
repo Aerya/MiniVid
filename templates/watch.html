@@ -121,6 +121,8 @@
         {% if playback_method %}
         <span class="playback-badge">{{ playback_method }}</span>
         {% endif %}
+        <button id="zoom-reset-button" class="zoom-reset-button" type="button" hidden
+          aria-label="Revenir au zoom 1×" title="Revenir au zoom 1×">↺ 1×</button>
       </div>
 
       <div class="zoom-bar">
@@ -607,6 +609,7 @@
     (function zoomBar() {
       const wrap = document.querySelector('.player-wrap');
       const video = document.getElementById('v');
+      const resetButton = document.getElementById('zoom-reset-button');
       if (!wrap) return;
 
       function resetWrap() {
@@ -620,6 +623,7 @@
         }
         wrap.classList.remove('zoomed');
         document.body.classList.remove('has-zoom');
+        if (resetButton) resetButton.hidden = true;
       }
 
       function nativeSize() {
@@ -667,6 +671,7 @@
         }
         wrap.classList.add('zoomed');
         document.body.classList.add('has-zoom');
+        if (resetButton) resetButton.hidden = false;
         requestAnimationFrame(() => {
           wrap.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
         });
@@ -679,6 +684,13 @@
           const z = parseFloat(btn.dataset.zoom) || 1;
           applyZoom(z);
         });
+      });
+
+      resetButton?.addEventListener('click', () => {
+        document.querySelectorAll('.zoom-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.zoom === '1');
+        });
+        applyZoom(1);
       });
 
       let resizeTimer = 0;

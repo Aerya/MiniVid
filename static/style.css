@@ -786,6 +786,32 @@ html.ratio-16-9 .folder .thumb {
   height: auto;
 }
 
+.zoom-reset-button {
+  position: absolute;
+  right: 104px;
+  bottom: 12px;
+  z-index: 4;
+  min-height: 28px;
+  padding: .2rem .45rem;
+  border: 1px solid color-mix(in srgb, #fff 65%, transparent);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, .68);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.zoom-reset-button:hover,
+.zoom-reset-button:focus-visible {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.zoom-reset-button[hidden] {
+  display: none;
+}
+
 .zoom-bar,
 .actions,
 .meta-ops {
