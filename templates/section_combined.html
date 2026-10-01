@@ -5,14 +5,18 @@
     <img loading="lazy" class="lazy-thumb" src="/static/placeholder.svg" data-src="/thumb/{{ it.id }}.jpg"
       alt="Aperçu vidéo" />
     <div class="badge">{{ it.ext.upper() }}</div>
+    {% if it.res %}<div class="badge badge-res">{{ it.res }}</div>{% endif %}
     {% if it.played %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
+    {% if it.progress and it.progress > 0 %}
+    <div class="thumb-progress" style="width: {{ [it.progress, 100] | min }}%;"></div>
+    {% endif %}
   </a>
 
   <button class="fav-btn {{ 'active' if it.fav else '' }}" aria-label="Favori" title="Favori" data-id="{{ it.id }}">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg>
   </button>
 
-  <h3 title="{{ it.name }}">{{ it.name }}</h3>
+  <h3 title="{{ it.name }}"><a href="/watch/{{ it.id }}?back={{ request.full_path | urlencode }}">{{ it.name }}</a></h3>
   <p class="meta">
     <span>{{ it.size | filesize }}</span>
     {% if it.res %} · <span>{{ it.res }}</span>{% endif %}
@@ -20,13 +24,18 @@
   </p>
 
   <p class="tagsline">
-    {% set t_show = (it.ctags or it.tags or [])[:5] %}
+    {% set all_tags = it.ctags or it.tags or [] %}
+    {% set t_show = all_tags[:4] %}
+    {% set t_extra = (all_tags | length) - 4 %}
     {% if t_show %}
     {% for t in t_show %}
     <a class="pill"
       href="{{ url_for('browse', tags=(','.join((request.args.get('tags','') or '').split(',') + [t])), mix=mix, sort=sort, read=readf, per=per) }}"
       data-tag="{{ t }}">{{ t }}</a>
     {% endfor %}
+    {% if t_extra > 0 %}
+    <span class="pill pill-more" title="+{{ t_extra }} autre(s) tag(s)">+{{ t_extra }}</span>
+    {% endif %}
     {% else %}
     <span class="muted">Sans tag</span>
     {% endif %}

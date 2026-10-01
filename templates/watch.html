@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>MiniVid — {{ name }}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=2" />
   <script src="/static/i18n.js" defer></script>
 </head>
 
@@ -29,164 +29,173 @@
     </div>
   </header>
 
-  <main class="watch">
-    {% if unsupported %}
-    <div class="fallback">
-      {% if corrupted %}
-      <p><strong>Ce fichier vidéo est incomplet ou endommagé.</strong></p>
-      <p>MiniVid a arrêté la lecture avant qu'elle ne boucle indéfiniment. Vérifiez ou retéléchargez le fichier source.</p>
-      <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
+  <main class="watch watch-studio" id="watchMain">
+    <div class="watch-main-col">
+      {% if unsupported %}
+      <div class="fallback">
+        {% if corrupted %}
+        <p><strong>Ce fichier vidéo est incomplet ou endommagé.</strong></p>
+        <p>MiniVid a arrêté la lecture avant qu'elle ne boucle indéfiniment. Vérifiez ou retéléchargez le fichier source.</p>
+        <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
+        {% else %}
+        <p><strong>Ce navigateur ne peut pas lire directement ce fichier .{{ ext }} et le transcodage est désactivé.</strong></p>
+        <p>Activez <code>MINI_TRANSCODE=1</code> pour autoriser le remux/transcodage à la volée, ou utilisez un navigateur Chromium.</p>
+        <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
+        {% endif %}
+      </div>
       {% else %}
-      <p><strong>Ce navigateur ne peut pas lire directement ce fichier .{{ ext }} et le transcodage est désactivé.</strong></p>
-      <p>Activez <code>MINI_TRANSCODE=1</code> pour autoriser le remux/transcodage à la volée, ou utilisez un navigateur Chromium.</p>
-      <a class="dlbtn" href="/download/{{ vid }}">Télécharger le fichier</a>
-      {% endif %}
-    </div>
-    {% else %}
-    <div class="player-wrap">
-      {% if playback_method == 'hls' %}
-      <video id="v" playsinline webkit-playsinline controls autoplay></video>
-      <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
-      <script>
-        const video = document.getElementById('v');
-        const hlsSrc = "{{ play_url }}";
-        if (Hls.isSupported()) {
-          const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
-          hls.loadSource(hlsSrc);
-          hls.attachMedia(video);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          video.src = hlsSrc;
-          video.addEventListener('loadedmetadata', () => video.play());
-        }
-      </script>
-      {% else %}
-      <video id="v" playsinline webkit-playsinline controls autoplay>
-        <source id="vsource" src="{{ play_url }}" />
-      </video>
-
-      {% if playback_method == 'direct' and can_hls %}
-      <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
-      <script>
-        const video = document.getElementById('v');
-        const hlsSrc = "{{ url_for('hls_playlist', vid=vid) }}";
-        let fallbackStarted = false;
-        let directFrameSeen = false;
-
-        function startHlsFallback() {
-          if (fallbackStarted) return;
-          fallbackStarted = true;
-          const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-          const badge = document.querySelector('.playback-badge');
-          if (badge) badge.textContent = 'hls';
-          video.pause();
-          video.removeAttribute('src');
-          document.getElementById('vsource')?.remove();
-          video.load();
+      <div class="player-wrap">
+        {% if playback_method == 'hls' %}
+        <video id="v" playsinline webkit-playsinline controls autoplay></video>
+        <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+        <script>
+          const video = document.getElementById('v');
+          const hlsSrc = "{{ play_url }}";
           if (Hls.isSupported()) {
             const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
             hls.loadSource(hlsSrc);
             hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-              if (resumeAt > 0) video.currentTime = resumeAt;
-              video.play();
-            });
+            hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = hlsSrc;
-            video.addEventListener('loadedmetadata', () => {
-              if (resumeAt > 0) video.currentTime = resumeAt;
-              video.play();
-            }, { once: true });
+            video.addEventListener('loadedmetadata', () => video.play());
           }
-        }
+        </script>
+        {% else %}
+        <video id="v" playsinline webkit-playsinline controls autoplay>
+          <source id="vsource" src="{{ play_url }}" />
+        </video>
 
-        video.addEventListener('error', startHlsFallback, { once: true });
+        {% if playback_method == 'direct' and can_hls %}
+        <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+        <script>
+          const video = document.getElementById('v');
+          const hlsSrc = "{{ url_for('hls_playlist', vid=vid) }}";
+          let fallbackStarted = false;
+          let directFrameSeen = false;
 
-        // Certains navigateurs lisent l'audio d'un MKV/HEVC sans produire
-        // d'erreur, mais n'affichent aucune image. Une vraie frame décodée
-        // annule ce garde-fou; sinon on bascule vers HLS après quelques secondes.
-        if ('requestVideoFrameCallback' in video) {
-          video.requestVideoFrameCallback(() => { directFrameSeen = true; });
-        }
-        video.addEventListener('playing', () => {
-          window.setTimeout(() => {
-            const quality = video.getVideoPlaybackQuality?.();
-            const decodedFrames = quality?.totalVideoFrames || 0;
-            if (!fallbackStarted && video.currentTime > 1 && !directFrameSeen && decodedFrames === 0) {
-              startHlsFallback();
+          function startHlsFallback() {
+            if (fallbackStarted) return;
+            fallbackStarted = true;
+            const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+            const badge = document.querySelector('.playback-badge');
+            if (badge) badge.textContent = 'hls';
+            video.pause();
+            video.removeAttribute('src');
+            document.getElementById('vsource')?.remove();
+            video.load();
+            if (Hls.isSupported()) {
+              const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+              hls.loadSource(hlsSrc);
+              hls.attachMedia(video);
+              hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                if (resumeAt > 0) video.currentTime = resumeAt;
+                video.play();
+              });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+              video.src = hlsSrc;
+              video.addEventListener('loadedmetadata', () => {
+                if (resumeAt > 0) video.currentTime = resumeAt;
+                video.play();
+              }, { once: true });
             }
-          }, 4000);
-        }, { once: true });
-      </script>
-      {% endif %}
-      {% endif %}
-      {% if playback_method %}
-      <span class="playback-badge">{{ playback_method }}</span>
-      {% endif %}
-    </div>
+          }
 
-    <div class="zoom-bar">
-      <span>Zoom</span>
-      <button class="zoom-btn active" data-zoom="1">1×</button>
-      <button class="zoom-btn" data-zoom="1.5">1.5×</button>
-      <button class="zoom-btn" data-zoom="2">2×</button>
-    </div>
-    {% endif %}
+          video.addEventListener('error', startHlsFallback, { once: true });
 
-    <p class="meta" id="resline">Résolution : <span id="resval">{{ res or '?' }}</span></p>
-
-    <section class="meta-ops">
-      <div class="tagsline">
-        {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
-        {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
-        <button id="addtag" class="pill add">+ Tag</button>
+          if ('requestVideoFrameCallback' in video) {
+            video.requestVideoFrameCallback(() => { directFrameSeen = true; });
+          }
+          video.addEventListener('playing', () => {
+            window.setTimeout(() => {
+              const quality = video.getVideoPlaybackQuality?.();
+              const decodedFrames = quality?.totalVideoFrames || 0;
+              if (!fallbackStarted && video.currentTime > 1 && !directFrameSeen && decodedFrames === 0) {
+                startHlsFallback();
+              }
+            }, 4000);
+          }, { once: true });
+        </script>
+        {% endif %}
+        {% endif %}
+        {% if playback_method %}
+        <span class="playback-badge">{{ playback_method }}</span>
+        {% endif %}
       </div>
-      <div class="actions">
-        <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
-        <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
-        <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
-      </div>
-    </section>
 
-    <details id="media-management" class="media-management" hidden>
-      <summary class="media-management-summary"><strong>Fichier et partage</strong></summary>
-      <div class="media-management-content">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;">
-          <div>
-          <div id="media-management-source" class="text-muted"></div>
-          <div id="media-management-filename" class="media-management-filename"></div>
-          <a id="media-management-client" class="media-management-client" target="_blank" rel="noopener noreferrer" hidden></a>
-          </div>
-          <button id="delete-media-button" class="btn btn-danger" type="button" hidden>Supprimer la vidéo</button>
+      <div class="zoom-bar">
+        <span>Zoom</span>
+        <button class="zoom-btn active" data-zoom="1">1×</button>
+        <button class="zoom-btn" data-zoom="1.5">1.5×</button>
+        <button class="zoom-btn" data-zoom="2">2×</button>
+      </div>
+      {% endif %}
+
+      <div class="watch-header">
+        <h1 class="watch-title">{{ name }}</h1>
+        <div class="watch-specs">
+          <span class="spec-pill" id="resline">Résolution : <strong id="resval">{{ res or '?' }}</strong></span>
+          <span class="spec-pill ext-pill">{{ ext.upper() }}</span>
         </div>
-        <div id="media-management-stats" class="media-management-grid"></div>
-        <div id="cleanup-policy" class="cleanup-policy" hidden>
-          <h3>Candidat au nettoyage</h3>
-          <p class="meta">MiniVid ne supprime automatiquement que les vidéos autorisées ici, une fois les conditions de chaque torrent atteintes.</p>
-          <label>Décision <select id="cleanup-mode"><option value="none">Conserver sans règle</option><option value="protect">Protéger définitivement</option><option value="candidate">Autoriser le nettoyage</option></select></label>
-          <div id="cleanup-conditions">
-            <label>Ratio minimum <input id="cleanup-ratio" type="number" min="0" max="1000" step="0.1" value="1" /></label>
-            <label>Temps de seed minimum (jours) <input id="cleanup-days" type="number" min="0" max="3650" value="7" /></label>
-            <label>Condition <select id="cleanup-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
-            <label>Déclencher <select id="cleanup-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
-            <div id="cleanup-space-thresholds">
-              <label>Démarrer si l’espace libre passe sous (%) <input id="cleanup-below" type="number" min="1" max="98" value="15" /></label>
-              <label>Arrêter une fois l’espace libre remonté à (%) <input id="cleanup-until" type="number" min="2" max="99" value="20" /></label>
-              <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
+      </div>
+
+      <section class="meta-ops watch-actions-bar">
+        <div class="actions">
+          <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
+          <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
+          <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
+        </div>
+        <div class="tagsline">
+          {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
+          {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
+          <button id="addtag" class="pill add">+ Tag</button>
+        </div>
+      </section>
+
+      <details id="media-management" class="media-management" hidden>
+        <summary class="media-management-summary"><strong>Fichier et partage</strong></summary>
+        <div class="media-management-content">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;">
+            <div>
+              <div id="media-management-source" class="text-muted"></div>
+              <div id="media-management-filename" class="media-management-filename"></div>
+              <a id="media-management-client" class="media-management-client" target="_blank" rel="noopener noreferrer" hidden></a>
             </div>
+            <button id="delete-media-button" class="btn btn-danger" type="button" hidden>Supprimer la vidéo</button>
           </div>
-          <p class="meta">La règle par défaut des nouveaux candidats se configure sur <a href="/storage#cleanup-defaults">Stockage</a>. Modifier ce défaut ne change pas les décisions déjà enregistrées.</p>
-          <button id="cleanup-save" type="button" class="btn btn-primary">Enregistrer la décision</button>
-          <span id="cleanup-status" role="status"></span>
+          <div id="media-management-stats" class="media-management-grid"></div>
+          <div id="cleanup-policy" class="cleanup-policy" hidden>
+            <h3>Candidat au nettoyage</h3>
+            <p class="meta">MiniVid ne supprime automatiquement que les vidéos autorisées ici, une fois les conditions de chaque torrent atteintes.</p>
+            <label>Décision <select id="cleanup-mode"><option value="none">Conserver sans règle</option><option value="protect">Protéger définitivement</option><option value="candidate">Autoriser le nettoyage</option></select></label>
+            <div id="cleanup-conditions">
+              <label>Ratio minimum <input id="cleanup-ratio" type="number" min="0" max="1000" step="0.1" value="1" /></label>
+              <label>Temps de seed minimum (jours) <input id="cleanup-days" type="number" min="0" max="3650" value="7" /></label>
+              <label>Condition <select id="cleanup-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
+              <label>Déclencher <select id="cleanup-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
+              <div id="cleanup-space-thresholds">
+                <label>Démarrer si l’espace libre passe sous (%) <input id="cleanup-below" type="number" min="1" max="98" value="15" /></label>
+                <label>Arrêter une fois l’espace libre remonté à (%) <input id="cleanup-until" type="number" min="2" max="99" value="20" /></label>
+                <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
+              </div>
+            </div>
+            <p class="meta">La règle par défaut des nouveaux candidats se configure sur <a href="/storage#cleanup-defaults">Stockage</a>. Modifier ce défaut ne change pas les décisions déjà enregistrées.</p>
+            <button id="cleanup-save" type="button" class="btn btn-primary">Enregistrer la décision</button>
+            <span id="cleanup-status" role="status"></span>
+          </div>
+          <div id="media-management-message" class="text-muted" style="margin-top:.65rem;"></div>
         </div>
-        <div id="media-management-message" class="text-muted" style="margin-top:.65rem;"></div>
-      </div>
-    </details>
+      </details>
+    </div>
 
-    <section class="similar-section" id="similar-section" style="display:none;">
-      <h3 class="similar-title">Vidéos similaires</h3>
-      <div class="grid" id="similar-grid"></div>
-    </section>
+    <!-- Sidebar (colonne droite sur grand écran) -->
+    <aside class="watch-sidebar" id="watch-sidebar" style="display:none;">
+      <div class="sidebar-header">
+        <h3 class="sidebar-title">Vidéos similaires</h3>
+        <span class="sidebar-count" id="sidebar-count"></span>
+      </div>
+      <div class="sidebar-list" id="similar-grid"></div>
+    </aside>
   </main>
 
   <div class="shortcuts-hint" id="shortcuts">
@@ -685,9 +694,11 @@
     })();
 
     (function similarVideos() {
-      const section = document.getElementById('similar-section');
+      const sidebar = document.getElementById('watch-sidebar');
+      const watchMain = document.getElementById('watchMain');
       const grid = document.getElementById('similar-grid');
-      if (!section || !grid) return;
+      const countEl = document.getElementById('sidebar-count');
+      if (!grid) return;
       function formatSize(n) {
         if (!n) return '';
         if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' Go';
@@ -698,25 +709,28 @@
           const r = await fetch('/api/similar/' + encodeURIComponent(VID), { credentials: 'same-origin' });
           const j = await r.json();
           if (!j?.ok || !j.videos?.length) return;
-          section.style.display = '';
+          if (sidebar) sidebar.style.display = '';
+          if (watchMain) watchMain.classList.add('has-sidebar');
+          if (countEl) countEl.textContent = `${j.videos.length}`;
           grid.innerHTML = j.videos.map(video => {
-            const safeName = video.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const statusHtml = video.played ? '<div class="status">Lue</div>' : '<div class="status un">Non lue</div>';
+            const safeName = (video.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const statusHtml = video.played ? '<span class="side-badge side-read">Lue</span>' : '';
             const favCls = video.fav ? 'fav-btn active' : 'fav-btn';
-            const tags = (video.tags || []).slice(0, 5).map(t =>
-              `<a class="pill" href="/browse?tag=${encodeURIComponent(t)}">${t}</a>`
-            ).join('');
             return `
-              <article class="card ${video.played ? 'played' : 'unplayed'}" data-vid="${video.id}">
-                <a class="thumb" href="/watch/${video.id}">
-                  <img loading="lazy" src="/thumb/${video.id}.jpg" alt="Aperçu vidéo" onerror="this.src='/static/placeholder.svg'">
-                  <div class="badge">${(video.ext || '').toUpperCase()}</div>
+              <article class="side-card ${video.played ? 'played' : 'unplayed'}" data-vid="${video.id}">
+                <a class="side-thumb" href="/watch/${video.id}">
+                  <img loading="lazy" src="/thumb/${video.id}.jpg" alt="" onerror="this.src='/static/placeholder.svg'">
+                  <span class="side-ext">${(video.ext || '').toUpperCase()}</span>
                   ${statusHtml}
                 </a>
+                <div class="side-info">
+                  <a class="side-title" href="/watch/${video.id}" title="${safeName}">${safeName}</a>
+                  <div class="side-sub">
+                    <span>${formatSize(video.size)}</span>
+                    ${video.res ? `<span>· ${video.res}</span>` : ''}
+                  </div>
+                </div>
                 <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${video.id}"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg></button>
-                <h3 title="${safeName}">${safeName}</h3>
-                <p class="meta">${formatSize(video.size)}</p>
-                <p class="tagsline">${tags || '<span class="muted">Sans tag</span>'}</p>
               </article>`;
           }).join('');
           grid.querySelectorAll('.fav-btn').forEach(btn => {

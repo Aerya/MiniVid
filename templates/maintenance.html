@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>MiniVid — Maintenance</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=2" />
   <script src="/static/i18n.js" defer></script>
 </head>
 
@@ -54,16 +54,11 @@
       <section class="card">
         <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
           <h3 class="card-title">Journal récent</h3>
-          <div class="manager-actions">
-            <small id="journal-hint" class="text-muted"></small>
-            <button id="journal-prev" class="btn" type="button" aria-label="Page précédente">Précédent</button>
-            <span id="journal-page" class="text-muted">1 / 1</span>
-            <button id="journal-next" class="btn" type="button" aria-label="Page suivante">Suivant</button>
-          </div>
+          <small id="journal-hint" class="text-muted"></small>
         </header>
-        <div class="card-body">
-          <div id="journal" class="table-responsive">
-            <div class="text-muted">Chargement...</div>
+        <div class="card-body" style="padding:0;">
+          <div id="journal" class="journal-scroll">
+            <div class="text-muted" style="padding:.62rem .75rem;">Chargement...</div>
           </div>
         </div>
       </section>
@@ -260,16 +255,11 @@
       const box = document.getElementById('journal');
       if (!box) return;
       if (!journalEvents.length) {
-        box.innerHTML = '<div class="text-muted">Aucun événement</div>';
-        document.getElementById('journal-page').textContent = '0 / 0';
-        document.getElementById('journal-prev').disabled = true;
-        document.getElementById('journal-next').disabled = true;
+        box.innerHTML = '<div class="text-muted" style="padding:.62rem .75rem;">Aucun événement</div>';
         return;
       }
-      const pages = Math.ceil(journalEvents.length / journalPageSize);
-      journalPage = Math.max(0, Math.min(journalPage, pages - 1));
-      const start = journalPage * journalPageSize;
-      const visible = journalEvents.slice().reverse().slice(start, start + journalPageSize);
+      // Tous les événements, les plus récents en haut
+      const visible = journalEvents.slice().reverse();
       const rows = visible.map(e => {
           const dt = new Date((e.ts || 0) * 1000).toLocaleString(undefined, {
             year: 'numeric', month: '2-digit', day: '2-digit',
@@ -284,16 +274,13 @@
             <td>${e.took_ms != null ? e.took_ms + "ms" : "—"}</td>
           </tr>`;
       }).join("");
-      const html = `<div class="table-wrapper"><table class="table">
+      const html = `<table class="table journal-table">
           <thead><tr><th>Date</th><th>Action</th><th>Fichiers</th><th>Modifiés</th><th>Durée</th></tr></thead>
-          <tbody>${rows}</tbody></table></div>`;
+          <tbody>${rows}</tbody></table>`;
       if (html !== lastRendered) {
         lastRendered = html;
         box.innerHTML = html;
       }
-      document.getElementById('journal-page').textContent = `${journalPage + 1} / ${pages}`;
-      document.getElementById('journal-prev').disabled = journalPage === 0;
-      document.getElementById('journal-next').disabled = journalPage >= pages - 1;
     }
 
     async function loadJournal() {
@@ -310,16 +297,6 @@
       }
     }
 
-    document.getElementById('journal-prev')?.addEventListener('click', () => {
-      journalPage = Math.max(0, journalPage - 1);
-      lastRendered = '';
-      renderJournal();
-    });
-    document.getElementById('journal-next')?.addEventListener('click', () => {
-      journalPage += 1;
-      lastRendered = '';
-      renderJournal();
-    });
 
     function startLiveJournal() {
       stopLiveJournal();
