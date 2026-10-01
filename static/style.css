@@ -2361,6 +2361,15 @@ input[type="radio"] {
   .watchpage .watch.watch-studio.has-sidebar {
     grid-template-columns: minmax(0, 1fr) 350px;
   }
+
+  /* A zoomed player must not compete with the similar-videos column. */
+  .watchpage.has-zoom .watch.watch-studio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchpage.has-zoom .watch-sidebar {
+    display: none !important;
+  }
 }
 
 .watchpage .watch-main-col .player-wrap {
