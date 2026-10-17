@@ -11,7 +11,7 @@
 ## Fonctionnalités
 
 - **Parcourir** vos vidéos : dossiers, recherche, tags et favoris.
-- **Regarder** depuis un navigateur, avec reprise de lecture et plein écran.
+- **Regarder** depuis un navigateur, avec reprise de lecture, dernières lectures et plein écran.
 - **Retrouver** les vidéos jamais lues et les contenus similaires.
 - **Faire le tri** : espace utilisé, doublons vérifiés et suppression avec confirmation.
 - **Personnaliser** les couleurs et les thèmes. Interface en français et en anglais.
