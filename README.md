@@ -11,7 +11,7 @@
 ## Features
 
 - **Browse** your videos: folders, search, tags and favorites.
-- **Watch** in a browser, with playback resume and fullscreen.
+- **Watch** in a browser, with playback resume, recent viewing and fullscreen.
 - **Rediscover** videos never played and find similar content.
 - **Make space**: storage usage, verified duplicates and confirmed deletion.
 - **Customize** colors and themes. English and French interface.
