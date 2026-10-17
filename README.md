@@ -69,12 +69,7 @@ Captured with demonstration videos, without explicit content. The screenshots sh
 | --- | --- |
 | [![MiniVid player](docs/screenshots/player-sharing.png)](docs/screenshots/player-sharing.png) | [![Space and duplicates](docs/screenshots/storage.png)](docs/screenshots/storage.png) |
 
-<details>
-<summary>View Maintenance</summary>
-
 ![MiniVid maintenance](docs/screenshots/maintenance.png)
-
-</details>
 
 ## Documentation
 

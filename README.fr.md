@@ -69,12 +69,7 @@ Captures réalisées avec des vidéos de démonstration, sans contenu explicite.
 | --- | --- |
 | [![Lecteur MiniVid](docs/screenshots/player-sharing.png)](docs/screenshots/player-sharing.png) | [![Espace et doublons](docs/screenshots/storage.png)](docs/screenshots/storage.png) |
 
-<details>
-<summary>Voir la page Maintenance</summary>
-
 ![Maintenance MiniVid](docs/screenshots/maintenance.png)
-
-</details>
 
 ## Documentation
 
