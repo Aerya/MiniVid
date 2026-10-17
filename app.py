@@ -1472,6 +1472,8 @@ def _cleanup_status(vid, rule, cfg, full, state):
 
 def _cleanup_run_once():
     """Only an explicitly designated owner may delete. Recheck everything at execution time."""
+    if os.environ.get("MINI_READ_ONLY_TEST") == "1":
+        return
     cfg = _read_media_managers()
     settings = storage.settings(STORAGE_DB)
     # MINI_CLEANUP_OWNER was intentionally retired: it was local-only and

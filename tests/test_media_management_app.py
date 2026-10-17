@@ -349,6 +349,10 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertEqual(FakeTorrentClient.deleted, [])
         with mock.patch.object(minivid, "_configured_client", return_value=fake), \
              mock.patch.object(fake, "metadata_all", return_value=[{"ratio": 1.5, "seeding_time": 100}]):
+            with mock.patch.dict(os.environ, {"MINI_READ_ONLY_TEST": "1"}):
+                minivid._cleanup_run_once()
+            self.assertTrue(os.path.exists(self.video_path))
+            self.assertEqual(FakeTorrentClient.deleted, [])
             minivid._cleanup_run_once()
         self.assertFalse(os.path.exists(self.video_path))
         self.assertEqual(len(FakeTorrentClient.deleted), 1)
