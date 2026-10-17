@@ -1,43 +1,34 @@
 <!doctype html>
-<html lang="{{ ui_prefs.get('lang', 'fr') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
+<html lang="{{ ui_prefs.get('lang', 'fr') }}" data-theme="{{ ui_prefs.get('theme', 'dark') }}" data-accent="{{ ui_prefs.get('accent', '#d42f67') }}" data-background="{{ ui_prefs.get('background', '#090608') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MiniVid — Stockage</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/admin.css?v=1" />
   <script src="/static/i18n.js" defer></script>
+  <script src="/static/theme.js" defer></script>
   <script src="/static/storage.js" defer></script>
 </head>
-<body class="maintenance">
+<body class="maintenance admin-page">
   <header class="topbar">
     <a class="back-btn" href="/browse">← Retour</a>
     <a class="brand" href="/browse"><img src="/static/logo.svg" alt="" height="30" /><strong>MiniVid</strong></a>
-    <div class="header-right"><a class="icon-btn" href="/maintenance" title="Maintenance">⚙</a></div>
+    {% include '_header_actions.html' %}
   </header>
+  <div class="admin-shell">
+    {% set admin_active = 'storage' %}{% include '_admin_sidebar.html' %}
   <main class="container storage-page">
-    <div class="page-header"><div><h2>Stockage</h2><p class="meta">Trier, examiner et protéger vos vidéos avant de libérer de la place.</p></div>
-      <div class="storage-view-controls"><button type="button" class="btn" id="storage-layout" aria-label="Changer l'affichage">Affichage : liste</button>
-        <button type="button" class="btn" id="storage-width" aria-label="Changer la largeur">Largeur : standard</button></div>
-    </div>
-    <section class="card storage-scope-card"><header class="card-header"><h3 class="card-title">Périmètre du stockage</h3></header><div class="card-body">
-      <div class="storage-overview-grid"><div><div class="storage-overview-heading"><strong>Sources vidéo analysées</strong><span class="storage-count-pill" id="storage-source-count">—</span></div><div id="storage-sources" class="storage-source-list"></div></div>
-      <div><div class="storage-overview-heading"><strong>Stockage physique</strong><span class="meta storage-inline-meta">Une seule fois par volume.</span></div><div id="storage-volumes" class="storage-volume-list"></div></div></div>
-      <div class="storage-scan-box"><div class="storage-scan-actions"><button class="btn btn-primary" id="scan-storage">Analyser les doublons</button><span class="text-muted" id="storage-scan-status" role="status">Analyse à lancer.</span></div>
-      <progress id="storage-scan-progress" class="storage-scan-progress" max="100" value="0"></progress><div class="storage-scan-detail" id="storage-scan-detail"></div></div>
-      <p class="meta storage-help">Les copies sont vérifiées par SHA‑256. Les liens physiques et torrents cross-seed ne comptent pas comme plusieurs fichiers. La place récupérable reste une estimation.</p>
-    </div></section>
-    <section class="storage-source-scope" aria-label="Filtrer le stockage par source vidéo">
-      <div class="storage-source-scope-head">
-        <div>
-          <strong>Source vidéo</strong>
-          <p class="meta">Les doublons et la vue « Gain de place » suivent la source sélectionnée.</p>
-        </div>
-        <div id="storage-source-summary" class="storage-source-summary">Toutes les sources</div>
-      </div>
-      <div id="storage-root-tabs" class="storage-root-tabs" role="tablist" aria-label="Sources vidéo analysées"></div>
+    <div class="admin-heading"><div><span class="admin-eyebrow">L’ESSENTIEL EN UN COUP D’ŒIL</span><h1>Stockage</h1><p>Visualisez l’espace utilisé. Repérez les copies inutiles.</p></div><button class="btn btn-primary" id="scan-storage">Analyser les doublons</button></div>
+    <section class="admin-storage-dashboard" aria-label="Vue d’ensemble du stockage">
+      <div class="card admin-volume-card"><div class="admin-metric-label">ESPACE DU VOLUME</div><div id="storage-volumes" class="storage-volume-list"></div><span class="admin-volume-note">Chaque volume est compté une seule fois.</span></div>
+      <div class="card admin-metric-card"><span class="admin-metric-label">VIDÉOS INDEXÉES</span><strong id="storage-metric-videos">—</strong><small id="storage-metric-indexed">Chargement…</small></div>
+      <div class="card admin-metric-card admin-metric-accent"><span class="admin-metric-label">GAIN ESTIMÉ</span><strong id="storage-metric-recoverable">—</strong><small id="storage-metric-groups">Après vérification des doublons</small></div>
     </section>
-
+    <div class="admin-scan-strip"><div><span class="admin-status-dot"></span><span id="storage-scan-status" role="status">Analyse à lancer.</span></div><span id="storage-scan-detail"></span><progress id="storage-scan-progress" max="100" value="0"></progress></div>
+    <div class="admin-source-toolbar"><div><span class="admin-field-label">Source</span><div id="storage-root-tabs" class="storage-root-tabs" role="tablist" aria-label="Sources vidéo analysées"></div></div><details class="admin-source-details"><summary>Détails des sources <span id="storage-source-count"></span></summary><div id="storage-sources" class="storage-source-list"></div></details></div>
+    <p id="storage-source-summary" class="visually-hidden">Toutes les sources</p>
     <nav class="storage-section-tabs" role="tablist" aria-label="Vues du stockage">
       <button type="button" class="storage-section-tab active" id="storage-tab-duplicates"
               data-storage-section="duplicates" role="tab" aria-selected="true"
@@ -47,84 +38,43 @@
       <button type="button" class="storage-section-tab" id="storage-tab-cleanup"
               data-storage-section="cleanup" role="tab" aria-selected="false"
               aria-controls="storage-panel-cleanup">
-        Gain de place <span id="storage-cleanup-count" class="storage-tab-count">—</span>
+        Fichiers <span id="storage-cleanup-count" class="storage-tab-count">—</span>
       </button>
+      <button type="button" class="storage-section-tab" id="storage-tab-settings" data-storage-section="settings" role="tab" aria-selected="false" aria-controls="storage-panel-settings">Règles de nettoyage</button>
     </nav>
 
     <section id="storage-panel-duplicates" class="storage-section-panel"
              role="tabpanel" aria-labelledby="storage-tab-duplicates">
       <section class="card">
         <header class="card-header">
-          <h3 class="card-title">Copies vérifiées</h3>
+          <h3 class="card-title">Doublons vérifiés</h3><span class="admin-state-pill">Même contenu · fichiers distincts</span>
         </header>
         <div class="card-body">
-          <p class="meta storage-duplicates-help">
-            Chaque groupe correspond à des fichiers distincts dont le contenu SHA‑256 est identique.
-            Le libellé « Torrent tagué cross-seed » décrit uniquement le torrent associé :
-            il ne signifie pas que les fichiers sont des hardlinks.
-          </p>
+          <div class="admin-steps"><span><b>1</b>Comparez les copies</span><span><b>2</b>Choisissez celle à garder</span><span><b>3</b>Supprimez le surplus</span></div>
+          <p class="meta storage-duplicates-help">Seules les copies au contenu identique sont proposées. Les liens physiques ne comptent pas comme des doublons. Le gain d’espace est estimé.</p>
           <div id="storage-copies">Lancez une analyse pour vérifier les copies.</div>
         </div>
       </section>
 
-      <section class="card">
-        <header class="card-header">
-          <h3 class="card-title">Liens vers un même fichier physique</h3>
-        </header>
+      <details class="card admin-hardlinks">
+        <summary>Liens physiques et cross-seed <small>Aucune copie supplémentaire</small></summary>
         <div class="card-body">
           <p class="meta">
             Ces chemins pointent vers le même inode et ne représentent pas plusieurs copies physiques.
           </p>
           <div id="storage-links">—</div>
         </div>
-      </section>
+      </details>
     </section>
 
     <section id="storage-panel-cleanup" class="storage-section-panel"
              role="tabpanel" aria-labelledby="storage-tab-cleanup" hidden>
       <section class="card">
-        <header class="card-header"><h3 class="card-title">Nettoyage automatique</h3></header>
-        <div class="card-body">
-          <p class="meta">Désactivé par défaut. L’activation exige une synchronisation configurée et une seule instance propriétaire. La file reste consultable ci-dessous.</p>
-          <label><input type="checkbox" id="automation-enabled"> Autoriser le nettoyage automatique</label>
-          <div class="automation-source-scope">
-            <strong>Sources vidéo autorisées</strong>
-            <p class="meta">Le nettoyage auto ne pourra agir que sur les sources sélectionnées.</p>
-            <div id="automation-sources" class="automation-source-list"></div>
-          </div>
-          <label>Propriétaire <input id="automation-owner" autocomplete="off" placeholder="Identifiant d’instance"></label>
-          <button class="btn" id="automation-here">Définir cette instance</button>
-          <button class="btn btn-primary" id="automation-save">Enregistrer</button>
-          <p class="meta" id="automation-status"></p>
-          <p class="meta" id="federation-status"></p>
-        </div>
-      </section>
-
-      <section class="card" id="cleanup-defaults">
-        <header class="card-header"><h3 class="card-title">Règle par défaut des nouveaux candidats</h3></header>
-        <div class="card-body">
-          <p class="meta">Appliquée lorsque vous choisissez « Autoriser le nettoyage » pour une nouvelle vidéo. Les règles déjà enregistrées ne changent pas. L'automatisation reste désactivée tant que vous ne l'activez pas séparément.</p>
-          <div class="cleanup-policy storage-default-form">
-            <label>Ratio minimum <input id="default-ratio" type="number" min="0" max="1000" step="0.1" value="1"></label>
-            <label>Temps de seed minimum (jours) <input id="default-days" type="number" min="0" max="3650" value="7"></label>
-            <label>Condition <select id="default-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
-            <label>Déclencher <select id="default-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
-            <div id="default-space-thresholds">
-              <label>Démarrer si l’espace libre passe sous (%) <input id="default-below" type="number" min="1" max="98" value="15"></label>
-              <label>Arrêter une fois l’espace libre remonté à (%) <input id="default-until" type="number" min="2" max="99" value="20"></label>
-              <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
-            </div>
-          </div>
-          <button class="btn btn-primary" id="default-save" type="button">Enregistrer la règle par défaut</button>
-          <span id="default-status" role="status"></span>
-        </div>
-      </section>
-
-      <section class="card">
         <header class="card-header">
-          <h3 class="card-title">Fichiers <span id="storage-total"></span></h3>
+          <h3 class="card-title">Vos fichiers <span id="storage-total"></span></h3><div class="storage-view-controls"><button type="button" class="btn" id="storage-layout" aria-label="Changer l'affichage">Affichage : liste</button><button type="button" class="btn" id="storage-width" aria-label="Changer la largeur">Largeur : standard</button></div>
         </header>
         <div class="card-body">
+          <p id="storage-loading" role="status" aria-live="polite"></p>
           <div class="storage-filters">
             <label>Afficher
               <select id="storage-filter">
@@ -181,8 +131,50 @@
           </div>
         </div>
       </section>
+
     </section>
+      <section id="storage-panel-settings" class="storage-section-panel" role="tabpanel" aria-labelledby="storage-tab-settings" hidden><div class="admin-section-heading"><div><h2>Vos règles de nettoyage</h2><p>Définissez les conditions. L’activation reste une décision séparée.</p></div></div>      <section class="card">
+        <header class="card-header"><h3 class="card-title">Nettoyage automatique</h3></header>
+        <div class="card-body">
+          <p class="meta">Désactivé par défaut. L’activation exige une synchronisation configurée et une seule instance propriétaire. La file reste consultable ci-dessous.</p>
+          <label><input type="checkbox" id="automation-enabled"> Autoriser le nettoyage automatique</label>
+          <div class="automation-source-scope">
+            <strong>Sources vidéo autorisées</strong>
+            <p class="meta">Le nettoyage auto ne pourra agir que sur les sources sélectionnées.</p>
+            <div id="automation-sources" class="automation-source-list"></div>
+          </div>
+          <label>Propriétaire <input id="automation-owner" autocomplete="off" placeholder="Identifiant d’instance"></label>
+          <button class="btn" id="automation-here">Définir cette instance</button>
+          <button class="btn btn-primary" id="automation-save">Enregistrer</button>
+          <p class="meta" id="automation-status"></p>
+          <p class="meta" id="federation-status"></p>
+        </div>
+      </section>
+
+      <section class="card" id="cleanup-defaults">
+        <header class="card-header"><h3 class="card-title">Règle par défaut des nouveaux candidats</h3></header>
+        <div class="card-body">
+          <p class="meta">Appliquée lorsque vous choisissez « Autoriser le nettoyage » pour une nouvelle vidéo. Les règles déjà enregistrées ne changent pas. L'automatisation reste désactivée tant que vous ne l'activez pas séparément.</p>
+          <div class="cleanup-policy storage-default-form">
+            <label>Ratio minimum <input id="default-ratio" type="number" min="0" max="1000" step="0.1" value="1"></label>
+            <label>Temps de seed minimum (jours) <input id="default-days" type="number" min="0" max="3650" value="7"></label>
+            <label>Condition <select id="default-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
+            <label>Déclencher <select id="default-trigger"><option value="pressure">Lorsque le stockage manque de place</option><option value="immediate">Dès que les conditions sont atteintes</option></select></label>
+            <div id="default-space-thresholds">
+              <label>Démarrer si l’espace libre passe sous (%) <input id="default-below" type="number" min="1" max="98" value="15"></label>
+              <label>Arrêter une fois l’espace libre remonté à (%) <input id="default-until" type="number" min="2" max="99" value="20"></label>
+              <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="default-save" type="button">Enregistrer la règle par défaut</button>
+          <span id="default-status" role="status"></span>
+        </div>
+      </section>
+
+
+      </section>
   </main>
+  </div>
   <dialog id="storage-selection-dialog" class="storage-dialog"><h3>Examiner la sélection</h3><div id="storage-selection-summary"></div>
     <label>Confirmation <input id="storage-selection-confirm" autocomplete="off" placeholder="SUPPRIMER 3"></label>
     <div class="storage-dialog-actions"><button class="btn" id="storage-selection-cancel" type="button">Annuler</button><button class="btn btn-danger" id="storage-selection-delete" type="button" disabled>Supprimer définitivement</button></div></dialog>

@@ -842,16 +842,14 @@ html.ratio-16-9 .folder .thumb {
 
 .player-options[hidden] { display: none; }
 
-.player-wrap:fullscreen,
-.player-wrap:-webkit-full-screen {
+.player-wrap:is(:fullscreen, :-webkit-full-screen) {
   width: 100%;
   height: 100%;
   max-width: none;
   background: #000;
 }
 
-.player-wrap:fullscreen video,
-.player-wrap:-webkit-full-screen video {
+.player-wrap:is(:fullscreen, :-webkit-full-screen) video {
   width: 100%;
   height: 100%;
   max-height: none;
@@ -2812,3 +2810,27 @@ input[type="radio"] {
 .grid.view-wall .card .fav-btn.active {
   opacity: 1;
 }
+
+/* Fullscreen geometry wins over the page zoom, including WebKit. */
+.player-wrap:is(:fullscreen, :-webkit-full-screen) {
+  inline-size: 100% !important; width: 100% !important; height: 100%;
+  margin: 0; border: 0; border-radius: 0; overflow: hidden; transition: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.player-wrap:is(:fullscreen, :-webkit-full-screen) video {
+  width: 100% !important; height: 100% !important; max-height: 100% !important; object-fit: contain;
+}
+html[data-theme="midnight"] { --bg:#080f20; --surface:#101c33; --surface-2:#15243e; --surface-3:#20324d; }
+html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025; --surface-3:#244234; }
+.theme-editor { position:relative; }
+.theme-editor summary { list-style:none; cursor:pointer; }
+.theme-panel { position:absolute; right:0; top:calc(100% + .6rem); z-index:120;
+  width:min(300px, 85vw); padding:1rem; display:grid; gap:.8rem; background:var(--surface); color:var(--text);
+  border:1px solid var(--border-strong); border-radius:var(--radius); box-shadow:var(--shadow); }
+.theme-panel label { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.theme-panel input[type=color] { width:3rem; height:2rem; padding:0; }
+.storage-advanced { margin-top:1.5rem; }
+.storage-advanced > summary, #cleanup-conditions > summary { cursor:pointer; padding:.8rem 0; font-weight:600; }
+.storage-page[aria-busy="true"] #storage-table-wrap, .storage-page[aria-busy="true"] #storage-gallery { opacity:.5; }
+
+.test-instance-badge { font-size:.75rem; color:var(--accent-2); border:1px solid currentColor; border-radius:6px; padding:.35rem; }

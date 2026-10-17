@@ -149,6 +149,9 @@ ST_DIR   = os.path.abspath(os.path.join(BASE_DIR, "static"))
 
 app = Flask(__name__, template_folder=TPL_DIR, static_folder=ST_DIR)
 app.secret_key = SECRET_KEY
+app.config["SESSION_COOKIE_NAME"] = os.environ.get("MINI_SESSION_COOKIE_NAME") or (
+    "minivid_test" if os.environ.get("MINI_READ_ONLY_TEST") == "1" else "session"
+)
 LOG.info("Template dir: %s | Static dir: %s", TPL_DIR, ST_DIR)
 
 # Inject hide_credits into all templates
@@ -159,7 +162,19 @@ def inject_footer_config():
         prefs = (read_state().get("prefs", {}) or {})
     except Exception:
         prefs = {}
-    return dict(hide_credits=HIDE_FOOTER_CREDITS, ui_prefs=prefs)
+    return dict(
+        hide_credits=HIDE_FOOTER_CREDITS, ui_prefs=prefs,
+        auth_enabled=AUTH_ENABLED,
+        test_instance=os.environ.get("MINI_READ_ONLY_TEST") == "1",
+    )
+
+@app.before_request
+def protect_test_media():
+    if os.environ.get("MINI_READ_ONLY_TEST") == "1" and request.method == "POST" and request.endpoint in {
+        "api_media_delete", "api_storage_selection_delete", "api_storage_duplicate_delete",
+        "api_storage_automation", "api_media_managers_settings",
+    }:
+        return jsonify(ok=False, error="Instance de test : suppression et automatisation désactivées"), 403
 
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')
@@ -749,7 +764,9 @@ def api_preferences_set():
         return jsonify(ok=False, error="auth"), 401
     data = request.get_json(force=True, silent=True) or {}
     allowed = {
-        "theme": lambda v: v if v in ("dark", "light") else "dark",
+        "theme": lambda v: v if v in ("dark", "light", "midnight", "forest", "custom") else "dark",
+        "accent": lambda v: v if isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v) else "#d42f67",
+        "background": lambda v: v if isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v) else "#090608",
         "thumb_px": lambda v: max(160, min(360, int(v))),
         "per": lambda v: v if str(v) in ("all", "12", "24", "48", "96") else "all",
         "read": lambda v: v if v in ("all", "unread", "read") else "all",
@@ -1378,7 +1395,7 @@ def _storage_path(vid):
     return _media_item_and_path(vid)[3]
 
 
-def _storage_file_context(vid, cfg, cache=None):
+def _storage_file_context(vid, cfg, cache=None, resolve_torrents=True):
     if cache is not None and vid in cache:
         return cache[vid]
     item, root, rel, full = _media_item_and_path(vid)
@@ -1401,7 +1418,10 @@ def _storage_file_context(vid, cfg, cache=None):
     }
     if client_cfg:
         result["torrent_client"] = {"name": str(client_cfg.get("name") or "Client BitTorrent"), "type": str(client_cfg.get("type") or "")}
-    if cfg.get("torrent_integration_enabled") and client_id and client_cfg:
+    if cfg.get("torrent_integration_enabled") and client_id and client_cfg and not resolve_torrents:
+        result["management"] = "unknown"
+        result["management_label"] = "Client BitTorrent configuré · association vérifiée avant suppression"
+    if cfg.get("torrent_integration_enabled") and client_id and client_cfg and resolve_torrents:
         try:
             torrents = _configured_client(cfg, client_id, MEDIA_DIRS[root]).metadata_all(rel, source.get("client_root", "/downloads"), os.path.getsize(full))
             if torrents:
@@ -1452,6 +1472,8 @@ def _cleanup_status(vid, rule, cfg, full, state):
 
 def _cleanup_run_once():
     """Only an explicitly designated owner may delete. Recheck everything at execution time."""
+    if os.environ.get("MINI_READ_ONLY_TEST") == "1":
+        return
     cfg = _read_media_managers()
     settings = storage.settings(STORAGE_DB)
     # MINI_CLEANUP_OWNER was intentionally retired: it was local-only and
@@ -1775,7 +1797,7 @@ def api_storage():
 
         for vid in group["items"]:
             try:
-                context = _storage_file_context(vid, cfg, context_cache)
+                context = _storage_file_context(vid, cfg, context_cache, resolve_torrents=False)
                 group["files"].append(context)
                 root = int(context["root"])
                 file_roots[vid] = root
@@ -1877,7 +1899,7 @@ def api_storage():
 
         for vid in group:
             try:
-                context = _storage_file_context(vid, cfg, context_cache)
+                context = _storage_file_context(vid, cfg, context_cache, resolve_torrents=False)
                 files.append(context)
                 roots_present.add(int(context["root"]))
             except (ValueError, OSError, FileNotFoundError):
@@ -2913,7 +2935,8 @@ def check_nvenc():
     LOG.info("Accélération matérielle NVIDIA NVENC non disponible.")
     return False
 
-HAS_NVENC = check_nvenc()
+HWACCEL_ENABLED = os.environ.get("MINI_HWACCEL", "auto").lower() not in ("off", "0", "false", "no")
+HAS_NVENC = HWACCEL_ENABLED and check_nvenc()
 
 def check_vaapi():
     """Détecte un encodeur H.264 VA-API Intel ou AMD réellement utilisable."""
@@ -2936,7 +2959,7 @@ def check_vaapi():
     LOG.info("Accélération matérielle VA-API non disponible.")
     return False
 
-HAS_VAAPI = not HAS_NVENC and check_vaapi()
+HAS_VAAPI = HWACCEL_ENABLED and not HAS_NVENC and check_vaapi()
 
 @app.route("/hls/<vid>/playlist.m3u8")
 def hls_playlist(vid):

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ ui_prefs.get('lang', 'fr') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }} ratio-16-9">
+<html lang="{{ ui_prefs.get('lang', 'fr') }}" data-theme="{{ ui_prefs.get('theme', 'dark') }}" data-accent="{{ ui_prefs.get('accent', '#d42f67') }}" data-background="{{ ui_prefs.get('background', '#090608') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }} ratio-16-9">
 
 <head>
   <meta charset="utf-8" />
@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v=5" />
   <script src="/static/i18n.js" defer></script>
+  <script src="/static/theme.js" defer></script>
   <style>
     :root {
       --thumb-h: {{ ui_prefs.get('thumb_px', 240) | int }}px;
@@ -127,14 +128,7 @@
         href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ '1' if fav_only else '0' }}&multi={{ 0 if multi_only else 1 }}&smart={{ '1' if smart else '0' }}">Collections</a>
     </form>
 
-    <div class="header-right">
-      <a href="/storage" class="icon-btn" title="Stockage" aria-label="Stockage">▤</a>
-      <button id="themeToggle" class="icon-btn" title="Thème clair/sombre" aria-label="Thème clair/sombre">☾</button>
-      <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
-      {% if auth %}
-      <a href="/logout" class="icon-btn" title="Déconnexion" aria-label="Déconnexion">⎋</a>
-      {% endif %}
-    </div>
+    {% include '_header_actions.html' %}
   </header>
 
   <nav class="roots">
@@ -321,16 +315,7 @@
       setView(saved);
     })();
 
-    (function themeToggle() {
-      const btn = document.getElementById('themeToggle');
-      function sync() { if (btn) btn.textContent = document.documentElement.classList.contains('light') ? '☀' : '☾'; }
-      sync();
-      btn?.addEventListener('click', () => {
-        const isLight = document.documentElement.classList.toggle('light');
-        savePrefs({ theme: isLight ? 'light' : 'dark' });
-        sync();
-      });
-    })();
+
 
     (function tagbarToggle() {
       const tagbar = document.getElementById('tagbar-popular');
