@@ -1,6 +1,8 @@
 /* MiniVid UI language switcher. French is the original/default language. */
 (() => {
   const en = {
+    "Données partagées indisponibles : vérifiez la connexion à l’instance centrale. Aucune modification locale n’a été enregistrée.": "Shared data unavailable: check the connection to the central instance. No local changes were saved.",
+    "Modification sans état de référence refusée.": "Change rejected because its reference state is missing.",
     "Sélections": "Selections", "Tags ignorés": "Ignored tags", "Analyser les tags": "Analyze tags", "Propositions à vérifier": "Suggestions to review", "Tous les tags disponibles": "All available tags", "Ignorer la sélection": "Ignore selected tags", "Ajouter un tag précis": "Add a specific tag", "Ignorer ce tag": "Ignore this tag", "Rechercher": "Search",
     "À regarder": "Watch next", "Reprendre": "Continue watching", "Pour toi": "For you", "Mes favoris": "My favorites", "Toute la bibliothèque →": "Browse library →", "Associations et enrichissement →": "Source matching and enrichment →", "Rien à afficher pour le moment.": "Nothing to show yet.", "Reprends une lecture ou découvre ta prochaine vidéo.": "Resume watching or discover your next video.",
     "Lectures": "Viewing history", "Panneau": "Panel", "Masqué": "Hidden", "En cours": "In progress", "Dernières lectures": "Recently watched", "En cours et récentes": "In progress and recent", "Aucune lecture à afficher.": "No viewing history to display.",

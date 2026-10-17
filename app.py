@@ -33,6 +33,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, request, render_template, send_file, abort, jsonify, session, redirect, url_for, Response
 from media_managers import TorrentClientError, make_torrent_client
 import storage_manager as storage
+from extension_bridge import SharedStateClient,SharedStateSnapshot,SharedStateUnavailable
 
 APP_NAME = "MiniVid"
 DEF_EXT = ".mp4,.webm,.mkv,.avi,.flv,.m2ts"
@@ -57,6 +58,7 @@ STATE_DB = os.path.join(DATA_DIR, "state.db")
 STORAGE_DB = os.path.join(DATA_DIR, "storage.db")
 STATE_JSON = os.path.join(DATA_DIR, "state.json")
 STATE_LOCK = threading.RLock()
+SHARED_STATE = SharedStateClient(os.environ.get('MINI_EXTENSION_URL',''),os.environ.get('MINI_EXTENSION_TOKEN','')) if os.environ.get('MINI_SHARED_STATE','0')=='1' else None
 MEDIA_MANAGERS_FILE = os.path.join(DATA_DIR, "media_managers.json")
 MEDIA_MANAGERS_LOCK = threading.RLock()
 
@@ -149,6 +151,12 @@ TPL_DIR  = os.path.abspath(os.path.join(BASE_DIR, "templates"))
 ST_DIR   = os.path.abspath(os.path.join(BASE_DIR, "static"))
 
 app = Flask(__name__, template_folder=TPL_DIR, static_folder=ST_DIR)
+
+@app.errorhandler(SharedStateUnavailable)
+def shared_state_unavailable(exc):
+    if request.path.startswith('/api/'):return jsonify(ok=False,error=str(exc)),503
+    return str(exc),503
+
 app.secret_key = SECRET_KEY
 app.config["SESSION_COOKIE_NAME"] = os.environ.get("MINI_SESSION_COOKIE_NAME") or (
     "minivid_test" if os.environ.get("MINI_READ_ONLY_TEST") == "1" else "session"
@@ -553,6 +561,7 @@ def _bootstrap_state_db():
 
 def read_state():
     with STATE_LOCK:
+        if SHARED_STATE is not None:return SharedStateSnapshot(_merge_state(SHARED_STATE.read()))
         try:
             _bootstrap_state_db()
             conn = _state_db_conn()
@@ -565,6 +574,10 @@ def read_state():
         return _read_state_json()
 
 def write_state(st):
+    if SHARED_STATE is not None:
+        committed=SHARED_STATE.write(st)
+        st.clear();st.update(committed)
+        st.baseline=json.loads(json.dumps(committed))
     st = _merge_state(st)
     payload = json.dumps(st, ensure_ascii=False)
     with STATE_LOCK:

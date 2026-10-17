@@ -146,3 +146,41 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
     app.extensions['minivid_recommendations']=recommendations
     app.register_blueprint(bp)
     app.context_processor(lambda:{'extension_enabled':enabled})
+
+
+class SharedStateUnavailable(RuntimeError):pass
+
+class SharedStateSnapshot(dict):
+    def __init__(self,state):
+        super().__init__(json.loads(json.dumps(state)))
+        self.baseline=json.loads(json.dumps(state))
+
+def state_changes(before,after,path=None):
+    path=path or [];changes=[]
+    for key in before.keys()|after.keys():
+        current=path+[key]
+        if key not in after:changes.append({'path':current,'remove':True})
+        elif key not in before:changes.append({'path':current,'value':after[key]})
+        elif isinstance(before[key],dict) and isinstance(after[key],dict):changes.extend(state_changes(before[key],after[key],current))
+        elif before[key]!=after[key]:changes.append({'path':current,'value':after[key]})
+    return changes
+
+class SharedStateClient:
+    def __init__(self,url,token):
+        parsed=urlsplit(url)
+        if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or len(token)<24:raise ValueError('Configuration des données partagées invalide')
+        self.url=url.rstrip('/')+'/v1/state';self.token=token;self.opener=build_opener(ProxyHandler({}),NoRedirect())
+    def call(self,payload=None):
+        req=Request(self.url,data=json.dumps(payload,ensure_ascii=False).encode() if payload is not None else None,headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json'})
+        try:
+            with self.opener.open(req,timeout=8) as response:
+                raw=response.read(6*1024*1024+1)
+                if len(raw)>6*1024*1024:raise ValueError()
+                result=json.loads(raw)
+                if not result.get('ok') or not isinstance(result.get('state'),dict):raise ValueError()
+                return result['state']
+        except (OSError,ValueError,TypeError):raise SharedStateUnavailable('Données partagées indisponibles : vérifiez la connexion à l’instance centrale. Aucune modification locale n’a été enregistrée.') from None
+    def read(self):return self.call()
+    def write(self,state):
+        if not isinstance(state,SharedStateSnapshot):raise SharedStateUnavailable('Modification sans état de référence refusée.')
+        return self.call({'changes':state_changes(state.baseline,state)})
