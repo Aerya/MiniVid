@@ -45,3 +45,19 @@ class BridgeTests(unittest.TestCase):
     def test_invalid_backend_configuration_rejected(self):
         for url in ('http://user:secret@host','file:///etc/passwd','http://host?token=secret'):
             with self.assertRaises(ValueError):self.make(url=url)
+    def test_recommendations_distinguish_empty_results_from_companion_failure(self):
+        client,_=self.make()
+        response=MagicMock();response.status=200;response.headers={'Content-Type':'application/json'};response.__enter__.return_value=response
+        response.read.return_value=json.dumps({'ok':True,'groups':[{'id':'similar','videos':[]}],'opinions':{}}).encode()
+        with client.application.test_request_context('/'),patch('urllib.request.OpenerDirector.open',return_value=response) as transport:
+            result=client.application.extensions['minivid_recommendations']('focus')
+            self.assertEqual(result,{'videos':[],'opinions':{}})
+            self.assertEqual(transport.call_args.kwargs['timeout'],3)
+            payload=json.loads(transport.call_args.args[0].data)
+            self.assertEqual(payload['focus'],'focus');self.assertEqual(payload['count'],20)
+            response.read.return_value=b'{}'
+            self.assertIsNone(client.application.extensions['minivid_recommendations']('focus'))
+        client,_=self.make(auth=False)
+        with client.application.test_request_context('/'),patch('urllib.request.OpenerDirector.open') as transport:
+            self.assertIsNone(client.application.extensions['minivid_recommendations']('focus'))
+            transport.assert_not_called()

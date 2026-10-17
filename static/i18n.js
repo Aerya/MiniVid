@@ -229,6 +229,7 @@
   "Supprimer le fichier": "Delete file"
 });
   Object.assign(en, {"Pourcentage réellement regardé":"Percentage actually watched", "Temps réellement regardé : non lue sous 30 %, en cours de 30 à moins de 70 %, lue à partir de 70 %.":"Actual watched time: unwatched below 30%, in progress from 30% to less than 70%, watched from 70%."});
+  Object.assign(en,{"Ça m’intéresse":"Interested","Pas pour moi":"Not for me","Avis et sources":"Feedback and sources","Impossible d’enregistrer cet avis.":"Could not save feedback."});
   Object.assign(en, window.MINIVID_TRANSLATIONS || {});
   const entries = Object.entries(en).sort((a,b)=>b[0].length-a[0].length);
   const protectedText = node => node.parentElement?.closest('script,style,textarea,code,pre,[translate="no"],.reading-name,.tag,.selection-open strong,.tracker-result strong,.association-row > a,.tag-review-row strong');

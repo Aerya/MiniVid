@@ -1215,6 +1215,22 @@ def api_similar(vid):
     if not ref_tags:
         return jsonify(ok=True, videos=[])
 
+    companion=app.extensions.get('minivid_recommendations',lambda *a,**kw:None)(vid, minimum=min_tags)
+    if companion is not None:
+        by_id={v['id']:v for v in MEDIA}
+        seen={vid};videos=[]
+        for suggestion in companion['videos']:
+            key=suggestion['id']
+            if key in seen or key not in by_id:continue
+            seen.add(key);item=by_id[key];meta=st.get('meta',{}).get(key,{})
+            status=_reading_status(st,key)
+            videos.append({'id':key,'name':item.get('name',''),'ext':item.get('ext',''),
+                           'size':item.get('size',0),'res':item.get('res') or (f"{meta['w']}×{meta['h']}" if meta.get('w') and meta.get('h') else ''),
+                           'fav':bool(fav_map.get(key)),'played':status=='read','reading_status':status,
+                           'reasons':_display_tags(suggestion.get('reasons',[])),
+                           'opinion':companion.get('opinions',{}).get(key,0)})
+        return jsonify(ok=True,videos=videos,source='companion')
+
     results = []
     for item in MEDIA:
         if not isinstance(item, dict) or item.get("id") == vid or item.get("kind") == "folder":
@@ -1239,7 +1255,7 @@ def api_similar(vid):
             })
 
     results.sort(key=lambda x: -x["common"])
-    return jsonify(ok=True, videos=results[:24])
+    return jsonify(ok=True, videos=results[:24], source="native")
 
 
 # --- Journal/helper & storage files ---

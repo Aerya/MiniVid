@@ -10,6 +10,7 @@
   <script src="/static/i18n.js" defer></script>
   <script src="/static/theme.js" defer></script>
   <script src="/static/watch-keys.js" defer></script>
+  <script src="/static/similar.js" defer></script>
   {% if extension_enabled %}<script src="/static/extensions.js" defer></script>{% endif %}
 </head>
 
@@ -196,7 +197,7 @@
     </div>
 
     <!-- Sidebar (colonne droite sur grand écran) -->
-    <aside class="watch-sidebar" id="watch-sidebar" style="display:none;">
+    <aside class="watch-sidebar" id="watch-sidebar" data-video-id="{{ vid }}" style="display:none;">
       <div class="sidebar-header">
         <h3 class="sidebar-title">Vidéos similaires</h3>
         <span class="sidebar-count" id="sidebar-count"></span>
@@ -722,68 +723,6 @@
           applyZoom(z);
         }, 120);
       }, { passive: true });
-    })();
-
-    (function similarVideos() {
-      const sidebar = document.getElementById('watch-sidebar');
-      const watchMain = document.getElementById('watchMain');
-      const grid = document.getElementById('similar-grid');
-      const countEl = document.getElementById('sidebar-count');
-      if (!grid) return;
-      function formatSize(n) {
-        if (!n) return '';
-        if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' Go';
-        return (n / 1048576).toFixed(1) + ' Mo';
-      }
-      async function loadSimilar() {
-        try {
-          const r = await fetch('/api/similar/' + encodeURIComponent(VID), { credentials: 'same-origin' });
-          const j = await r.json();
-          if (!j?.ok || !j.videos?.length) return;
-          if (sidebar) sidebar.style.display = '';
-          if (watchMain) watchMain.classList.add('has-sidebar');
-          if (countEl) countEl.textContent = `${j.videos.length}`;
-          grid.innerHTML = j.videos.map(video => {
-            const safeName = (video.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const statusHtml = video.played ? '<span class="side-badge side-read">Lue</span>' : video.reading_status === 'in_progress' ? '<span class="side-badge side-progress">En cours</span>' : '';
-            const favCls = video.fav ? 'fav-btn active' : 'fav-btn';
-            return `
-              <article class="side-card ${video.played ? 'played' : 'unplayed'}" data-vid="${video.id}">
-                <a class="side-thumb" href="/watch/${video.id}">
-                  <img loading="lazy" src="/thumb/${video.id}.jpg" alt="" onerror="this.src='/static/placeholder.svg'">
-                  <span class="side-ext">${(video.ext || '').toUpperCase()}</span>
-                  ${statusHtml}
-                </a>
-                <div class="side-info">
-                  <a class="side-title" href="/watch/${video.id}" title="${safeName}">${safeName}</a>
-                  <div class="side-sub">
-                    <span>${formatSize(video.size)}</span>
-                    ${video.res ? `<span>· ${video.res}</span>` : ''}
-                  </div>
-                </div>
-                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${video.id}"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg></button>
-              </article>`;
-          }).join('');
-          grid.querySelectorAll('.fav-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const id = btn.dataset.id;
-              const next = !btn.classList.contains('active');
-              try {
-                await fetch('/api/fav', {
-                  method: 'POST',
-                  credentials: 'same-origin',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ vid: id, fav: next })
-                });
-                btn.classList.toggle('active', next);
-              } catch (_) {}
-            });
-          });
-        } catch (_) {}
-      }
-      loadSimilar();
     })();
 
     (function backTop() {

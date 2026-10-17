@@ -2889,3 +2889,5 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 
 .app-topbar .brand strong{display:inline!important}.app-topbar .test-instance-badge{display:inline-flex!important}
 @media(max-width:760px){.app-topbar{padding:.7rem!important;gap:.5rem!important}}
+
+.side-actions{display:flex;flex-direction:column;gap:4px;align-items:center;flex-shrink:0}.side-opinions{display:flex;gap:2px}.side-opinion{width:24px;height:24px;padding:0;border:0;border-radius:5px;background:transparent;cursor:pointer;font-size:12px;color:var(--muted)}.side-opinion:hover,.side-opinion[aria-pressed="true"]{background:var(--surface-3);color:var(--accent)}.side-reasons{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.side-feedback-error{color:var(--danger);font-size:11px}

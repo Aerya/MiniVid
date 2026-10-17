@@ -18,13 +18,13 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
     base=url.rstrip('/')
     opener=build_opener(ProxyHandler({}),NoRedirect())
     bp=Blueprint('extension',__name__)
-    def forward(path,body=None,query=''):
+    def forward(path,body=None,query='',timeout=30):
         if not enabled:abort(404)
         if '..' in path.split('/') or not path.startswith(('ui/','assets/','v1/')):abort(404)
         target=base+'/'+quote(path,safe='/')+('?' + query if query else '')
         req=Request(target,data=body,headers={'Authorization':'Bearer '+token,'Content-Type':'application/json' if body is not None else 'application/octet-stream'})
         try:
-            with opener.open(req,timeout=30) as response:
+            with opener.open(req,timeout=timeout) as response:
                 content=response.read(6*1024*1024+1)
                 if len(content)>6*1024*1024:raise ValueError('Réponse du module trop volumineuse')
                 return content,response.status,response.headers.get('Content-Type','application/json')
@@ -129,5 +129,20 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
             time.sleep(30)
     if enabled and start_worker:
         threading.Thread(target=synchronize,daemon=True,name='external-companion-import').start()
+    def recommendations(vid, minimum=1):
+        if not enabled or not authenticated():return None
+        try:
+            payload={'videos':library_for(),'focus':vid,'count':20,'unseen_only':False,'min_common_tags':minimum}
+            content,status,_=forward('v1/collections',json.dumps(payload).encode(),timeout=3)
+            if status != 200:return None
+            data=json.loads(content)
+            if data.get('ok') is not True:return None
+            group=next((g for g in data.get('groups',[]) if g.get('id')=='similar'),None)
+            if not group or not isinstance(group.get('videos'),list):return None
+            if any(not isinstance(v,dict) or not isinstance(v.get('id'),str) for v in group['videos']):return None
+            opinions=data.get('opinions',{})
+            return {'videos':group['videos'],'opinions':opinions if isinstance(opinions,dict) else {}}
+        except (ValueError,TypeError,AttributeError):return None
+    app.extensions['minivid_recommendations']=recommendations
     app.register_blueprint(bp)
     app.context_processor(lambda:{'extension_enabled':enabled})

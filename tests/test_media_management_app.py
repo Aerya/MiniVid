@@ -838,3 +838,36 @@ class IgnoredTagReviewTest(unittest.TestCase):
         with self.client.session_transaction() as session:session.clear()
         self.assertEqual(self.client.get('/api/banned_tags/review').status_code,403)
         self.assertEqual(self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['hevc']}).status_code,403)
+
+class UnifiedSimilarVideosTest(unittest.TestCase):
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+        self.second='local-suggestion'
+        minivid.MEDIA.append({'id':self.second,'name':'Suggested.mp4','size':40,'mtime':1,'ext':'mp4','tags':['nature']})
+        minivid.MEDIA[0]['tags']=['nature']
+        self.previous=minivid.app.extensions['minivid_recommendations']
+        minivid.set_similar_config(True,1)
+    def tearDown(self):
+        minivid.app.extensions['minivid_recommendations']=self.previous
+        minivid.MEDIA[:]=[item for item in minivid.MEDIA if item['id']!=self.second]
+        minivid.write_state(minivid._default_state())
+        MediaManagementApiTest.tearDown(self)
+    def test_companion_order_metadata_and_rejected_videos_are_respected(self):
+        minivid.app.extensions['minivid_recommendations']=lambda vid,**kwargs:{'videos':[{'id':'unknown'},{'id':vid},{'id':self.second,'reasons':['nature']},{'id':self.second}], 'opinions':{self.second:1}}
+        response=self.client.get('/api/similar/'+self.vid)
+        self.assertEqual(response.json['source'],'companion')
+        self.assertEqual([v['id'] for v in response.json['videos']],[self.second])
+        self.assertEqual(response.json['videos'][0]['name'],'Suggested.mp4')
+        self.assertEqual(response.json['videos'][0]['opinion'],1)
+        minivid.app.extensions['minivid_recommendations']=lambda vid,**kwargs:{'videos':[],'opinions':{}}
+        self.assertEqual(self.client.get('/api/similar/'+self.vid).json['videos'],[])
+    def test_missing_companion_falls_back_and_disabled_setting_hides_all(self):
+        minivid.app.extensions['minivid_recommendations']=lambda vid,**kwargs:None
+        response=self.client.get('/api/similar/'+self.vid)
+        self.assertEqual(response.json['source'],'native')
+        self.assertIn(self.second,[v['id'] for v in response.json['videos']])
+        minivid.set_similar_config(False,1)
+        minivid.app.extensions['minivid_recommendations']=mock.Mock()
+        self.assertEqual(self.client.get('/api/similar/'+self.vid).json['videos'],[])
+        minivid.app.extensions['minivid_recommendations'].assert_not_called()
