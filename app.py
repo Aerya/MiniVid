@@ -178,11 +178,36 @@ def protect_test_media():
         return jsonify(ok=False, error="Instance de test : suppression et automatisation désactivées"), 403
 
 # External companions are opt-in and contacted only by authenticated administrators.
+_EXTENSION_ALIASES = {'at':0, 'paths':{}}
+
+def _extension_alias_map():
+    with STATE_LOCK:
+        if time.monotonic()-_EXTENSION_ALIASES['at'] < 120:return _EXTENSION_ALIASES['paths']
+        aliases={}
+        for root,base in enumerate(MEDIA_DIRS):
+            for excluded in EXCLUDED_MEDIA_DIRS:
+                directory=os.path.join(base,excluded)
+                if not os.path.isdir(directory) or os.path.islink(directory):continue
+                for parent,dirs,files in os.walk(directory,followlinks=False):
+                    dirs[:]=[d for d in dirs if not os.path.islink(os.path.join(parent,d))]
+                    for name in files:
+                        path=os.path.join(parent,name)
+                        if os.path.islink(path):continue
+                        try:stat=os.stat(path)
+                        except OSError:continue
+                        identity=(root,stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns)
+                        aliases.setdefault(identity,[]).append(os.path.relpath(path,base))
+        _EXTENSION_ALIASES.update(at=time.monotonic(),paths=aliases)
+        return aliases
+
 def _extension_context(vid):
     item, root, relative, full = _media_item_and_path(vid)
     stat = os.stat(full)
+    identity=(root,stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns)
     return {"id": vid, "name": item["name"], "relative_path": relative,
-            "source": MEDIA_NAMES[root], "size": stat.st_size, "mtime": int(stat.st_mtime)}
+            "source": MEDIA_NAMES[root], "size": stat.st_size, "mtime": int(stat.st_mtime),
+            "physical_key":hashlib.sha256(str(identity[1:]).encode()).hexdigest(),
+            "aliases":_extension_alias_map().get(identity,[])}
 
 def _external_tag_record(context, result):
     if not isinstance(result, dict):
@@ -1145,7 +1170,7 @@ def login():
                 if remember:
                     session.permanent = True
                     app.permanent_session_lifetime = 60*60*24*30
-                return redirect(url_for("browse"))
+                return redirect(url_for("home"))
             error = "Identifiants invalides"
         return render_template("login.html", error=error, enabled=True)
     except Exception as e:
@@ -2428,7 +2453,7 @@ def api_storage_duplicate_delete():
 # ---------- Routes ----------
 @app.route("/")
 def root():
-    return redirect(url_for("browse"))
+    return redirect(url_for("home"))
 
 @app.route("/health")
 def health():
@@ -2494,6 +2519,13 @@ def smart_group_items(items, mode="date"):
         return [g for g in groups if g["videos"]]
     
     return []
+
+@app.route('/home')
+def home():
+    if not auth_required():return redirect(url_for('login'))
+    state=read_state()
+    favorites=sorted([item for item in MEDIA if state.get('fav',{}).get(item['id'])],key=lambda item:item.get('mtime',0),reverse=True)[:10]
+    return render_template('home.html',resume=_recent_reading(state,'in_progress'),favorites=favorites)
 
 @app.route("/browse")
 def browse():

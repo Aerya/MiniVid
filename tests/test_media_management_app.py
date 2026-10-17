@@ -684,3 +684,31 @@ class ReadingProgressTest(unittest.TestCase):
     def test_progress_rejects_unknown_video_and_invalid_numbers(self):
         self.assertEqual(self.client.post('/api/progress/missing',json={'progress':20}).status_code,404)
         self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':'invalid'}).status_code,400)
+
+class LibraryIdentityAndHomeTest(unittest.TestCase):
+    def tearDown(self):
+        minivid.write_state(minivid._default_state())
+        MediaManagementApiTest.tearDown(self)
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+    def test_hardlink_aliases_are_verified_and_copies_are_excluded(self):
+        import shutil
+        directory=os.path.join(VIDEO_ROOT,'cross-seed-links');os.makedirs(directory,exist_ok=True)
+        true_alias=os.path.join(directory,'different-name.mkv');copy=os.path.join(directory,'copy.mkv');symlink=os.path.join(directory,'symlink.mkv')
+        try:
+            os.link(self.video_path,true_alias);shutil.copy2(self.video_path,copy);os.symlink(self.video_path,symlink)
+            minivid._EXTENSION_ALIASES['at']=0
+            ctx=minivid._extension_context(self.vid)
+            self.assertEqual(ctx['aliases'],['cross-seed-links/different-name.mkv'])
+            self.assertEqual(len(ctx['physical_key']),64)
+        finally:
+            for name in (true_alias,copy,symlink):os.unlink(name)
+            os.rmdir(directory);minivid._EXTENSION_ALIASES['at']=0
+    def test_home_preserves_library_and_resume_access(self):
+        state=minivid.read_state();state['fav']={self.vid:True};minivid.write_state(state)
+        self.client.post('/api/progress/'+self.vid,json={'progress':25,'duration':100})
+        response=self.client.get('/home');self.assertEqual(response.status_code,200)
+        page=response.get_data(as_text=True)
+        self.assertIn('Reprendre',page);self.assertIn('Mes favoris',page);self.assertIn(self.vid,page)
+        self.assertEqual(self.client.get('/').location,'/home')

@@ -42,7 +42,7 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
     def page():
         failure=guard()
         if failure:return failure
-        return render_template('extensions.html', extension_ui='ui/discover/' if request.args.get('view')=='discover' else 'ui/')
+        return render_template('extensions.html', extension_ui={'discover':'ui/discover/','library':'ui/library/','home':'ui/discover/?home=1'}.get(request.args.get('view'),'ui/'))
     @bp.route('/api/extension/<path:path>',methods=['GET','POST'])
     def proxy(path):
         failure=guard()
@@ -56,6 +56,12 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
         response.headers['Referrer-Policy']='no-referrer'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'"
+        return response
+    @bp.get('/api/extensions/contexts')
+    def contexts():
+        failure=guard()
+        if failure:return failure
+        response=jsonify(ok=True,videos=contexts_for());response.headers['Cache-Control']='no-store'
         return response
     @bp.get('/api/extensions/library')
     def library():

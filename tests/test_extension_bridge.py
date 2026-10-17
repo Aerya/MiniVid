@@ -18,6 +18,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(client.get('/api/extension/v1/config').status_code,404)
         client,_=self.make(auth=False)
         self.assertEqual(client.get('/api/extensions/library').status_code,401)
+        self.assertEqual(client.get('/api/extensions/contexts').status_code,401)
         self.assertEqual(client.get('/api/extension/v1/config').status_code,401)
     def test_token_added_server_side_and_cookie_not_forwarded(self):
         client,_=self.make()

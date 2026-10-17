@@ -1,6 +1,7 @@
 /* MiniVid UI language switcher. French is the original/default language. */
 (() => {
   const en = {
+    "À regarder": "Watch next", "Reprendre": "Continue watching", "Pour toi": "For you", "Mes favoris": "My favorites", "Toute la bibliothèque →": "Browse library →", "Associations et enrichissement →": "Source matching and enrichment →", "Rien à afficher pour le moment.": "Nothing to show yet.", "Reprends une lecture ou découvre ta prochaine vidéo.": "Resume watching or discover your next video.",
     "Lectures": "Viewing history", "Panneau": "Panel", "Masqué": "Hidden", "En cours": "In progress", "Dernières lectures": "Recently watched", "En cours et récentes": "In progress and recent", "Aucune lecture à afficher.": "No viewing history to display.",
     "GESTION": "MANAGEMENT",
     "GÉRER LA BIBLIOTHÈQUE": "MANAGE YOUR LIBRARY",

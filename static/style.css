@@ -2856,3 +2856,5 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 .reading-card progress { width:100%; height:5px; accent-color:var(--accent); }
 
 .side-progress { background:#725312; color:#fff; }
+
+.home-page {max-width:1400px; margin:24px auto; padding:0 24px;} .home-heading {display:flex; justify-content:space-between; align-items:center; gap:16px;} .home-page section {margin:28px 0;} .home-page #extension-frame {border:0;width:100%;min-height:440px;color-scheme:dark;} @media(max-width:600px){.home-heading{align-items:start;flex-direction:column}.home-page{padding:0 12px}}
