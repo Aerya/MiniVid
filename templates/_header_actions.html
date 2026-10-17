@@ -1,0 +1,18 @@
+<div class="header-right">
+  {% if test_instance %}<span class="test-instance-badge" title="Vidéos en lecture seule, données indépendantes">TEST · lecture seule</span>{% endif %}
+  <a href="/browse" class="icon-btn" title="Vidéos" aria-label="Vidéos">▦</a>
+  <a href="/storage" class="icon-btn" title="Stockage" aria-label="Stockage">▤</a>
+  <details class="theme-editor">
+    <summary class="icon-btn" title="Personnaliser le thème" aria-label="Personnaliser le thème">🎨</summary>
+    <form id="theme-form" class="theme-panel">
+      <strong>Apparence</strong>
+      <label>Thème <select id="theme-choice" name="theme"><option value="dark">Sombre</option><option value="light">Clair</option><option value="midnight">Bleu nuit</option><option value="forest">Forêt</option><option value="custom">Personnalisé</option></select></label>
+      <label>Couleur principale <input name="accent" type="color" value="{{ ui_prefs.get('accent', '#d42f67') }}"></label>
+      <label>Fond personnalisé <input name="background" type="color" value="{{ ui_prefs.get('background', '#090608') }}"></label>
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
+      <span id="theme-status" role="status"></span>
+    </form>
+  </details>
+  <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
+  {% if auth_enabled %}<a href="/logout" class="icon-btn" title="Déconnexion" aria-label="Déconnexion">⎋</a>{% endif %}
+</div>

@@ -1,0 +1,10 @@
+<aside class="admin-sidebar" aria-label="Gestion de MiniVid">
+  <a class="admin-library-link" href="/browse">← Bibliothèque</a>
+  <span class="admin-nav-label">GESTION</span>
+  <nav class="admin-navigation">
+    <a href="/storage" class="{{ 'active' if admin_active == 'storage' else '' }}" {{ 'aria-current=page' if admin_active == 'storage' else '' }}><span class="admin-nav-icon">▤</span>Stockage</a>
+    <a href="/maintenance" class="{{ 'active' if admin_active == 'maintenance' else '' }}" {{ 'aria-current=page' if admin_active == 'maintenance' else '' }}><span class="admin-nav-icon">⚙</span>Maintenance</a>
+  </nav>
+  <div class="admin-sidebar-note"><span class="admin-status-dot"></span><strong>{{ 'Environnement de test' if test_instance else 'Votre bibliothèque' }}</strong><p>{{ 'Les vidéos restent en lecture seule.' if test_instance else 'Vos fichiers, vos décisions.' }}</p></div>
+  <a class="admin-project-link" href="https://github.com/Aerya/MiniVid" target="_blank" rel="noopener noreferrer">MiniVid sur GitHub ↗</a>
+</aside>

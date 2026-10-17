@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ ui_prefs.get('lang', 'fr') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
+<html lang="{{ ui_prefs.get('lang', 'fr') }}" data-theme="{{ ui_prefs.get('theme', 'dark') }}" data-accent="{{ ui_prefs.get('accent', '#d42f67') }}" data-background="{{ ui_prefs.get('background', '#090608') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
 
 <head>
   <meta charset="utf-8" />
@@ -7,10 +7,12 @@
   <title>MiniVid — Maintenance</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css?v=2" />
+  <link rel="stylesheet" href="/static/admin.css?v=1" />
   <script src="/static/i18n.js" defer></script>
+  <script src="/static/theme.js" defer></script>
 </head>
 
-<body class="maintenance">
+<body class="maintenance admin-page">
   <header class="topbar">
     <a class="back-btn" id="btn-back" href="/browse" title="Retour à la liste">
       <span class="back-icon">←</span>
@@ -20,111 +22,41 @@
       <img src="/static/logo.svg" alt="" height="30" />
       <strong>MiniVid</strong>
     </a>
-    <div class="header-right">
-      <button id="themeToggle" class="icon-btn" title="Thème clair/sombre" aria-label="Thème clair/sombre">☾</button>
-    </div>
+    {% include '_header_actions.html' %}
   </header>
 
-  <main class="container">
-    <div class="page-header">
-      <div>
-        <h2 style="margin:0;">Maintenance</h2>
-        <p class="meta" style="margin:.15rem 0 0;">Indexation, cache et options partagées.</p>
-      </div>
-    </div>
-    <p><a class="btn btn-primary" href="/storage">Ouvrir la page Stockage</a></p>
-
-    <div class="layout maint">
-      <section class="card">
-        <header class="card-header">
-          <h3 class="card-title">Actions</h3>
-        </header>
-        <div class="card-body">
-          <div class="btn-group">
-            <button id="btn-full" class="btn btn-primary" onclick="startFull()">Rescan complet</button>
-            <button id="btn-purge" class="btn btn-danger" onclick="purgeThumbs()">Purger miniatures</button>
-          </div>
-          <div id="scan-status" class="text-muted" style="margin-top:.75rem;">Prêt.</div>
-          <div class="progress">
-            <div id="scan-bar" class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" style="width:0%"></div>
-          </div>
+  <div class="admin-shell">
+    {% set admin_active = 'maintenance' %}{% include '_admin_sidebar.html' %}
+    <main class="container admin-content maintenance-page">
+      <div class="admin-heading"><div><span class="admin-eyebrow">GÉRER LA BIBLIOTHÈQUE</span><h1>Maintenance</h1><p>Une bibliothèque à jour, des réglages à portée de main.</p></div><a class="btn" href="/storage">Voir le stockage <span aria-hidden="true">↗</span></a></div>
+      <nav class="admin-jump-nav" aria-label="Sections de maintenance"><a href="#library-tools">Bibliothèque</a><a href="#source-settings">Sources et clients</a><a href="#playback-settings">Préférences</a><a href="#recent-activity">Activité</a></nav>
+      <section class="admin-section" id="library-tools">
+        <div class="admin-section-heading"><div><h2>Entretenir la bibliothèque</h2><p>Actualisez l’index ou renouvelez les aperçus de vos vidéos.</p></div><span class="admin-section-number">01</span></div>
+        <div class="admin-tools-grid">
+          <article class="card admin-tool-card admin-tool-primary"><span class="admin-tool-icon" aria-hidden="true">↻</span><h3>Actualiser les vidéos</h3><p>Retrouvez les nouveaux fichiers et mettez à jour les informations de la bibliothèque.</p><button id="btn-full" class="btn btn-primary" onclick="startFull()">Rescan complet</button><div class="admin-scan-feedback"><span class="admin-status-dot"></span><span id="scan-status" role="status">Prêt.</span></div><div class="progress"><div id="scan-bar" class="progress-bar" role="progressbar" aria-label="Progression de l’indexation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width:0%"></div></div></article>
+          <article class="card admin-tool-card"><span class="admin-tool-icon" aria-hidden="true">▧</span><h3>Renouveler les miniatures</h3><p>Videz le cache des images. Les miniatures seront recréées à la prochaine consultation.</p><button id="btn-purge" class="btn" onclick="purgeThumbs()">Purger miniatures</button><small>Les fichiers vidéo sont conservés.</small></article>
         </div>
       </section>
-
-      <section class="card">
-        <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
-          <h3 class="card-title">Journal récent</h3>
-          <small id="journal-hint" class="text-muted"></small>
-        </header>
-        <div class="card-body" style="padding:0;">
-          <div id="journal" class="journal-scroll">
-            <div class="text-muted" style="padding:.62rem .75rem;">Chargement...</div>
+      <section class="admin-section" id="source-settings">
+        <div class="admin-section-heading"><div><h2>Sources et clients BitTorrent</h2><p>Connectez vos clients et choisissez comment gérer chaque source.</p></div><span class="admin-section-number">02</span></div>
+        <details class="card admin-settings-disclosure">
+          <summary><span><strong>Connexions et autorisations</strong><small>Clients, dossiers et droits de suppression</small></span><span id="media-managers-status" class="admin-state-pill">Chargement…</span></summary>
+          <div class="card-body">
+            <div class="admin-permissions"><label class="admin-setting-row"><span><strong>Liaison BitTorrent</strong><small>Afficher les statistiques du torrent associé.</small></span><input type="checkbox" id="torrent-integration-enabled" /></label><label class="admin-setting-row"><span><strong>Suppression des vidéos</strong><small>Chaque source conserve son propre mode de suppression.</small></span><input type="checkbox" id="media-deletion-enabled" /></label></div>
+            <div class="manager-heading"><h4>Clients connectés</h4><button id="add-torrent-client" class="btn" type="button">+ Ajouter un client</button></div><div id="torrent-clients" class="manager-list"></div>
+            <div class="manager-heading"><h4>Association des sources</h4></div><div id="media-source-links" class="manager-list"></div>
+            <div class="admin-form-footer"><span id="media-managers-message" class="text-muted" role="status"></span><button id="save-media-managers" class="btn btn-primary" type="button">Enregistrer la configuration</button></div>
           </div>
-        </div>
+        </details>
       </section>
-    </div>
-
-    <section class="card" style="margin-top:1rem;">
-      <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
-        <h3 class="card-title">Vidéos similaires</h3>
-        <small id="similar-status-label" class="text-muted"></small>
-      </header>
-      <div class="card-body">
-        <p class="meta" style="margin:0 0 .75rem;">Affiche sous chaque vidéo une grille de contenus ayant des tags en commun. Ce réglage est stocké côté serveur.</p>
-        <div class="settings-row">
-          <label class="smart-toggle">
-            <input type="checkbox" id="similar-enabled" />
-            <span>Activer</span>
-          </label>
-          <label class="smart-toggle"><input type="radio" name="similar-min" value="1" /> 1 tag</label>
-          <label class="smart-toggle"><input type="radio" name="similar-min" value="2" checked /> 2 tags</label>
-          <label class="smart-toggle"><input type="radio" name="similar-min" value="3" /> 3 tags</label>
-          <button id="similar-save" class="btn btn-primary">Enregistrer</button>
-        </div>
-        <div id="similar-msg" class="text-muted" style="margin-top:.6rem;"></div>
-      </div>
-    </section>
-
-    <section class="card" style="margin-top:1rem;">
-      <header class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
-        <h3 class="card-title">Sources vidéo et clients BitTorrent</h3>
-        <small id="media-managers-status" class="text-muted"></small>
-      </header>
-      <div class="card-body">
-        <p class="meta" style="margin:0 0 .75rem;">Associez un client à une ou plusieurs sources pour afficher les statistiques du torrent. La suppression reste contrôlée par une option globale et un mode propre à chaque source.</p>
-        <div class="settings-row">
-          <label class="smart-toggle"><input type="checkbox" id="torrent-integration-enabled" /> Activer la liaison BitTorrent</label>
-          <label class="smart-toggle"><input type="checkbox" id="media-deletion-enabled" /> Autoriser la suppression</label>
-        </div>
-
-        <div class="manager-heading">
-          <h4>Clients</h4>
-          <button id="add-torrent-client" class="btn" type="button">Ajouter un client</button>
-        </div>
-        <div id="torrent-clients" class="manager-list"></div>
-
-        <div class="manager-heading"><h4>Association des sources</h4></div>
-        <div id="media-source-links" class="manager-list"></div>
-
-        <div class="settings-row" style="margin-top:1rem;">
-          <button id="save-media-managers" class="btn btn-primary" type="button">Enregistrer la configuration</button>
-          <span id="media-managers-message" class="text-muted"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" style="margin-top:1rem;">
-      <header class="card-header">
-        <h3 class="card-title">Liens du projet</h3>
-      </header>
-      <div class="card-body">
-        <p class="meta" style="margin:0;display:flex;gap:.8rem;flex-wrap:wrap;">
-          <a class="btn" href="https://github.com/Aerya/MiniVid" target="_blank" rel="noopener noreferrer">MiniVid sur GitHub</a>
-          <a class="btn" href="https://github.com/Aerya/PornScout" target="_blank" rel="noopener noreferrer">PornScout sur GitHub</a>
-        </p>
-      </div>
-    </section>
-  </main>
+      <section class="admin-section" id="playback-settings">
+        <div class="admin-section-heading"><div><h2>Préférences de lecture</h2><p>Personnalisez les suggestions de votre bibliothèque.</p></div><span class="admin-section-number">03</span></div>
+        <section class="card admin-preferences-card"><header class="card-header"><div><h3 class="card-title">Vidéos similaires</h3><p>Des suggestions locales à partir des tags en commun.</p></div><span id="similar-status-label" class="admin-state-pill"></span></header><div class="card-body"><label class="admin-setting-row"><span><strong>Afficher les vidéos similaires</strong><small>Sur la page de lecture, à côté de la vidéo.</small></span><input type="checkbox" id="similar-enabled" /></label><div class="admin-preference-controls"><div><span class="admin-field-label">Tags en commun au minimum</span><div class="admin-segmented"><label><input type="radio" name="similar-min" value="1">1 tag</label><label><input type="radio" name="similar-min" value="2" checked>2 tags</label><label><input type="radio" name="similar-min" value="3">3 tags</label></div></div><button id="similar-save" class="btn btn-primary">Enregistrer</button></div><div id="similar-msg" class="text-muted" role="status"></div></div></section>
+      </section>
+      <section class="admin-section" id="recent-activity"><div class="admin-section-heading"><div><h2>Activité récente</h2><p>Le suivi des opérations de votre bibliothèque.</p></div><span class="admin-section-number">04</span></div><section class="card"><header class="card-header"><h3 class="card-title">Journal</h3><small id="journal-hint" class="text-muted"></small></header><div id="journal" class="journal-scroll"><div class="admin-empty">Chargement du journal…</div></div></section></section>
+      <footer class="admin-page-footer"><span>MiniVid · Gestion de la bibliothèque</span><a href="https://github.com/Aerya/PornScout" target="_blank" rel="noopener noreferrer">PornScout ↗</a></footer>
+    </main>
+  </div>
 
   <script>
     async function savePrefs(patch) {
@@ -151,16 +83,7 @@
       });
     })();
 
-    (function themeToggle() {
-      const btn = document.getElementById('themeToggle');
-      function sync() { if (btn) btn.textContent = document.documentElement.classList.contains('light') ? '☀' : '☾'; }
-      sync();
-      btn?.addEventListener('click', () => {
-        const isLight = document.documentElement.classList.toggle('light');
-        savePrefs({ theme: isLight ? 'light' : 'dark' });
-        sync();
-      });
-    })();
+
 
     const statusEl = document.getElementById('scan-status');
     const barEl = document.getElementById('scan-bar');
@@ -234,7 +157,7 @@
         if (j && j.ok) {
           const running = !!j.running;
           setProgress(j.progress || 0);
-          setStatus((running ? "Scan en cours — " : "Statut : ") + (j.message || ""));
+          setStatus(running ? "Scan en cours — " + (j.message || "Indexation…") : (j.message || "Bibliothèque prête"));
           const btn = document.getElementById('btn-full');
           if (btn) btn.disabled = running;
           pollProgTimer = setTimeout(pollProgress, running ? 1000 : 5000);
@@ -378,7 +301,7 @@
       mediaManagersConfig = config;
       document.getElementById('torrent-integration-enabled').checked = !!config.torrent_integration_enabled;
       document.getElementById('media-deletion-enabled').checked = !!config.deletion_enabled;
-      document.getElementById('torrent-clients').innerHTML = (config.clients || []).map(clientRow).join('');
+      document.getElementById('torrent-clients').innerHTML = (config.clients || []).map(clientRow).join('') || '<div class="admin-empty">Aucun client connecté. Ajoutez un client pour afficher les informations BitTorrent.</div>';
       const options = ['<option value="">Aucun client</option>'].concat((config.clients || []).map(c =>
         `<option value="${esc(c.id)}">${esc(c.name)}</option>`
       )).join('');
@@ -433,6 +356,7 @@
     }
 
     document.getElementById('add-torrent-client')?.addEventListener('click', () => {
+      document.querySelector('#torrent-clients > .admin-empty')?.remove();
       document.getElementById('torrent-clients').insertAdjacentHTML('beforeend', clientRow({}));
       bindManagerButtons();
     });

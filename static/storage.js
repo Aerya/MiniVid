@@ -1,18 +1,28 @@
 /* Storage review: local display preferences, server-side policy and deletion checks. */
 (() => {
+  // Private browsing or restrictive settings may deny persistent storage.
+  const preferences = {
+    getItem(key) { try { return localStorage.getItem(key); } catch (_) { return null; } },
+    setItem(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+  };
+  let requestVersion = 0;
+  let loading = false;
   const $ = id => document.getElementById(id);
   const selected = new Set();
   let page = 1;
   let lastResult = null;
   let preview = null;
   let scanTimer = null;
-  let layout = localStorage.getItem('minivid_storage_layout') === 'gallery' ? 'gallery' : 'list';
-  let width = ['standard', 'wide', 'full'].includes(localStorage.getItem('minivid_storage_width'))
-    ? localStorage.getItem('minivid_storage_width') : 'standard';
-  let storageSection = ['duplicates', 'cleanup'].includes(localStorage.getItem('minivid_storage_section'))
-    ? localStorage.getItem('minivid_storage_section') : 'duplicates';
-  let storageRoot = localStorage.getItem('minivid_storage_root') || 'all';
+  let layout = preferences.getItem('minivid_storage_layout') === 'gallery' ? 'gallery' : 'list';
+  let width = ['standard', 'wide', 'full'].includes(preferences.getItem('minivid_storage_width'))
+    ? preferences.getItem('minivid_storage_width') : 'standard';
+  let storageSection = ['duplicates', 'cleanup', 'settings'].includes(preferences.getItem('minivid_storage_section'))
+    ? preferences.getItem('minivid_storage_section') : 'duplicates';
+  let storageRoot = preferences.getItem('minivid_storage_root') || 'all';
   const size = value => (Number(value || 0) / 1073741824).toLocaleString('fr-FR', {maximumFractionDigits: 2}) + ' Gio';
+  const capacity = value => Number(value) >= 1099511627776
+    ? (Number(value) / 1099511627776).toLocaleString('fr-FR', {maximumFractionDigits: 2}) + ' Tio'
+    : size(value);
   const date = value => value ? new Date(Number(value) * 1000).toLocaleDateString('fr-FR') : 'Jamais';
   const node = (tag, label, className) => {
     const item = document.createElement(tag);
@@ -21,7 +31,7 @@
     return item;
   };
   async function json(url, options = {}) {
-    const response = await fetch(url, {credentials:'same-origin', ...options});
+    const response = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options});
     const raw = await response.text();
     let data;
     try {
@@ -35,8 +45,8 @@
   const post = (url, data) => json(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
 
   function setStorageSection(section) {
-    storageSection = section === 'cleanup' ? 'cleanup' : 'duplicates';
-    localStorage.setItem('minivid_storage_section', storageSection);
+    storageSection = ['duplicates', 'cleanup', 'settings'].includes(section) ? section : 'duplicates';
+    preferences.setItem('minivid_storage_section', storageSection);
 
     document.querySelectorAll('[data-storage-section]').forEach(button => {
       const active = button.dataset.storageSection === storageSection;
@@ -46,6 +56,7 @@
 
     $('storage-panel-duplicates').hidden = storageSection !== 'duplicates';
     $('storage-panel-cleanup').hidden = storageSection !== 'cleanup';
+    $('storage-panel-settings').hidden = storageSection !== 'settings';
   }
 
   function pathLabel(value) {
@@ -171,7 +182,7 @@
     tabs.replaceChildren();
 
     storageRoot = String(result.selected_root ?? 'all');
-    localStorage.setItem('minivid_storage_root', storageRoot);
+    preferences.setItem('minivid_storage_root', storageRoot);
 
     const totalFiles = (result.sources || []).reduce(
       (sum, source) => sum + Number(source.indexed_count || 0),
@@ -202,7 +213,7 @@
         if (storageRoot === nextRoot) return;
 
         storageRoot = nextRoot;
-        localStorage.setItem('minivid_storage_root', storageRoot);
+        preferences.setItem('minivid_storage_root', storageRoot);
         selected.clear();
         page = 1;
         loadStorage().catch(error => alert(error.message));
@@ -249,6 +260,11 @@
   function renderStorageOverview(result) {
     const sources=$('storage-sources'), volumes=$('storage-volumes'); sources.replaceChildren(); volumes.replaceChildren();
     const indexed=(result.sources||[]).reduce((sum,x)=>sum+Number(x.indexed_count||0),0);
+    const indexedBytes = (result.sources || []).reduce((sum, source) => sum + Number(source.indexed_bytes || 0), 0);
+    $('storage-metric-videos').textContent = indexed.toLocaleString('fr-FR');
+    $('storage-metric-indexed').textContent = capacity(indexedBytes) + ' dans la bibliothèque';
+    $('storage-metric-recoverable').textContent = size(result.duplicate_summary?.recoverable_bytes || 0);
+    $('storage-metric-groups').textContent = `${result.duplicate_summary?.groups || 0} groupe(s) de doublons vérifiés`;
     $('storage-source-count').textContent=`${(result.sources||[]).length} source(s) · ${indexed} vidéos`;
     (result.sources||[]).forEach(source=>{const card=node('div',null,'storage-source-item'),top=node('div',null,'storage-source-top'); top.append(node('strong',source.name),node('span',`${source.indexed_count||0} vidéo(s)`,'storage-count-pill'));
       const info=node('div',null,'storage-source-meta'); info.append(node('span',source.torrent_configured?`Client configuré : ${source.client_name||source.client_type||'BitTorrent'}`:'Aucun client BitTorrent associé à la source','storage-origin-badge '+(source.torrent_configured?'torrent':'local')));
@@ -261,14 +277,14 @@
       );
       card.append(top,node('code',source.path||'','storage-path'),info,stats); sources.append(card);});
     (result.volumes||[]).forEach((volume,index)=>{const card=node('div',null,'storage-volume-item'),free=volume.total?Number(volume.free)/Number(volume.total)*100:0,names=(volume.sources||[]).map(x=>x.name).join(' + ');
-      card.append(node('strong',names||`Volume ${index+1}`),node('span',`${size(volume.free)} libres sur ${size(volume.total)} · ${free.toFixed(1)} %`,'storage-volume-space'));
-      const bar=node('div',null,'storage-space-bar'),fill=node('i'); fill.style.width=`${Math.max(0,Math.min(100,free))}%`; bar.append(fill); card.append(bar); volumes.append(card);});
+      card.append(node('strong',names||`Volume ${index+1}`),node('span',`${capacity(Number(volume.total) - Number(volume.free))} utilisés sur ${capacity(volume.total)}`,'storage-volume-space'));
+      const bar=node('div',null,'storage-space-bar'),fill=node('i'); fill.style.width=`${Math.max(0,Math.min(100,100-free))}%`; bar.append(fill); card.append(bar, node('small', `${capacity(volume.free)} disponibles · ${free.toFixed(1)} % libres`, 'storage-volume-space')); volumes.append(card);});
   }
   function syncScanUi(scan) {
     const running=!!scan?.running,button=$('scan-storage'),progress=$('storage-scan-progress'),percent=Number(scan?.progress||0); button.disabled=running; button.textContent=running?'Analyse en cours…':'Analyser les doublons'; progress.value=Math.max(0,Math.min(100,percent));
-    const current=Number(scan?.current||0),total=Number(scan?.total||0),countText=total?` · ${current}/${total}`:''; $('storage-scan-status').textContent=scan?.message||'Analyse à lancer.';
+    const current=Number(scan?.current||0),total=Number(scan?.total||0),countText=total?` · ${current}/${total}`:''; $('storage-scan-status').textContent=scan?.message||(lastResult?.scanned_at ? 'Dernière analyse : ' + date(lastResult.scanned_at) : 'Analyse à lancer.');
     $('storage-scan-detail').textContent=running?`${percent} %${countText}${scan?.phase?' · '+scan.phase:''}`:(scan?.phase==='error'?'Le dernier scan s’est terminé sur une erreur.':percent===100?'Dernière analyse terminée.':'');
-    if(running&&!scanTimer){scanTimer=setInterval(()=>loadStorage().catch(error=>{clearInterval(scanTimer);scanTimer=null;button.disabled=false;$('storage-scan-status').textContent=error.message;}),1500);} else if(!running&&scanTimer){clearInterval(scanTimer);scanTimer=null;}
+    if(running&&!scanTimer){scanTimer=setInterval(()=>{if(loading)return;loadStorage().catch(error=>{clearInterval(scanTimer);scanTimer=null;button.disabled=false;$('storage-scan-status').textContent=error.message;});},2500);} else if(!running&&scanTimer){clearInterval(scanTimer);scanTimer=null;}
   }
   function appendDuplicateFile(list, file, digest, index) {
     const li = node('li', null, 'storage-copy-item');
@@ -279,7 +295,9 @@
     keep.value = file.id;
     keep.checked = index === 0;
 
-    const keepLabel = node('span', 'Garder', 'storage-keep-label');
+    keep.id = `keep-${digest}-${index}`;
+    const keepLabel = node('label', 'Garder', 'storage-keep-label');
+    keepLabel.htmlFor = keep.id;
     const link = node('a', file.name || file.id, 'storage-copy-name');
     link.href = '/watch/' + encodeURIComponent(file.id);
     link.title = file.name || file.id;
@@ -335,6 +353,7 @@
         `${group.items.length} copies · jusqu’à ${size(group.display_estimated_bytes ?? group.estimated_bytes)} récupérables`
       );
 
+      if (result.copies.length <= 3) wrap.open = true;
       const body = node('div', null, 'storage-duplicate-body');
       const list = node('ul', null, 'storage-copy-list');
       files.forEach((file, index) => appendDuplicateFile(list, file, group.digest, index));
@@ -419,6 +438,12 @@
     }
   }
   async function loadStorage() {
+    const version = ++requestVersion;
+    loading = true;
+    const status = $('storage-loading');
+    const container = document.querySelector('.storage-page');
+    container.setAttribute('aria-busy', 'true');
+    status.textContent = 'Actualisation des fichiers…';
     const query = new URLSearchParams({
       filter: $('storage-filter').value,
       sort: $('storage-sort').value,
@@ -426,26 +451,34 @@
       root: storageRoot
     });
 
-    const result = await json('/api/storage?' + query);
-    lastResult = result;
+    try {
+      const result = await json('/api/storage?' + query);
+      if (version !== requestVersion) return;
+      lastResult = result;
 
-    renderStorageOverview(result);
-    renderSourceFilter(result);
-    syncScanUi(result.scan || {});
-    renderCopies(result);
-    renderItems(result.items, result.admin);
+      renderStorageOverview(result);
+      renderSourceFilter(result);
+      syncScanUi(result.scan || {});
+      renderCopies(result);
+      renderItems(result.items, result.admin);
 
-    $('storage-total').textContent =
-      `(${result.count} · ${size(result.visible_bytes || 0)})`;
-    $('storage-page').textContent =
-      `${page} / ${Math.max(1, Math.ceil(result.count / 100))}`;
-    $('storage-prev').disabled = page <= 1;
-    $('storage-next').disabled = page * 100 >= result.count;
-    $('storage-select-page').disabled =
-      !result.admin || !result.items.length;
+      $('storage-total').textContent =
+        `(${result.count} · ${size(result.visible_bytes || 0)})`;
+      $('storage-page').textContent =
+        `${page} / ${Math.max(1, Math.ceil(result.count / 100))}`;
+      $('storage-prev').disabled = page <= 1;
+      $('storage-next').disabled = page * 100 >= result.count;
+      $('storage-select-page').disabled =
+        !result.admin || !result.items.length;
 
-    selectionStatus();
-    displayMode();
+      selectionStatus();
+      displayMode();
+      status.textContent = `${result.count} fichier(s) · liste à jour`;
+    } catch (error) {
+      if (version === requestVersion) { status.textContent = 'Chargement impossible : ' + error.message; throw error; }
+    } finally {
+      if (version === requestVersion) { loading = false; container.setAttribute('aria-busy', 'false'); }
+    }
   }
   async function loadAutomation() {
     const data=await json('/api/storage/automation');$('automation-enabled').checked=!!data.settings.enabled;$('automation-owner').value=data.settings.owner_id||'';$('automation-here').dataset.instance=data.instance_id;const list=$('automation-sources');list.replaceChildren();const selected=new Set((data.cleanup_roots||[]).map(Number));
@@ -485,12 +518,13 @@
   }
   document.addEventListener('DOMContentLoaded', () => {
     displayMode();
+    if (['#cleanup-defaults', '#storage-panel-settings'].includes(globalThis.location?.hash)) storageSection = 'settings';
     setStorageSection(storageSection);
     document.querySelectorAll('[data-storage-section]').forEach(button => {
       button.addEventListener('click', () => setStorageSection(button.dataset.storageSection));
     });
-    $('storage-layout').onclick = () => { layout = layout === 'list' ? 'gallery' : 'list'; localStorage.setItem('minivid_storage_layout', layout); displayMode(); };
-    $('storage-width').onclick = () => { width = ({standard:'wide', wide:'full', full:'standard'})[width]; localStorage.setItem('minivid_storage_width', width); displayMode(); };
+    $('storage-layout').onclick = () => { layout = layout === 'list' ? 'gallery' : 'list'; preferences.setItem('minivid_storage_layout', layout); displayMode(); };
+    $('storage-width').onclick = () => { width = ({standard:'wide', wide:'full', full:'standard'})[width]; preferences.setItem('minivid_storage_width', width); displayMode(); };
     document.querySelectorAll('#storage-sort,#storage-filter').forEach(el => el.addEventListener('change', () => { page = 1; loadStorage().catch(error => alert(error.message)); }));
     $('storage-prev').onclick = () => { --page; loadStorage().catch(error => alert(error.message)); };
     $('storage-next').onclick = () => { ++page; loadStorage().catch(error => alert(error.message)); };

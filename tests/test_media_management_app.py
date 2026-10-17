@@ -243,6 +243,43 @@ class MediaManagementApiTest(unittest.TestCase):
         finally:
             self.client.post("/api/fav", json={"vid": self.vid, "fav": False})
 
+    def test_storage_overview_does_not_contact_torrent_clients(self):
+        copy_path = os.path.join(VIDEO_ROOT, "overview-copy.mkv")
+        with open(copy_path, "wb") as handle:
+            handle.write(b"not-a-real-video")
+        try:
+            self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+            minivid.scan_media()
+            minivid.storage.inventory_scan(minivid.STORAGE_DB, list(minivid.MEDIA), minivid._storage_path)
+            with mock.patch.object(minivid, "_configured_client", side_effect=AssertionError("Unexpected network request")):
+                response = self.client.get("/api/storage?sort=oldest")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(response.get_json()["copies"]), 1)
+            self.assertEqual(response.get_json()["copies"][0]["files"][0]["management"], "unknown")
+        finally:
+            os.remove(copy_path)
+            minivid.scan_media()
+
+    def test_read_only_test_instance_rejects_destructive_requests(self):
+        self.save_config(deletion_enabled=True, delete_mode="file")
+        with mock.patch.dict(os.environ, {"MINI_READ_ONLY_TEST": "1"}):
+            for endpoint in ("/api/media/" + self.vid + "/delete", "/api/storage/duplicates/delete",
+                             "/api/storage/selection/delete", "/api/storage/automation"):
+                response = self.client.post(endpoint, json={"confirmation": self.video_name})
+                self.assertEqual(response.status_code, 403, endpoint)
+        self.assertTrue(os.path.isfile(self.video_path))
+
+    def test_custom_theme_is_shared_across_application_pages(self):
+        response = self.client.post("/api/preferences", json={"theme": "custom", "accent": "#123abc", "background": "#112233"})
+        self.assertEqual(response.get_json()["prefs"]["accent"], "#123abc")
+        for endpoint in ("/browse", "/storage", "/maintenance"):
+            html = self.client.get(endpoint).get_data(as_text=True)
+            self.assertIn('data-theme="custom"', html)
+            self.assertIn('id="theme-form"', html)
+            self.assertIn('href="/logout"', html)
+        invalid = self.client.post("/api/preferences", json={"accent": "url(https://example.invalid)"})
+        self.assertEqual(invalid.get_json()["prefs"]["accent"], "#d42f67")
+
     def test_storage_scan_lists_actual_copies_and_bulk_deletes_only_unprotected_copy(self):
         copy_name = "another.mkv"
         copy_path = os.path.join(VIDEO_ROOT, copy_name)

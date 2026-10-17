@@ -1,0 +1,40 @@
+name: Tests MiniVid
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Régressions Python et JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Installer les dépendances de test
+        run: python -m pip install flask waitress cryptography
+      - name: Vérifier les scénarios de régression
+        env:
+          MINI_HWACCEL: 'off'
+          MINI_READ_ONLY_TEST: '0'
+        run: python -m unittest discover -s tests -v
+      - name: Vérifier les contrôles et les réponses concurrentes du stockage
+        run: node tests/storage_page_smoke.js
+      - name: Vérifier la syntaxe JavaScript
+        run: |
+          for script in static/*.js; do
+            node --check "$script"
+          done

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ ui_prefs.get('lang', 'fr') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
+<html lang="{{ ui_prefs.get('lang', 'fr') }}" data-theme="{{ ui_prefs.get('theme', 'dark') }}" data-accent="{{ ui_prefs.get('accent', '#d42f67') }}" data-background="{{ ui_prefs.get('background', '#090608') }}" class="{{ 'light' if ui_prefs.get('theme') == 'light' else '' }}">
 
 <head>
   <meta charset="utf-8" />
@@ -8,6 +8,7 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/style.css?v=2" />
   <script src="/static/i18n.js" defer></script>
+  <script src="/static/theme.js" defer></script>
 </head>
 
 <body class="watchpage" data-vid="{{ vid }}">
@@ -22,11 +23,7 @@
       <img src="/static/logo.svg" alt="" height="30" />
       <strong>MiniVid</strong>
     </a>
-    <div class="header-right">
-      <a href="/storage" class="icon-btn" title="Stockage" aria-label="Stockage">▤</a>
-      <button id="themeToggle" class="icon-btn" title="Thème clair/sombre" aria-label="Thème clair/sombre">☾</button>
-      <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
-    </div>
+    {% include '_header_actions.html' %}
   </header>
 
   <main class="watch watch-studio" id="watchMain">
@@ -121,19 +118,6 @@
         {% if playback_method %}
         <span class="playback-badge">{{ playback_method }}</span>
         {% endif %}
-        <div class="shortcuts-hint" id="shortcuts">
-          <button class="toggle-shortcuts"
-            onclick="document.getElementById('shortcutsPanel').hidden = !document.getElementById('shortcutsPanel').hidden">Raccourcis</button>
-          <div class="shortcuts-panel" id="shortcutsPanel" hidden>
-            <p><kbd>Espace</kbd> / <kbd>K</kbd> Lecture/Pause</p>
-            <p><kbd>J</kbd> Reculer 10s</p>
-            <p><kbd>L</kbd> Avancer 10s</p>
-            <p><kbd>←</kbd> / <kbd>→</kbd> ±5s</p>
-            <p><kbd>↑</kbd> / <kbd>↓</kbd> Volume</p>
-            <p><kbd>F</kbd> Plein écran</p>
-            <p><kbd>M</kbd> Muet</p>
-          </div>
-        </div>
         <div class="player-controls" id="player-controls">
           <button id="player-play" type="button" aria-label="Lecture" title="Lecture">▶</button>
           <input id="player-progress" type="range" min="0" max="1000" value="0" aria-label="Progression" />
@@ -183,7 +167,7 @@
       </section>
 
       <details id="media-management" class="media-management" hidden>
-        <summary class="media-management-summary"><strong>Fichier et partage</strong></summary>
+        <summary class="media-management-summary"><strong>Fichier et téléchargement</strong></summary>
         <div class="media-management-content">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;">
             <div>
@@ -195,10 +179,10 @@
           </div>
           <div id="media-management-stats" class="media-management-grid"></div>
           <div id="cleanup-policy" class="cleanup-policy" hidden>
-            <h3>Candidat au nettoyage</h3>
-            <p class="meta">MiniVid ne supprime automatiquement que les vidéos autorisées ici, une fois les conditions de chaque torrent atteintes.</p>
+            <h3>Que faire de cette vidéo ?</h3>
+            <p class="meta">Conservez la vidéo, protégez-la ou ajoutez-la aux candidats. Le nettoyage automatique doit être activé séparément dans Stockage.</p>
             <label>Décision <select id="cleanup-mode"><option value="none">Conserver sans règle</option><option value="protect">Protéger définitivement</option><option value="candidate">Autoriser le nettoyage</option></select></label>
-            <div id="cleanup-conditions">
+            <details id="cleanup-conditions"><summary>Conditions du nettoyage</summary>
               <label>Ratio minimum <input id="cleanup-ratio" type="number" min="0" max="1000" step="0.1" value="1" /></label>
               <label>Temps de seed minimum (jours) <input id="cleanup-days" type="number" min="0" max="3650" value="7" /></label>
               <label>Condition <select id="cleanup-operator"><option value="and">Ratio ET durée</option><option value="or">Ratio OU durée</option></select></label>
@@ -208,7 +192,7 @@
                 <label>Arrêter une fois l’espace libre remonté à (%) <input id="cleanup-until" type="number" min="2" max="99" value="20" /></label>
                 <p class="meta">Exemple : sous 15 % libres, MiniVid nettoie les candidats éligibles jusqu’à retrouver 20 % libres.</p>
               </div>
-            </div>
+            </details>
             <p class="meta">La règle par défaut des nouveaux candidats se configure sur <a href="/storage#cleanup-defaults">Stockage</a>. Modifier ce défaut ne change pas les décisions déjà enregistrées.</p>
             <button id="cleanup-save" type="button" class="btn btn-primary">Enregistrer la décision</button>
             <span id="cleanup-status" role="status"></span>
@@ -273,16 +257,7 @@
       }
     })();
 
-    (function themeToggle() {
-      const btn = document.getElementById('themeToggle');
-      function sync() { if (btn) btn.textContent = document.documentElement.classList.contains('light') ? '☀' : '☾'; }
-      sync();
-      btn?.addEventListener('click', () => {
-        const isLight = document.documentElement.classList.toggle('light');
-        savePrefs({ theme: isLight ? 'light' : 'dark' });
-        sync();
-      });
-    })();
+
 
     document.getElementById('addtag')?.addEventListener('click', async () => {
       const res = prompt('Ajouter des tags séparés par des virgules :');
@@ -582,50 +557,6 @@
     }
     loadMediaManagement();
 
-    document.addEventListener('keydown', (e) => {
-      const video = document.getElementById('v');
-      if (!video || e.target.matches('input, textarea, [contenteditable]')) return;
-      const key = e.key.toLowerCase();
-
-      // Espace/K doivent basculer l'état une seule fois par pression.
-      // Certains navigateurs peuvent transmettre plusieurs keydown ou
-      // retraiter la touche avec les contrôles natifs du lecteur.
-      if (key === ' ' || key === 'k') {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.repeat) return;
-        video.paused ? video.play() : video.pause();
-        return;
-      }
-
-      if (key === 'j') { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 10); }
-      if (key === 'l') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 10); }
-      if (key === 'f') {
-        e.preventDefault();
-        const wrap = document.querySelector('.player-wrap');
-        const exit = document.exitFullscreen || document.webkitExitFullscreen;
-        const enter = wrap?.requestFullscreen || wrap?.webkitRequestFullscreen;
-        document.fullscreenElement || document.webkitFullscreenElement ? exit?.call(document) : enter?.call(wrap);
-      }
-      if (key === 'm') { e.preventDefault(); video.muted = !video.muted; }
-      if (key === 'arrowleft') { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); }
-      if (key === 'arrowright') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); }
-      if (key === 'arrowup') { e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); }
-      if (key === 'arrowdown') { e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); }
-    }, true);
-
-    document.addEventListener('keyup', (e) => {
-      if (e.target.matches('input, textarea, [contenteditable]')) return;
-      const key = e.key.toLowerCase();
-
-      // Empêche les contrôles vidéo natifs de refaire un toggle
-      // au relâchement de la touche.
-      if (key === ' ' || key === 'k') {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    }, true);
-
     (function playerControls() {
       const video = document.getElementById('v');
       const wrap = document.querySelector('.player-wrap');
@@ -720,8 +651,8 @@
       }
 
       function availableBox() {
-        if (document.fullscreenElement) {
-          return { w: screen.width, h: screen.height };
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          return { w: window.innerWidth, h: window.innerHeight };
         }
         // Leave a little breathing room for page chrome
         const w = Math.max(320, Math.floor(window.innerWidth * 0.98));
@@ -730,6 +661,10 @@
       }
 
       function applyZoom(z) {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          resetWrap();
+          return;
+        }
         if (z === 1) {
           resetWrap();
           return;
@@ -776,6 +711,13 @@
         document.querySelectorAll('.zoom-btn').forEach(button => button.classList.toggle('active', button.dataset.zoom === '1'));
         applyZoom(1);
       });
+
+      const restoreZoom = () => {
+        const active = document.querySelector('.zoom-btn.active');
+        applyZoom(Number(active?.dataset.zoom) || 1);
+      };
+      document.addEventListener('fullscreenchange', restoreZoom);
+      document.addEventListener('webkitfullscreenchange', restoreZoom);
 
       let resizeTimer = 0;
       window.addEventListener('resize', () => {
