@@ -182,7 +182,7 @@ _EXTENSION_ALIASES = {'at':0, 'paths':{}}
 
 def _extension_alias_map():
     with STATE_LOCK:
-        if time.monotonic()-_EXTENSION_ALIASES['at'] < 120:return _EXTENSION_ALIASES['paths']
+        if _EXTENSION_ALIASES['at'] > 0 and time.monotonic()-_EXTENSION_ALIASES['at'] < 120:return _EXTENSION_ALIASES['paths']
         aliases={}
         for root,base in enumerate(MEDIA_DIRS):
             for excluded in EXCLUDED_MEDIA_DIRS:

@@ -699,7 +699,8 @@ class LibraryIdentityAndHomeTest(unittest.TestCase):
         try:
             os.link(self.video_path,true_alias);shutil.copy2(self.video_path,copy);os.symlink(self.video_path,symlink)
             minivid._EXTENSION_ALIASES['at']=0
-            ctx=minivid._extension_context(self.vid)
+            with mock.patch.object(minivid.time,'monotonic',return_value=10):
+                ctx=minivid._extension_context(self.vid)
             self.assertEqual(ctx['aliases'],['cross-seed-links/different-name.mkv'])
             self.assertEqual(len(ctx['physical_key']),64)
         finally:
