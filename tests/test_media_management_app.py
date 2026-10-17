@@ -70,6 +70,7 @@ class MediaManagementApiTest(unittest.TestCase):
         self.client = minivid.app.test_client()
         self.client.post("/login", data={"username": "admin", "password": "test-password"})
         FakeTorrentClient.deleted.clear()
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:db.execute("DELETE FROM playback_stats WHERE vid=?",(self.vid,))
         try:
             os.remove(minivid.MEDIA_MANAGERS_FILE)
         except OSError:
@@ -604,6 +605,26 @@ if __name__ == "__main__":
 class ExternalMetadataTest(unittest.TestCase):
     setUp=MediaManagementApiTest.setUp
     tearDown=MediaManagementApiTest.tearDown
+    def test_card_more_count_uses_all_tags_and_watch_tags_are_collapsed(self):
+        context=minivid._extension_context(self.vid)
+        tags=['semantic'+str(i) for i in range(12)]
+        state=minivid._default_state()
+        state['utags']={self.vid:tags}
+        state['fav']={self.vid:True}
+        state['progress']={self.vid:35};state['watch_history']={self.vid:{'watched_seconds':35,'duration':100,'watched_percent':35}}
+        minivid.write_state(state)
+        minivid.MEDIA[0]['tags']=[]
+        page=self.client.get('/browse').get_data(as_text=True)
+        self.assertIn('>+8</span>',page)
+        watch=self.client.get('/watch/'+self.vid).get_data(as_text=True)
+        self.assertIn('<details id="watch-tags"',watch)
+        self.assertNotIn('<details id="watch-tags" open',watch)
+        self.assertIn('Tags (12)',watch)
+        self.assertNotIn('class="playback-badge"',watch)
+        entry=minivid._extension_library()[0]
+        self.assertEqual(len(entry['tags']),12)
+        self.assertTrue(entry['favorite']);self.assertTrue(entry['watched'])
+
     def test_batch_tag_import_writes_once_and_skips_unchanged_data(self):
         context=minivid._extension_context(self.vid)
         result={'tags':['external'],'_file':{k:context[k] for k in ('size','mtime')}}
@@ -629,3 +650,224 @@ class ExternalMetadataTest(unittest.TestCase):
         self.assertEqual(minivid._effective_user_tags(state)[self.vid],['manual','external'])
         state['external_tags'][self.vid]['mtime']+=1
         self.assertEqual(minivid._effective_user_tags(state)[self.vid],['manual'])
+
+class ReadingProgressTest(unittest.TestCase):
+    tearDown = MediaManagementApiTest.tearDown
+
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+
+    def test_effective_thresholds_ignore_seeks_and_keep_manual_marks(self):
+        for watched,status in ((0,'unread'),(29,'unread'),(1,'in_progress'),(30,'in_progress'),(9,'in_progress'),(1,'read')):
+            response=self.client.post('/api/progress/'+self.vid,json={'progress':99,'duration':100,'watched':watched})
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json['reading_status'],status)
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':1,'duration':100}).json['reading_status'],'read')
+        self.client.post('/api/played',json={'vid':self.vid,'played':False})
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':99,'duration':100,'watched':10}).json['reading_status'],'unread')
+
+    def test_ended_or_percent_field_cannot_fake_effective_playback(self):
+        self.client.post('/api/playback/'+self.vid,json={'event':'complete'})
+        result=self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':100,'percent':100,'watched':0}).json
+        self.assertEqual(result['reading_status'],'unread')
+        self.assertEqual(result['watched_percent'],0)
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':100,'watched':10000}).json['watched_percent'],30)
+
+    def test_migration_uses_measured_time_not_saved_position(self):
+        state=minivid.read_state();state['watch_history']={self.vid:{'duration':100,'percent':99,'completed':True}}
+        minivid.write_state(state)
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:db.execute('INSERT INTO playback_stats(vid,watched_seconds) VALUES(?,?)',(self.vid,35))
+        minivid._migrate_effective_reading()
+        migrated=minivid.read_state()
+        self.assertEqual(minivid._reading_status(migrated,self.vid),'in_progress')
+        self.assertEqual(migrated['watch_history'][self.vid]['watched_percent'],35)
+        self.assertEqual(migrated['watch_history'][self.vid]['percent'],99)
+        minivid._migrate_effective_reading()
+        self.assertEqual(minivid.read_state(),migrated)
+
+    def test_panel_is_optional_and_history_is_sorted_by_real_activity(self):
+        self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100,'watched':30})
+        page=self.client.get('/browse').get_data(as_text=True)
+        self.assertNotIn('class="reading-card"',page)
+        self.client.post('/api/preferences',json={'history_panel':'in_progress'})
+        page=self.client.get('/browse').get_data(as_text=True)
+        self.assertIn('class="reading-card"',page);self.assertIn('En cours',page)
+        page=self.client.get('/browse?read=in_progress').get_data(as_text=True)
+        self.assertIn('data-vid="'+self.vid+'"',page)
+        self.assertNotIn('data-vid="'+self.vid+'"',self.client.get('/browse?read=read').get_data(as_text=True))
+
+    def test_dismiss_resume_preserves_history_and_can_be_undone(self):
+        self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100,'watched':30})
+        before=minivid.read_state()
+        self.assertTrue(minivid._recent_reading(before,'in_progress'))
+        response=self.client.post('/api/resume/'+self.vid,json={'dismissed':True})
+        self.assertEqual(response.status_code,200)
+        after=minivid.read_state()
+        self.assertEqual(after['progress'],before['progress'])
+        self.assertEqual(after['watch_history'],before['watch_history'])
+        self.assertEqual(minivid._reading_status(after,self.vid),'in_progress')
+        self.assertEqual(minivid._recent_reading(after,'in_progress'),[])
+        self.assertEqual(minivid._recent_reading(after,'both'),[])
+        self.assertTrue(minivid._recent_reading(after,'recent'))
+        self.assertTrue(os.path.exists(self.video_path))
+        self.client.post('/api/resume/'+self.vid,json={'dismissed':False})
+        self.assertTrue(minivid._recent_reading(minivid.read_state(),'in_progress'))
+        self.client.post('/api/resume/'+self.vid,json={'dismissed':True})
+        self.client.post('/api/playback/'+self.vid,json={'event':'start'})
+        self.assertTrue(minivid._recent_reading(minivid.read_state(),'in_progress'))
+
+    def test_resume_requires_auth_valid_video_and_boolean(self):
+        self.assertEqual(self.client.post('/api/resume/missing',json={'dismissed':True}).status_code,404)
+        self.assertEqual(self.client.post('/api/resume/'+self.vid,json={'dismissed':'false'}).status_code,400)
+        self.client.post('/logout')
+        with self.client.session_transaction() as session:session.clear()
+        self.assertEqual(self.client.post('/api/resume/'+self.vid,json={'dismissed':True}).status_code,401)
+
+    def test_progress_rejects_unknown_video_and_invalid_numbers(self):
+        self.assertEqual(self.client.post('/api/progress/missing',json={'progress':20}).status_code,404)
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':'invalid'}).status_code,400)
+
+class LibraryIdentityAndHomeTest(unittest.TestCase):
+    def tearDown(self):
+        minivid.write_state(minivid._default_state())
+        MediaManagementApiTest.tearDown(self)
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+    def test_hardlink_aliases_are_verified_and_copies_are_excluded(self):
+        import shutil
+        directory=os.path.join(VIDEO_ROOT,'cross-seed-links');os.makedirs(directory,exist_ok=True)
+        true_alias=os.path.join(directory,'different-name.mkv');copy=os.path.join(directory,'copy.mkv');symlink=os.path.join(directory,'symlink.mkv')
+        try:
+            os.link(self.video_path,true_alias);shutil.copy2(self.video_path,copy);os.symlink(self.video_path,symlink)
+            minivid._EXTENSION_ALIASES['at']=0
+            with mock.patch.object(minivid.time,'monotonic',return_value=10):
+                ctx=minivid._extension_context(self.vid)
+            self.assertEqual(ctx['aliases'],['cross-seed-links/different-name.mkv'])
+            self.assertEqual(len(ctx['physical_key']),64)
+        finally:
+            for name in (true_alias,copy,symlink):os.unlink(name)
+            os.rmdir(directory);minivid._EXTENSION_ALIASES['at']=0
+    def test_navigation_is_shared_on_all_application_pages(self):
+        with mock.patch.object(minivid, '_is_decodable_media', return_value=True):
+            for path in ('/home','/browse','/watch/'+self.vid,'/storage','/maintenance'):
+                response=self.client.get(path)
+                self.assertEqual(response.status_code,200,path)
+                page=response.get_data(as_text=True)
+                self.assertEqual(page.count('id="library-controls"'),1,path)
+                self.assertIn('id="filtersDropdownBtn"',page,path)
+                self.assertIn('href="/home">Accueil</a>',page,path)
+                self.assertIn('>Favoris</a>',page,path)
+                self.assertIn('>Collections</a>',page,path)
+                self.assertIn('/static/topbar.js',page,path)
+
+    def test_home_preserves_library_and_resume_access(self):
+        state=minivid.read_state();state['fav']={self.vid:True};minivid.write_state(state)
+        self.client.post('/api/progress/'+self.vid,json={'progress':25,'duration':100})
+        response=self.client.get('/home');self.assertEqual(response.status_code,200)
+        page=response.get_data(as_text=True)
+        self.assertIn('Reprendre',page);self.assertIn('Mes favoris',page);self.assertIn(self.vid,page)
+        self.assertEqual(self.client.get('/').location,'/home')
+
+class IgnoredTagReviewTest(unittest.TestCase):
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+        minivid._invalidate_banned_cache()
+
+    def tearDown(self):
+        minivid.write_state(minivid._default_state())
+        minivid._invalidate_banned_cache()
+        MediaManagementApiTest.tearDown(self)
+
+    def test_suggestions_count_videos_once_and_preserve_semantic_tags(self):
+        state=minivid.read_state()
+        state['utags']={self.vid:['1080p','HEVC','hevc','portrait','popular subject']}
+        minivid.write_state(state)
+        minivid.MEDIA[0]['tags']=['hevc']
+        before=minivid.read_state()
+        result=self.client.get('/api/banned_tags/review').json
+        rows={row['tag']:row for row in result['items']}
+        self.assertEqual(rows['hevc']['count'],1)
+        self.assertIn('1080p',rows)
+        self.assertNotIn('portrait',rows)
+        self.assertNotIn('popular subject',rows)
+        self.assertEqual(minivid.read_state(),before)
+        all_tags=self.client.get('/api/banned_tags/review?view=all&q=popular').json
+        self.assertEqual([row['tag'] for row in all_tags['items']],['popular subject'])
+
+    def test_first_save_preserves_compose_and_restore_can_override_empty_list(self):
+        with mock.patch.dict(os.environ,{'MINI_BANNED_TAGS':'existing,mp4'}):
+            minivid._invalidate_banned_cache()
+            self.assertEqual(set(minivid.get_banned_tags()),{'existing','mp4'})
+            response=self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':[' HEVC ']})
+            self.assertEqual(set(response.json['tags']),{'existing','mp4','hevc'})
+            self.assertEqual(minivid._display_tags(['mp4','hevc','portrait']),['portrait'])
+            response=self.client.post('/api/banned_tags/review',json={'action':'restore','tags':['existing','mp4','hevc']})
+            self.assertEqual(response.json['tags'],[])
+            self.assertEqual(minivid.get_banned_tags(),frozenset())
+            self.assertEqual(self.client.get('/api/banned_tags').json['source'],'ui')
+            self.assertEqual(self.client.delete('/api/banned_tags').json['source'],'env')
+            self.assertEqual(set(minivid.get_banned_tags()),{'existing','mp4'})
+
+    def test_ignoring_tags_is_reversible_for_cards_and_companion(self):
+        state=minivid.read_state();state['utags']={self.vid:['hevc','portrait']};minivid.write_state(state)
+        self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['hevc']})
+        entry=next(row for row in minivid._extension_library() if row['id']==self.vid)
+        self.assertEqual(entry['tags'],['portrait'])
+        self.assertEqual(minivid.read_state()['utags'][self.vid],['hevc','portrait'])
+        self.client.post('/api/banned_tags/review',json={'action':'restore','tags':['hevc']})
+        entry=next(row for row in minivid._extension_library() if row['id']==self.vid)
+        self.assertEqual(entry['tags'],['hevc','portrait'])
+
+    def test_rescan_preserves_original_filename_tags_for_restore(self):
+        self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['test']})
+        minivid.scan_media()
+        self.assertIn('test',[t.lower() for t in minivid.MEDIA[0]['tags']])
+        self.assertNotIn('test',[t.lower() for t in minivid._display_tags(minivid.MEDIA[0]['tags'])])
+        self.client.post('/api/banned_tags/review',json={'action':'restore','tags':['test']})
+        self.assertIn('test',[t.lower() for t in minivid._display_tags(minivid.MEDIA[0]['tags'])])
+
+    def test_validation_auth_and_pagination(self):
+        self.assertEqual(self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':[23]}).status_code,400)
+        state=minivid.read_state();state['utags']={self.vid:['subject '+str(i) for i in range(65)]};minivid.write_state(state)
+        result=self.client.get('/api/banned_tags/review?view=all&q=subject&page=2').json
+        self.assertEqual(result['page'],2);self.assertEqual(len(result['items']),15)
+        self.assertIn('/home',self.client.get('/browse').get_data(as_text=True))
+        with self.client.session_transaction() as session:session.clear()
+        self.assertEqual(self.client.get('/api/banned_tags/review').status_code,403)
+        self.assertEqual(self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['hevc']}).status_code,403)
+
+class UnifiedSimilarVideosTest(unittest.TestCase):
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+        self.second='local-suggestion'
+        minivid.MEDIA.append({'id':self.second,'name':'Suggested.mp4','size':40,'mtime':1,'ext':'mp4','tags':['nature']})
+        minivid.MEDIA[0]['tags']=['nature']
+        self.previous=minivid.app.extensions['minivid_recommendations']
+        minivid.set_similar_config(True,1)
+    def tearDown(self):
+        minivid.app.extensions['minivid_recommendations']=self.previous
+        minivid.MEDIA[:]=[item for item in minivid.MEDIA if item['id']!=self.second]
+        minivid.write_state(minivid._default_state())
+        MediaManagementApiTest.tearDown(self)
+    def test_companion_order_metadata_and_rejected_videos_are_respected(self):
+        minivid.app.extensions['minivid_recommendations']=lambda vid,**kwargs:{'videos':[{'id':'unknown'},{'id':vid},{'id':self.second,'reasons':['nature']},{'id':self.second}], 'opinions':{self.second:1}}
+        response=self.client.get('/api/similar/'+self.vid)
+        self.assertEqual(response.json['source'],'companion')
+        self.assertEqual([v['id'] for v in response.json['videos']],[self.second])
+        self.assertEqual(response.json['videos'][0]['name'],'Suggested.mp4')
+        self.assertEqual(response.json['videos'][0]['opinion'],1)
+        minivid.app.extensions['minivid_recommendations']=lambda vid,**kwargs:{'videos':[],'opinions':{}}
+        self.assertEqual(self.client.get('/api/similar/'+self.vid).json['videos'],[])
+    def test_missing_companion_falls_back_and_disabled_setting_hides_all(self):
+        minivid.app.extensions['minivid_recommendations']=lambda vid,**kwargs:None
+        response=self.client.get('/api/similar/'+self.vid)
+        self.assertEqual(response.json['source'],'native')
+        self.assertIn(self.second,[v['id'] for v in response.json['videos']])
+        minivid.set_similar_config(False,1)
+        minivid.app.extensions['minivid_recommendations']=mock.Mock()
+        self.assertEqual(self.client.get('/api/similar/'+self.vid).json['videos'],[])
+        minivid.app.extensions['minivid_recommendations'].assert_not_called()

@@ -12,11 +12,7 @@
   <script src="/static/storage.js" defer></script>
 </head>
 <body class="maintenance admin-page">
-  <header class="topbar">
-    <a class="back-btn" href="/browse">← Retour</a>
-    <a class="brand" href="/browse"><img src="/static/logo.svg" alt="" height="30" /><strong>MiniVid</strong></a>
-    {% include '_header_actions.html' %}
-  </header>
+  {% include '_topbar.html' %}
   <div class="admin-shell">
     {% set admin_active = 'storage' %}{% include '_admin_sidebar.html' %}
   <main class="container storage-page">

@@ -1,0 +1,116 @@
+{% with rootq=rootq|default(''), dirq=dirq|default(''), q=q|default(''), sort=sort|default('date'), readf=readf|default(ui_prefs.get('read','all')), per=per|default(ui_prefs.get('per','all')|string), mix=mix|default(ui_prefs.get('mix','all')), fav_only=fav_only|default(false), multi_only=multi_only|default(false), smart=smart|default(ui_prefs.get('smart',false)) %}
+  <header class="topbar app-topbar">
+    <div class="topbar-brand">{% if back|default(false) %}<a class="back-btn" id="btn-back" href="{{ back }}" title="Retour à la liste" aria-label="Retour à la liste">←</a>{% endif %}
+    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
+      <img src="/static/logo.svg" alt="" height="30" />
+      <strong>MiniVid</strong>
+    </a></div>
+
+    <form id="library-controls" class="controls" data-prefs="{{ ui_prefs|tojson|forceescape }}" action="/browse" method="get">
+      <input type="hidden" name="root" value="{{ rootq or '' }}" />
+      <input type="hidden" name="dir" value="{{ dirq or '' }}" />
+      <input type="hidden" name="multi" value="{{ '1' if multi_only else '0' }}" />
+      <input type="hidden" name="fav" value="{{ '1' if fav_only else '0' }}" />
+      {% for key in ['tag','utag','tags','list'] %}{% if request.endpoint == 'browse' and request.args.get(key) %}<input type="hidden" name="{{ key }}" value="{{ request.args.get(key) }}">{% endif %}{% endfor %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Rechercher une vidéo, un dossier..." />
+
+      <label for="sort" class="lbl">Tri</label>
+      <select name="sort" id="sort">
+        <option value="date" {{ 'selected' if sort=='date' else '' }}>Récentes</option>
+        <option value="name" {{ 'selected' if sort=='name' else '' }}>Nom</option>
+        <option value="size" {{ 'selected' if sort=='size' else '' }}>Taille</option>
+        <option value="res_desc" {{ 'selected' if sort=='res_desc' else '' }}>Résolution ↓</option>
+        <option value="res_asc" {{ 'selected' if sort=='res_asc' else '' }}>Résolution ↑</option>
+        <option value="status_unread" {{ 'selected' if sort=='status_unread' else '' }}>Non lues</option>
+        <option value="status_read" {{ 'selected' if sort=='status_read' else '' }}>Lues</option>
+      </select>
+
+      <div class="popover-wrapper">
+        <button type="button" id="filtersDropdownBtn" class="filters-btn" aria-expanded="false" title="Options de filtrage et affichage">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          <span>Filtres</span>
+          {% if readf != 'all' or mix != 'all' or (per and per not in ['all', '0', '']) or smart %}
+          <span class="filter-dot" title="Filtres actifs"></span>
+          {% endif %}
+          <span class="filters-caret">▾</span>
+        </button>
+        <div id="filtersPopover" class="filters-popover" hidden>
+          <div class="filters-popover-header">
+            <span>Filtres d'affichage</span>
+            <button type="button" id="filtersCloseBtn" class="filters-close" aria-label="Fermer">×</button>
+          </div>
+          <div class="filters-popover-grid">
+            <div class="popover-field">
+              <label for="read" class="lbl">Affichage</label>
+              <select name="read" id="read">
+                <option value="all" {{ 'selected' if readf=='all' else '' }}>Toutes</option>
+                <option value="unread" {{ 'selected' if readf=='unread' else '' }}>Non lues</option>
+                <option value="in_progress" {{ 'selected' if readf=='in_progress' else '' }}>En cours</option>
+                <option value="never" {{ 'selected' if readf=='never' else '' }}>Jamais lues</option>
+                <option value="read" {{ 'selected' if readf=='read' else '' }}>Lues</option>
+              </select>
+            </div>
+            <div class="popover-field">
+              <label for="mix" class="lbl">Mélange</label>
+              <select name="mix" id="mix">
+                <option value="all" {{ 'selected' if mix=='all' else '' }}>Tout</option>
+                <option value="folders_first" {{ 'selected' if mix=='folders_first' else '' }}>Dossiers d'abord</option>
+                <option value="videos_first" {{ 'selected' if mix=='videos_first' else '' }}>Vidéos d'abord</option>
+              </select>
+            </div>
+            <div class="popover-field">
+              <label for="per" class="lbl">Par page</label>
+              <select name="per" id="per">
+                <option value="all" {{ 'selected' if per in ['all','0',''] else '' }}>Tout</option>
+                <option value="12" {{ 'selected' if per=='12' else '' }}>12</option>
+                <option value="24" {{ 'selected' if per=='24' else '' }}>24</option>
+                <option value="48" {{ 'selected' if per=='48' else '' }}>48</option>
+                <option value="96" {{ 'selected' if per=='96' else '' }}>96</option>
+              </select>
+            </div>
+            <div class="popover-field">
+              <label for="thumb" class="lbl">Taille</label>
+              <select name="thumb" id="thumb">
+                <option value="190">Compact</option>
+                <option value="240">Confort</option>
+                <option value="300">Large</option>
+              </select>
+            </div>
+            <div class="popover-field">
+              <label for="thumbRatio" class="lbl">Format</label>
+              <select id="thumbRatio">
+                <option value="16-9">Rectangulaire (16:9)</option>
+                <option value="square">Carré standard</option>
+              </select>
+            </div>
+            <div class="popover-field popover-full">
+              <label class="smart-toggle" title="Grouper par période">
+                <input type="checkbox" id="smartSort" name="smart" value="1" {{ 'checked' if smart else '' }} />
+                <span>Grouper par période</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view-mode-group" role="group" aria-label="Mode d'affichage">
+        <button type="button" class="view-mode-btn" data-view="cards" title="Vue Cartes (détaillée)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </button>
+        <button type="button" class="view-mode-btn" data-view="wall" title="Vue Mur visuel (haute densité)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="2" width="5" height="5" rx=".5"/><rect x="9.5" y="2" width="5" height="5" rx=".5"/><rect x="17" y="2" width="5" height="5" rx=".5"/><rect x="2" y="9.5" width="5" height="5" rx=".5"/><rect x="9.5" y="9.5" width="5" height="5" rx=".5"/><rect x="17" y="9.5" width="5" height="5" rx=".5"/><rect x="2" y="17" width="5" height="5" rx=".5"/><rect x="9.5" y="17" width="5" height="5" rx=".5"/><rect x="17" y="17" width="5" height="5" rx=".5"/></svg>
+        </button>
+      </div>
+
+      <a class="favbtn" href="/home">Accueil</a>
+      {% if extension_enabled %}<a class="favbtn" href="/extensions?view=discover">Sélections</a>{% endif %}
+      <a class="favbtn {{ 'active' if fav_only else '' }}"
+        href="{{ url_for('browse',root=rootq or '',dir=dirq or '',q=q,sort=sort,read=readf,per=per,mix=mix,fav=0 if fav_only else 1,multi=1 if multi_only else 0,smart=1 if smart else 0) }}">Favoris</a>
+      <a class="favbtn {{ 'active' if multi_only else '' }}"
+        href="{{ url_for('browse',root=rootq or '',dir=dirq or '',q=q,sort=sort,read=readf,per=per,mix=mix,fav=1 if fav_only else 0,multi=0 if multi_only else 1,smart=1 if smart else 0) }}">Collections</a>
+    </form>
+
+    {% include '_header_actions.html' %}
+  </header>
+{% endwith %}
+<script src="/static/topbar.js" defer></script>

@@ -9,23 +9,15 @@
   <link rel="stylesheet" href="/static/style.css?v=2" />
   <script src="/static/i18n.js" defer></script>
   <script src="/static/theme.js" defer></script>
+  <script src="/static/watch-keys.js" defer></script>
+  <script src="/static/similar.js" defer></script>
   {% if extension_enabled %}<script src="/static/extensions.js" defer></script>{% endif %}
 </head>
 
 <body class="watchpage" data-vid="{{ vid }}">
   <div id="___topanchor"></div>
 
-  <header class="topbar">
-    <a class="back-btn" id="btn-back" href="{{ back }}" title="Retour à la liste">
-      <span class="back-icon">←</span>
-      <span class="back-text">Retour</span>
-    </a>
-    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
-      <img src="/static/logo.svg" alt="" height="30" />
-      <strong>MiniVid</strong>
-    </a>
-    {% include '_header_actions.html' %}
-  </header>
+  {% include '_topbar.html' %}
 
   <main class="watch watch-studio" id="watchMain">
     <div class="watch-main-col">
@@ -76,8 +68,6 @@
             if (fallbackStarted) return;
             fallbackStarted = true;
             const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-            const badge = document.querySelector('.playback-badge');
-            if (badge) badge.textContent = 'hls';
             video.pause();
             video.removeAttribute('src');
             document.getElementById('vsource')?.remove();
@@ -115,9 +105,6 @@
           }, { once: true });
         </script>
         {% endif %}
-        {% endif %}
-        {% if playback_method %}
-        <span class="playback-badge">{{ playback_method }}</span>
         {% endif %}
         <div class="player-controls" id="player-controls">
           <button id="player-play" type="button" aria-label="Lecture" title="Lecture">▶</button>
@@ -158,13 +145,15 @@
         <div class="actions">
           <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
           <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
-          <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
+          <span id="readstate" class="state" title="Temps réellement regardé : non lue sous 30 %, en cours de 30 à moins de 70 %, lue à partir de 70 %.">{{ 'Lue' if played else ('En cours' if reading_status == 'in_progress' else 'Non lue') }}</span>
         </div>
-        <div class="tagsline">
-          {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
-          {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
-          <button id="addtag" class="pill add">+ Tag</button>
-        </div>
+        <details id="watch-tags" class="watch-tags">
+          <summary>Tags ({{ display_tags|length }})</summary>
+          <div class="tagsline">
+            {% for t in display_tags %}<a class="pill user" href="{{ url_for('browse', tags=t) }}">{{ t }}</a>{% endfor %}
+            <button id="addtag" class="pill add">+ Tag</button>
+          </div>
+        </details>
       </section>
 
       {% if extension_enabled %}
@@ -208,7 +197,7 @@
     </div>
 
     <!-- Sidebar (colonne droite sur grand écran) -->
-    <aside class="watch-sidebar" id="watch-sidebar" style="display:none;">
+    <aside class="watch-sidebar" id="watch-sidebar" data-video-id="{{ vid }}" style="display:none;">
       <div class="sidebar-header">
         <h3 class="sidebar-title">Vidéos similaires</h3>
         <span class="sidebar-count" id="sidebar-count"></span>
@@ -303,6 +292,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vid: VID, played: next })
       });
+      localStorage.setItem('minivid_reading_changed', String(Date.now()));
       readBtn?.classList.toggle('on', next);
       if (readBtn) readBtn.textContent = next ? 'Marquer non lue' : 'Marquer lue';
       if (readState) readState.textContent = next ? 'Lue' : 'Non lue';
@@ -485,8 +475,8 @@
     const v = document.getElementById('v');
     const span = document.getElementById('resval');
     if (v) {
-      let sentPlayed = false;
       let saveTick = 0;
+      let saveSequence = 0, appliedSequence = 0;
       let sessionStarted = false;
       let watchedSinceSync = 0;
       let lastObserved = null;
@@ -507,19 +497,26 @@
         } catch (_) {}
       }
 
-      function maybeMarkPlayed() {
-        if (sentPlayed) return;
-        const th = Math.min(10, (v.duration || 1) * 0.05);
-        if (v.currentTime >= th || v.ended) {
-          sentPlayed = true;
-          setPlayed(true).catch(() => {});
-        }
-      }
-
       v.addEventListener('loadedmetadata', () => {
         if (v.videoWidth && v.videoHeight && span) span.textContent = v.videoWidth + '×' + v.videoHeight;
         loadProgress();
       }, { once: true });
+
+      function saveProgress(keepalive = false) {
+        const sequence = ++saveSequence;
+        const watched = watchedSinceSync; watchedSinceSync = 0;
+        return fetch('/api/progress/' + encodeURIComponent(VID), {method:'POST', credentials:'same-origin', keepalive, headers:{'Content-Type':'application/json'}, body:JSON.stringify({progress:v.currentTime || 0, duration:Number.isFinite(v.duration) ? v.duration : 0, watched})}).then(r=>r.json()).then(j=>{
+          if (!j.ok || sequence < appliedSequence) return;
+          appliedSequence = sequence;
+          const previousState = readState?.dataset.status;
+          if (previousState !== j.reading_status) {localStorage.setItem('minivid_reading_changed', String(Date.now()));if(readState)readState.dataset.status=j.reading_status;}
+          readBtn?.classList.toggle('on', j.played);
+          if (readBtn) readBtn.textContent=j.played ? 'Marquer non lue' : 'Marquer lue';
+          if (readState) readState.textContent=j.reading_status === 'read' ? 'Lue' : j.reading_status === 'in_progress' ? 'En cours' : 'Non lue';
+        }).catch(()=>{});
+      }
+      v.addEventListener('pause', () => {if (sessionStarted) saveProgress();});
+      window.addEventListener('pagehide', () => {if (sessionStarted) saveProgress(true);});
 
       v.addEventListener('timeupdate', () => {
         if (lastObserved != null) {
@@ -527,22 +524,14 @@
           if (delta > 0 && delta < 8 && !v.paused) watchedSinceSync += delta;
         }
         lastObserved = v.currentTime;
-        maybeMarkPlayed();
         if (++saveTick % 4) return;
-        const watched = watchedSinceSync; watchedSinceSync = 0;
-        fetch('/api/progress/' + encodeURIComponent(VID), {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ progress: v.currentTime || 0, percent: v.duration ? 100 * v.currentTime / v.duration : 0, watched })
-        }).catch(() => {});
+        saveProgress();
       });
 
       v.addEventListener('ended', () => {
         fetch('/api/playback/' + encodeURIComponent(VID), { method:'POST', credentials:'same-origin',
           headers:{'Content-Type':'application/json'}, body:JSON.stringify({event:'complete'}) }).catch(() => {});
-        fetch('/api/progress/' + encodeURIComponent(VID), { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
-        maybeMarkPlayed();
+        saveProgress(true);
       });
 
       v.addEventListener('touchend', function (ev) {
@@ -734,68 +723,6 @@
           applyZoom(z);
         }, 120);
       }, { passive: true });
-    })();
-
-    (function similarVideos() {
-      const sidebar = document.getElementById('watch-sidebar');
-      const watchMain = document.getElementById('watchMain');
-      const grid = document.getElementById('similar-grid');
-      const countEl = document.getElementById('sidebar-count');
-      if (!grid) return;
-      function formatSize(n) {
-        if (!n) return '';
-        if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' Go';
-        return (n / 1048576).toFixed(1) + ' Mo';
-      }
-      async function loadSimilar() {
-        try {
-          const r = await fetch('/api/similar/' + encodeURIComponent(VID), { credentials: 'same-origin' });
-          const j = await r.json();
-          if (!j?.ok || !j.videos?.length) return;
-          if (sidebar) sidebar.style.display = '';
-          if (watchMain) watchMain.classList.add('has-sidebar');
-          if (countEl) countEl.textContent = `${j.videos.length}`;
-          grid.innerHTML = j.videos.map(video => {
-            const safeName = (video.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const statusHtml = video.played ? '<span class="side-badge side-read">Lue</span>' : '';
-            const favCls = video.fav ? 'fav-btn active' : 'fav-btn';
-            return `
-              <article class="side-card ${video.played ? 'played' : 'unplayed'}" data-vid="${video.id}">
-                <a class="side-thumb" href="/watch/${video.id}">
-                  <img loading="lazy" src="/thumb/${video.id}.jpg" alt="" onerror="this.src='/static/placeholder.svg'">
-                  <span class="side-ext">${(video.ext || '').toUpperCase()}</span>
-                  ${statusHtml}
-                </a>
-                <div class="side-info">
-                  <a class="side-title" href="/watch/${video.id}" title="${safeName}">${safeName}</a>
-                  <div class="side-sub">
-                    <span>${formatSize(video.size)}</span>
-                    ${video.res ? `<span>· ${video.res}</span>` : ''}
-                  </div>
-                </div>
-                <button class="${favCls}" aria-label="Favori" title="Favori" data-id="${video.id}"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14.5 3 8.5A5.5 5.5 0 0 1 12 5.159 5.5 5.5 0 0 1 21 8.5C21 14.5 12 21 12 21Z"/></svg></button>
-              </article>`;
-          }).join('');
-          grid.querySelectorAll('.fav-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const id = btn.dataset.id;
-              const next = !btn.classList.contains('active');
-              try {
-                await fetch('/api/fav', {
-                  method: 'POST',
-                  credentials: 'same-origin',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ vid: id, fav: next })
-                });
-                btn.classList.toggle('active', next);
-              } catch (_) {}
-            });
-          });
-        } catch (_) {}
-      }
-      loadSimilar();
     })();
 
     (function backTop() {

@@ -2,7 +2,7 @@
 .admin-page { --admin-radius:16px; }
 .admin-page .topbar { border-bottom:1px solid var(--border); box-shadow:none; }
 .admin-shell { display:grid; grid-template-columns:205px minmax(0,1fr); max-width:1720px; margin:0 auto; min-height:calc(100vh - 70px); }
-.admin-sidebar { padding:32px 20px; border-right:1px solid var(--border); display:flex; flex-direction:column; gap:12px; align-self:start; position:sticky; top:76px; }
+.admin-sidebar { padding:32px 20px; border-right:1px solid var(--border); display:flex; flex-direction:column; gap:12px; align-self:start; position:sticky; top:calc(var(--topbar-height, 60px) + 16px); }
 .admin-library-link { font-size:.84rem; color:var(--muted); padding:0 12px 22px; }
 .admin-nav-label { color:var(--faint); font-size:.65rem; letter-spacing:.16em; font-weight:750; padding:0 12px; }
 .admin-navigation { display:grid; gap:6px; }
@@ -66,7 +66,7 @@
 .admin-page .source-link-row { grid-template-columns:minmax(130px,1fr) minmax(110px,1fr) minmax(140px,1.3fr) minmax(120px,1fr); }
 .admin-page .source-link-row .text-muted { font: .7rem/1.6 monospace; overflow-wrap:anywhere; }
 .admin-page .manager-row label { font-size:.73rem; }
-.admin-page input:not([type=checkbox]):not([type=radio]),.admin-page select { border:1px solid var(--border-strong); background:var(--bg); color:var(--text); border-radius:7px; min-height:37px; }
+.admin-page .admin-content input:not([type=checkbox]):not([type=radio]),.admin-page .admin-content select { border:1px solid var(--border-strong); background:var(--bg); color:var(--text); border-radius:7px; min-height:37px; }
 .admin-page .field { font-size:.8rem; }
 .admin-form-footer { display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; gap:12px; border-top:1px solid var(--border); margin-top:24px; padding-top:20px; }
 .admin-form-footer .btn { margin-left:auto; }
@@ -175,3 +175,5 @@
   .admin-sidebar { min-width:0; }
   .admin-navigation { flex-wrap:wrap; }
 }
+
+.tag-review-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:16px 0}.tag-review-controls label{display:grid;gap:6px;max-width:100%}.tag-review-controls input,.tag-review-controls select{max-width:100%}.tag-review-list{display:grid;gap:8px}.tag-review-row{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px}.tag-review-row>span{min-width:0;overflow-wrap:anywhere;flex:1}.tag-review-row small{display:block;color:var(--muted)}.tag-review-row input{flex:0 0 auto;width:18px;height:18px}.tag-review-count{white-space:nowrap;color:var(--muted);font-size:12px}

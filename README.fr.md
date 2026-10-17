@@ -17,6 +17,8 @@
 - **Personnaliser** les couleurs et les thèmes. Interface en français et en anglais.
 - **Connecter** qBittorrent ou ruTorrent pour consulter les informations de partage.
 
+Les statuts utilisent le temps réellement regardé : **non lue < 30 %**, **en cours de 30 à moins de 70 %**, **lue dès 70 %**. Les tags à ignorer se gèrent dans **Maintenance**.
+
 ## Installation
 
 Sur Linux avec **Docker Engine 25+ et Docker Compose** :

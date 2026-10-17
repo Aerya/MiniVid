@@ -10,26 +10,17 @@
   <link rel="stylesheet" href="/static/admin.css?v=1" />
   <script src="/static/i18n.js" defer></script>
   <script src="/static/theme.js" defer></script>
+  <script src="/static/tag-review.js" defer></script>
 </head>
 
 <body class="maintenance admin-page">
-  <header class="topbar">
-    <a class="back-btn" id="btn-back" href="/browse" title="Retour à la liste">
-      <span class="back-icon">←</span>
-      <span class="back-text">Retour</span>
-    </a>
-    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
-      <img src="/static/logo.svg" alt="" height="30" />
-      <strong>MiniVid</strong>
-    </a>
-    {% include '_header_actions.html' %}
-  </header>
+  {% include '_topbar.html' %}
 
   <div class="admin-shell">
     {% set admin_active = 'maintenance' %}{% include '_admin_sidebar.html' %}
     <main class="container admin-content maintenance-page">
       <div class="admin-heading"><div><span class="admin-eyebrow">GÉRER LA BIBLIOTHÈQUE</span><h1>Maintenance</h1><p>Une bibliothèque à jour, des réglages à portée de main.</p></div><a class="btn" href="/storage">Voir le stockage <span aria-hidden="true">↗</span></a></div>
-      <nav class="admin-jump-nav" aria-label="Sections de maintenance"><a href="#library-tools">Bibliothèque</a><a href="#source-settings">Sources et clients</a><a href="#playback-settings">Préférences</a><a href="#recent-activity">Activité</a></nav>
+      <nav class="admin-jump-nav" aria-label="Sections de maintenance"><a href="#library-tools">Bibliothèque</a><a href="#source-settings">Sources et clients</a><a href="#playback-settings">Préférences</a><a href="#tag-settings">Tags ignorés</a><a href="#recent-activity">Activité</a></nav>
       <section class="admin-section" id="library-tools">
         <div class="admin-section-heading"><div><h2>Entretenir la bibliothèque</h2><p>Actualisez l’index ou renouvelez les aperçus de vos vidéos.</p></div><span class="admin-section-number">01</span></div>
         <div class="admin-tools-grid">
@@ -52,6 +43,18 @@
       <section class="admin-section" id="playback-settings">
         <div class="admin-section-heading"><div><h2>Préférences de lecture</h2><p>Personnalisez les suggestions de votre bibliothèque.</p></div><span class="admin-section-number">03</span></div>
         <section class="card admin-preferences-card"><header class="card-header"><div><h3 class="card-title">Vidéos similaires</h3><p>Des suggestions locales à partir des tags en commun.</p></div><span id="similar-status-label" class="admin-state-pill"></span></header><div class="card-body"><label class="admin-setting-row"><span><strong>Afficher les vidéos similaires</strong><small>Sur la page de lecture, à côté de la vidéo.</small></span><input type="checkbox" id="similar-enabled" /></label><div class="admin-preference-controls"><div><span class="admin-field-label">Tags en commun au minimum</span><div class="admin-segmented"><label><input type="radio" name="similar-min" value="1">1 tag</label><label><input type="radio" name="similar-min" value="2" checked>2 tags</label><label><input type="radio" name="similar-min" value="3">3 tags</label></div></div><button id="similar-save" class="btn btn-primary">Enregistrer</button></div><div id="similar-msg" class="text-muted" role="status"></div></div></section>
+      </section>
+      <section class="admin-section" id="tag-settings">
+        <div class="admin-section-heading"><div><h2>Tags ignorés</h2><p>MiniVid repère les tags techniques. Tu choisis lesquels écarter des cartes et des suggestions.</p></div></div>
+        <div class="card"><div class="card-body">
+          <p>Les exclusions du compose sont conservées au premier enregistrement. Tes choix sont ensuite mémorisés ici, sans redémarrage. Les tags d’origine restent conservés.</p>
+          <div class="tag-review-controls"><label>Afficher <select id="tag-review-view"><option value="suggestions">Propositions à vérifier</option><option value="all">Tous les tags disponibles</option><option value="ignored">Tags ignorés</option></select></label><label>Rechercher <input type="search" id="tag-review-search" placeholder="Chercher un tag"></label><button class="btn" id="tag-review-refresh" type="button">Analyser les tags</button></div>
+          <p id="tag-review-summary" class="text-muted"></p>
+          <div id="tag-review-list" class="tag-review-list"></div>
+          <div class="tag-review-controls"><button type="button" class="btn" id="tag-review-prev">← Précédent</button><span id="tag-review-page"></span><button type="button" class="btn" id="tag-review-next">Suivant →</button><button type="button" class="btn btn-primary" id="tag-review-apply" disabled>Ignorer la sélection</button></div>
+          <form id="tag-review-manual" class="tag-review-controls"><label>Ajouter un tag précis <input id="tag-review-name" maxlength="200" required placeholder="Un tag, même composé de plusieurs mots"></label><button class="btn" type="submit">Ignorer ce tag</button></form>
+          <p id="tag-review-status" role="status"></p>
+        </div></div>
       </section>
       <section class="admin-section" id="recent-activity"><div class="admin-section-heading"><div><h2>Activité récente</h2><p>Le suivi des opérations de votre bibliothèque.</p></div><span class="admin-section-number">04</span></div><section class="card"><header class="card-header"><h3 class="card-title">Journal</h3><small id="journal-hint" class="text-muted"></small></header><div id="journal" class="journal-scroll"><div class="admin-empty">Chargement du journal…</div></div></section></section>
       <footer class="admin-page-footer"><span>MiniVid · Gestion de la bibliothèque</span><a href="https://github.com/Aerya/PornScout" target="_blank" rel="noopener noreferrer">PornScout ↗</a></footer>
