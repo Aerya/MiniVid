@@ -681,6 +681,33 @@ class ReadingProgressTest(unittest.TestCase):
         self.assertIn('data-vid="'+self.vid+'"',page)
         self.assertNotIn('data-vid="'+self.vid+'"',self.client.get('/browse?read=read').get_data(as_text=True))
 
+    def test_dismiss_resume_preserves_history_and_can_be_undone(self):
+        self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100})
+        before=minivid.read_state()
+        self.assertTrue(minivid._recent_reading(before,'in_progress'))
+        response=self.client.post('/api/resume/'+self.vid,json={'dismissed':True})
+        self.assertEqual(response.status_code,200)
+        after=minivid.read_state()
+        self.assertEqual(after['progress'],before['progress'])
+        self.assertEqual(after['watch_history'],before['watch_history'])
+        self.assertEqual(minivid._reading_status(after,self.vid),'in_progress')
+        self.assertEqual(minivid._recent_reading(after,'in_progress'),[])
+        self.assertEqual(minivid._recent_reading(after,'both'),[])
+        self.assertTrue(minivid._recent_reading(after,'recent'))
+        self.assertTrue(os.path.exists(self.video_path))
+        self.client.post('/api/resume/'+self.vid,json={'dismissed':False})
+        self.assertTrue(minivid._recent_reading(minivid.read_state(),'in_progress'))
+        self.client.post('/api/resume/'+self.vid,json={'dismissed':True})
+        self.client.post('/api/playback/'+self.vid,json={'event':'start'})
+        self.assertTrue(minivid._recent_reading(minivid.read_state(),'in_progress'))
+
+    def test_resume_requires_auth_valid_video_and_boolean(self):
+        self.assertEqual(self.client.post('/api/resume/missing',json={'dismissed':True}).status_code,404)
+        self.assertEqual(self.client.post('/api/resume/'+self.vid,json={'dismissed':'false'}).status_code,400)
+        self.client.post('/logout')
+        with self.client.session_transaction() as session:session.clear()
+        self.assertEqual(self.client.post('/api/resume/'+self.vid,json={'dismissed':True}).status_code,401)
+
     def test_progress_rejects_unknown_video_and_invalid_numbers(self):
         self.assertEqual(self.client.post('/api/progress/missing',json={'progress':20}).status_code,404)
         self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':'invalid'}).status_code,400)

@@ -2849,7 +2849,12 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 .reading-panel { margin:0 0 20px; }
 .reading-panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .reading-panel-heading label { display:flex; align-items:center; gap:8px; }
-.reading-strip { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; }
+.reading-strip { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr)); gap:16px; padding-bottom:8px; }
+.reading-item[hidden] { display:none; }
+.reading-item { min-width:0; display:flex; flex-direction:column; gap:8px; }
+.reading-item .reading-card { flex:1; min-width:0; }
+.resume-dismiss { font-size:12px; align-self:start; white-space:normal; }
+.resume-notice { padding:12px; margin:10px 0; border:1px solid var(--border); border-radius:8px; }
 .reading-card { flex:0 0 200px; display:flex; flex-direction:column; gap:5px; color:var(--text); text-decoration:none; font-size:12px; }
 .reading-card img { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:8px; }
 .reading-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -2858,3 +2863,13 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 .side-progress { background:#725312; color:#fff; }
 
 .home-page {max-width:1400px; margin:24px auto; padding:0 24px;} .home-heading {display:flex; justify-content:space-between; align-items:center; gap:16px;} .home-page section {margin:28px 0;} .home-page #extension-frame {border:0;width:100%;min-height:440px;color-scheme:dark;} @media(max-width:600px){.home-heading{align-items:start;flex-direction:column}.home-page{padding:0 12px}}
+
+.resume-actions-dialog{width:min(520px,calc(100% - 24px));max-height:85vh;overflow:auto;border:1px solid var(--border);border-radius:12px;padding:24px;background:var(--bg);color:var(--text)}
+.resume-actions-dialog::backdrop{background:#0009}
+.resume-actions-dialog label{display:block;margin:12px 0}
+.resume-actions-dialog input,.resume-actions-dialog select{max-width:100%;margin:6px 0}
+.resume-actions-dialog footer{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.resume-actions-dialog [hidden]{display:none}
+.resume-delete{align-self:start;font-size:12px}
+
+@media(max-width:650px){body:has(.home-page) .topbar{flex-wrap:wrap;gap:12px}body:has(.home-page) .header-right{flex-wrap:wrap;max-width:100%;gap:10px}}

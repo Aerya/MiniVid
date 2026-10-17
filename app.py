@@ -787,7 +787,8 @@ def _recent_reading(state, mode):
     for item in MEDIA:
         vid = item['id']; entry = history.get(vid, {}); status = _reading_status(state, vid)
         last = entry.get('last_played', previous.get(vid, 0))
-        if mode == 'in_progress' and status != 'in_progress':continue
+        if mode == 'in_progress' and (status != 'in_progress' or vid in state.get('resume_dismissed', {})):continue
+        if mode == 'both' and status == 'in_progress' and vid in state.get('resume_dismissed', {}):continue
         if not last:continue
         rows.append({'id':vid, 'name':item['name'], 'status':status, 'last_played':last,
                      'progress':state.get('progress', {}).get(vid, 0),
@@ -996,6 +997,20 @@ def api_progress_set(vid):
         status = _reading_status(st, vid)
     return jsonify(ok=True, progress=progress.get(vid, 0), reading_status=status, played=status == 'read')
 
+@app.route("/api/resume/<vid>", methods=["POST"])
+def api_resume_visibility(vid):
+    if not auth_required():return jsonify(ok=False, error="auth"), 401
+    if not any(item['id'] == vid for item in MEDIA):return jsonify(ok=False, error="video_introuvable"), 404
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get('dismissed'), bool):return jsonify(ok=False, error="valeur_invalide"), 400
+    with STATE_LOCK:
+        st = read_state()
+        hidden = st.setdefault('resume_dismissed', {})
+        if data['dismissed']:hidden[vid] = time.time()
+        else:hidden.pop(vid, None)
+        write_state(st)
+    return jsonify(ok=True, dismissed=data['dismissed'])
+
 @app.route("/api/playback/<vid>", methods=["POST"])
 def api_playback_event(vid):
     if not auth_required():
@@ -1005,6 +1020,12 @@ def api_playback_event(vid):
     event = (request.get_json(silent=True) or {}).get("event")
     if event not in ("start", "complete"):
         return jsonify(ok=False, error="evenement_invalide"), 400
+    if event == 'start':
+        with STATE_LOCK:
+            st = read_state()
+            if vid in st.get('resume_dismissed', {}):
+                st['resume_dismissed'].pop(vid, None)
+                write_state(st)
     storage.playback(STORAGE_DB, vid, start=event == "start", complete=event == "complete",
                      percent=100 if event == "complete" else 0)
     return jsonify(ok=True)
@@ -1379,7 +1400,7 @@ def _forget_media(vid):
         "last_scan": int(time.time()),
     }
     state = read_state()
-    for key in ("played", "ever_played", "progress", "read_overrides", "watch_history", "fav", "utags", "external_tags", "meta"):
+    for key in ("played", "ever_played", "progress", "read_overrides", "watch_history", "resume_dismissed", "fav", "utags", "external_tags", "meta"):
         mapping = state.get(key, {}) or {}
         mapping.pop(vid, None)
         state[key] = mapping

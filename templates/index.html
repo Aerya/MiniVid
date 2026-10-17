@@ -164,6 +164,7 @@
   </div>
 
   <main>
+    <script src="/static/reading.js" defer></script>
     <section class="reading-panel" aria-label="Lectures">
       <div class="reading-panel-heading"><strong>Lectures</strong><label>Panneau <select id="history-panel-mode">
         {% for mode, label in [('off','Masqué'),('in_progress','En cours'),('recent','Dernières lectures'),('both','En cours et récentes')] %}
@@ -172,11 +173,11 @@
       </select></label></div>
       {% if history_panel != 'off' %}
       <div class="reading-strip">
-        {% for item in recent_reading %}<a class="reading-card" href="{{ url_for('watch', vid=item.id, back=request.full_path) }}">
+        {% for item in recent_reading %}<article class="reading-item"><a class="reading-card" href="{{ url_for('watch', vid=item.id, back=request.full_path) }}">
           <img loading="lazy" src="/thumb/{{ item.id }}.jpg" alt="" /><span class="reading-name">{{ item.name }}</span>
           <span>{{ 'Lue' if item.status == 'read' else ('En cours' if item.status == 'in_progress' else 'Non lue') }}{% if item.duration %} · {{ (item.percent|round)|int }} %{% endif %}</span>
           {% if item.duration %}<progress max="100" value="{{ item.percent }}"></progress>{% endif %}
-        </a>{% else %}<p class="muted">Aucune lecture à afficher.</p>{% endfor %}
+        </a>{% if item.status == "in_progress" %}<button type="button" class="resume-dismiss btn" data-resume-dismiss="{{ item.id }}">Retirer de la reprise</button><button type="button" class="btn resume-delete" data-resume-delete="{{ item.id }}">Supprimer…</button>{% endif %}</article>{% else %}<p class="muted">Aucune lecture à afficher.</p>{% endfor %}
       </div>
       {% endif %}
     </section>

@@ -7,7 +7,7 @@
   window.addEventListener('message',async event=>{
     if(event.origin!==location.origin||event.source!==frame.contentWindow)return;
     if(event.data?.type==='minivid:extension:resize'){
-      const height=Number(event.data.height);if(Number.isFinite(height))frame.style.height=Math.min(5000,Math.max(100,height+4))+'px';
+      const height=Number(event.data.height);if(Number.isFinite(height))frame.style.height=Math.min(50000,Math.max(100,height+4))+'px';
     }
     if(event.data?.type==='minivid:extension:batch'){
       try{const r=await fetch('/api/extensions/batch',{method:'POST',credentials:'same-origin'});const data=await r.json();frame.contentWindow.postMessage({type:'minivid:extension:batch-started',...data},location.origin);}catch{frame.contentWindow.postMessage({type:'minivid:extension:batch-started',ok:false,error:'Compagnon inaccessible'},location.origin);}
