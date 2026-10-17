@@ -749,6 +749,19 @@ class LibraryIdentityAndHomeTest(unittest.TestCase):
         finally:
             for name in (true_alias,copy,symlink):os.unlink(name)
             os.rmdir(directory);minivid._EXTENSION_ALIASES['at']=0
+    def test_navigation_is_shared_on_all_application_pages(self):
+        with mock.patch.object(minivid, '_is_decodable_media', return_value=True):
+            for path in ('/home','/browse','/watch/'+self.vid,'/storage','/maintenance'):
+                response=self.client.get(path)
+                self.assertEqual(response.status_code,200,path)
+                page=response.get_data(as_text=True)
+                self.assertEqual(page.count('id="library-controls"'),1,path)
+                self.assertIn('id="filtersDropdownBtn"',page,path)
+                self.assertIn('href="/home">Accueil</a>',page,path)
+                self.assertIn('>Favoris</a>',page,path)
+                self.assertIn('>Collections</a>',page,path)
+                self.assertIn('/static/topbar.js',page,path)
+
     def test_home_preserves_library_and_resume_access(self):
         state=minivid.read_state();state['fav']={self.vid:True};minivid.write_state(state)
         self.client.post('/api/progress/'+self.vid,json={'progress':25,'duration':100})

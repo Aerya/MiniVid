@@ -14,17 +14,7 @@
 </head>
 
 <body class="maintenance admin-page">
-  <header class="topbar">
-    <a class="back-btn" id="btn-back" href="/browse" title="Retour à la liste">
-      <span class="back-icon">←</span>
-      <span class="back-text">Retour</span>
-    </a>
-    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
-      <img src="/static/logo.svg" alt="" height="30" />
-      <strong>MiniVid</strong>
-    </a>
-    {% include '_header_actions.html' %}
-  </header>
+  {% include '_topbar.html' %}
 
   <div class="admin-shell">
     {% set admin_active = 'maintenance' %}{% include '_admin_sidebar.html' %}

@@ -2876,3 +2876,16 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 @media(max-width:650px){body:has(.home-page) .topbar{flex-wrap:wrap;gap:12px}body:has(.home-page) .header-right{flex-wrap:wrap;max-width:100%;gap:10px}}
 
 .reading-meta{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;min-height:26px}.reading-actions{display:flex;gap:3px;flex-shrink:0}.resume-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:5px;background:transparent;color:var(--muted);cursor:pointer}.resume-icon:hover,.resume-icon:focus-visible{background:var(--surface-2);color:var(--text)}.resume-icon.resume-delete:hover{color:var(--danger)}.reading-item>progress{width:100%;height:5px;accent-color:var(--accent)}
+
+/* Shared navigation for every application page. */
+.app-topbar{grid-template-columns:auto minmax(0,1fr) auto!important;padding:.4rem 1.1rem!important;gap:.85rem!important}
+.topbar-brand{display:flex;align-items:center;gap:10px;min-width:0;grid-column:1;grid-row:1}
+.topbar-brand .back-btn{padding:3px 7px}
+.app-topbar .controls{min-width:0;grid-column:2;grid-row:1}
+.app-topbar .header-right{flex-wrap:wrap;min-width:0;justify-content:flex-end;grid-column:3;grid-row:1}
+.app-topbar .filters-popover{max-width:calc(100vw - 24px);min-width:min(300px,calc(100vw - 24px))}
+@media(max-width:1000px){.app-topbar{grid-template-columns:1fr auto!important}.app-topbar .controls{grid-column:1/-1;grid-row:2}.app-topbar .header-right{grid-column:2;grid-row:1}}
+@media(max-width:480px){.app-topbar{grid-template-columns:minmax(0,1fr)!important}.app-topbar .header-right{grid-column:1;grid-row:2;justify-content:flex-start}.app-topbar .controls{grid-row:3}.app-topbar .filters-popover{position:fixed;top:auto;left:12px;right:12px;width:auto;min-width:0}}
+
+.app-topbar .brand strong{display:inline!important}.app-topbar .test-instance-badge{display:inline-flex!important}
+@media(max-width:760px){.app-topbar{padding:.7rem!important;gap:.5rem!important}}
