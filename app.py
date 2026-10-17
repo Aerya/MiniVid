@@ -194,11 +194,14 @@ def _import_extension_metadata(vid, context, result):
     tags = list(dict.fromkeys(tag.strip()[:80] for tag in tags if tag.strip()))[:200]
     with STATE_LOCK:
         state = read_state()
-        state.setdefault("external_tags", {})[vid] = {
+        record = {
             "tags": tags, "provider": str(result.get("provider", ""))[:80],
             "source_url": str(result.get("source_url", ""))[:2000],
             "size": context["size"], "mtime": context["mtime"],
         }
+        if state.get("external_tags", {}).get(vid) == record:
+            return
+        state.setdefault("external_tags", {})[vid] = record
         write_state(state)
 
 def _effective_user_tags(state):

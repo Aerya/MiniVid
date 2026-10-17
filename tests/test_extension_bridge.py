@@ -11,7 +11,7 @@ class BridgeTests(unittest.TestCase):
         imported=[]
         register_extension(app,url=url,token=token,authenticated=lambda:auth,
                            context_for=lambda vid:{'id':vid,'size':10,'mtime':1},
-                           import_metadata=lambda *args:imported.append(args))
+                           import_metadata=lambda *args:imported.append(args),start_worker=False)
         return app.test_client(),imported
     def test_disabled_and_unauthenticated(self):
         client,_=self.make(url='',token='')

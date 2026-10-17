@@ -1,5 +1,7 @@
 """Optional external companion transport. No provider implementation lives here."""
 import json
+import threading
+import time
 from urllib.parse import urlsplit, quote
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
 from urllib.error import URLError, HTTPError
@@ -8,7 +10,7 @@ from flask import Blueprint, request, jsonify, render_template, Response, abort
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):return None
 
-def register_extension(app, *, url, token, authenticated, context_for, import_metadata, contexts_for=lambda: []):
+def register_extension(app, *, url, token, authenticated, context_for, import_metadata, contexts_for=lambda: [], start_worker=True):
     parsed=urlsplit(url)
     enabled=bool(url and token)
     if enabled and (parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or len(token)<24):
@@ -89,5 +91,24 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
                 import_metadata(record['id'],context,record['result']);count+=1
         except (ValueError,TypeError,KeyError):return jsonify(ok=False,error='Métadonnées invalides'),502
         return jsonify(ok=True,imported=count)
+    def import_results():
+        content,status,_=forward('v1/export')
+        if status!=200:return
+        records=json.loads(content).get('videos',[])
+        if not isinstance(records,list) or len(records)>10000:return
+        for record in records:
+            try:
+                context=context_for(record['id'])
+                import_metadata(record['id'],context,record['result'])
+            except (ValueError,OSError,TypeError,KeyError):continue
+    def synchronize():
+        # Import completed work even when the browser has been closed.
+        time.sleep(3)
+        while True:
+            try:import_results()
+            except Exception:app.logger.warning('Synchronisation du compagnon temporairement indisponible')
+            time.sleep(30)
+    if enabled and start_worker:
+        threading.Thread(target=synchronize,daemon=True,name='external-companion-import').start()
     app.register_blueprint(bp)
     app.context_processor(lambda:{'extension_enabled':enabled})
