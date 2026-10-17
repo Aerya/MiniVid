@@ -604,6 +604,17 @@ if __name__ == "__main__":
 class ExternalMetadataTest(unittest.TestCase):
     setUp=MediaManagementApiTest.setUp
     tearDown=MediaManagementApiTest.tearDown
+    def test_batch_tag_import_writes_once_and_skips_unchanged_data(self):
+        context=minivid._extension_context(self.vid)
+        result={'tags':['external'],'_file':{k:context[k] for k in ('size','mtime')}}
+        minivid.write_state(minivid._default_state())
+        records=[{'id':self.vid,'result':result},{'id':self.vid,'result':result}]
+        with mock.patch.object(minivid,'write_state',wraps=minivid.write_state) as save:
+            minivid._import_extension_batch(records)
+            self.assertEqual(save.call_count,1)
+            minivid._import_extension_batch(records)
+            self.assertEqual(save.call_count,1)
+
     def test_library_enrichment_includes_scanned_videos(self):
         contexts=minivid._extension_contexts()
         self.assertIn(self.vid,[item["id"] for item in contexts])

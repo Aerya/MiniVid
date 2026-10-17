@@ -10,7 +10,7 @@ from flask import Blueprint, request, jsonify, render_template, Response, abort
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):return None
 
-def register_extension(app, *, url, token, authenticated, context_for, import_metadata, contexts_for=lambda: [], start_worker=True):
+def register_extension(app, *, url, token, authenticated, context_for, import_metadata, contexts_for=lambda: [], import_batch=None, start_worker=True):
     parsed=urlsplit(url)
     enabled=bool(url and token)
     if enabled and (parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or len(token)<24):
@@ -85,6 +85,9 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
         try:
             records=json.loads(content).get('videos',[])
             count=0
+            if import_batch is not None:
+                import_batch(records)
+                return jsonify(ok=True,imported=len(records))
             for record in records:
                 try:context=context_for(record['id'])
                 except (ValueError,OSError):continue
@@ -96,6 +99,9 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
         if status!=200:return
         records=json.loads(content).get('videos',[])
         if not isinstance(records,list) or len(records)>10000:return
+        if import_batch is not None:
+            import_batch(records)
+            return
         for record in records:
             try:
                 context=context_for(record['id'])

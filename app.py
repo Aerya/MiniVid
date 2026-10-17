@@ -183,26 +183,43 @@ def _extension_context(vid):
     return {"id": vid, "name": item["name"], "relative_path": relative,
             "source": MEDIA_NAMES[root], "size": stat.st_size, "mtime": int(stat.st_mtime)}
 
-def _import_extension_metadata(vid, context, result):
+def _external_tag_record(context, result):
     if not isinstance(result, dict):
         raise ValueError("Métadonnées invalides")
     if result.get("_file") != {key: context[key] for key in ("size", "mtime")}:
-        return
+        return None
     tags = result.get("tags", [])
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
         raise ValueError("Tags invalides")
     tags = list(dict.fromkeys(tag.strip()[:80] for tag in tags if tag.strip()))[:200]
+    return {"tags": tags, "provider": str(result.get("provider", ""))[:80],
+            "source_url": str(result.get("source_url", ""))[:2000],
+            "size": context["size"], "mtime": context["mtime"]}
+
+def _save_external_tag_records(records):
     with STATE_LOCK:
         state = read_state()
-        record = {
-            "tags": tags, "provider": str(result.get("provider", ""))[:80],
-            "source_url": str(result.get("source_url", ""))[:2000],
-            "size": context["size"], "mtime": context["mtime"],
-        }
-        if state.get("external_tags", {}).get(vid) == record:
-            return
-        state.setdefault("external_tags", {})[vid] = record
-        write_state(state)
+        mapping = state.setdefault("external_tags", {})
+        changed = False
+        for vid, record in records:
+            if record is not None and mapping.get(vid) != record:
+                mapping[vid] = record
+                changed = True
+        if changed:
+            write_state(state)
+
+def _import_extension_metadata(vid, context, result):
+    _save_external_tag_records([(vid, _external_tag_record(context, result))])
+
+def _import_extension_batch(records):
+    valid = []
+    for entry in records:
+        try:
+            context = _extension_context(entry['id'])
+            valid.append((entry['id'], _external_tag_record(context, entry['result'])))
+        except (ValueError, OSError, KeyError, TypeError):
+            continue
+    _save_external_tag_records(valid)
 
 def _effective_user_tags(state):
     tags = {key: list(value) for key, value in (state.get("utags", {}) or {}).items()}
@@ -223,7 +240,7 @@ from extension_bridge import register_extension
 register_extension(app, url=os.environ.get("MINI_EXTENSION_URL", ""),
                    token=os.environ.get("MINI_EXTENSION_TOKEN", ""),
                    authenticated=lambda: AUTH_ENABLED and bool(session.get("user")),
-                   context_for=_extension_context, import_metadata=_import_extension_metadata, contexts_for=_extension_contexts)
+                   context_for=_extension_context, import_metadata=_import_extension_metadata, contexts_for=_extension_contexts, import_batch=_import_extension_batch)
 
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')
