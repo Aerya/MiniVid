@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/style.css?v=2" />
   <script src="/static/i18n.js" defer></script>
   <script src="/static/theme.js" defer></script>
+  {% if extension_enabled %}<script src="/static/extensions.js" defer></script>{% endif %}
 </head>
 
 <body class="watchpage" data-vid="{{ vid }}">
@@ -165,6 +166,10 @@
           <button id="addtag" class="pill add">+ Tag</button>
         </div>
       </section>
+
+      {% if extension_enabled %}
+      <section class="extension-watch"><iframe id="extension-frame" title="Module complémentaire" src="/api/extension/ui/video/" data-theme="{{ ui_prefs.get('theme','dark') }}" data-accent="{{ ui_prefs.get('accent','#b02e54') }}" data-video='{{ {"id":vid,"name":name,"source":root_name,"relative_path":relative_path,"size":video_size,"mtime":video_mtime}|tojson }}'></iframe></section>
+      {% endif %}
 
       <details id="media-management" class="media-management" hidden>
         <summary class="media-management-summary"><strong>Fichier et téléchargement</strong></summary>

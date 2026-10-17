@@ -176,6 +176,72 @@ def protect_test_media():
     }:
         return jsonify(ok=False, error="Instance de test : suppression et automatisation désactivées"), 403
 
+# External companions are opt-in and contacted only by authenticated administrators.
+def _extension_context(vid):
+    item, root, relative, full = _media_item_and_path(vid)
+    stat = os.stat(full)
+    return {"id": vid, "name": item["name"], "relative_path": relative,
+            "source": MEDIA_NAMES[root], "size": stat.st_size, "mtime": int(stat.st_mtime)}
+
+def _external_tag_record(context, result):
+    if not isinstance(result, dict):
+        raise ValueError("Métadonnées invalides")
+    if result.get("_file") != {key: context[key] for key in ("size", "mtime")}:
+        return None
+    tags = result.get("tags", [])
+    if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+        raise ValueError("Tags invalides")
+    tags = list(dict.fromkeys(tag.strip()[:80] for tag in tags if tag.strip()))[:200]
+    return {"tags": tags, "provider": str(result.get("provider", ""))[:80],
+            "source_url": str(result.get("source_url", ""))[:2000],
+            "size": context["size"], "mtime": context["mtime"]}
+
+def _save_external_tag_records(records):
+    with STATE_LOCK:
+        state = read_state()
+        mapping = state.setdefault("external_tags", {})
+        changed = False
+        for vid, record in records:
+            if record is not None and mapping.get(vid) != record:
+                mapping[vid] = record
+                changed = True
+        if changed:
+            write_state(state)
+
+def _import_extension_metadata(vid, context, result):
+    _save_external_tag_records([(vid, _external_tag_record(context, result))])
+
+def _import_extension_batch(records):
+    valid = []
+    for entry in records:
+        try:
+            context = _extension_context(entry['id'])
+            valid.append((entry['id'], _external_tag_record(context, entry['result'])))
+        except (ValueError, OSError, KeyError, TypeError):
+            continue
+    _save_external_tag_records(valid)
+
+def _effective_user_tags(state):
+    tags = {key: list(value) for key, value in (state.get("utags", {}) or {}).items()}
+    versions = {item["id"]: (item.get("size"), int(item.get("mtime") or 0)) for item in MEDIA}
+    for vid, record in (state.get("external_tags", {}) or {}).items():
+        if (record.get("size"), record.get("mtime")) == versions.get(vid):
+            tags[vid] = list(dict.fromkeys(tags.get(vid, []) + record.get("tags", [])))
+    return tags
+
+def _extension_contexts():
+    contexts=[]
+    for item in list(MEDIA):
+        try:contexts.append(_extension_context(item['id']))
+        except (ValueError,OSError):continue
+    return contexts
+
+from extension_bridge import register_extension
+register_extension(app, url=os.environ.get("MINI_EXTENSION_URL", ""),
+                   token=os.environ.get("MINI_EXTENSION_TOKEN", ""),
+                   authenticated=lambda: AUTH_ENABLED and bool(session.get("user")),
+                   context_for=_extension_context, import_metadata=_import_extension_metadata, contexts_for=_extension_contexts, import_batch=_import_extension_batch)
+
 # ---------- Surrogate-safe helpers ----------
 _SURR_RE = re.compile(r'[\ud800-\udfff]')
 
@@ -910,7 +976,7 @@ def api_similar(vid):
     min_tags = cfg["min_tags"]
 
     st = read_state()
-    utags_map = st.get("utags", {}) or {}
+    utags_map = _effective_user_tags(st)
     fav_map = st.get("fav", {}) or {}
     played_map = st.get("played", {}) or {}
 
@@ -1210,7 +1276,7 @@ def _forget_media(vid):
         "last_scan": int(time.time()),
     }
     state = read_state()
-    for key in ("played", "ever_played", "progress", "fav", "utags", "meta"):
+    for key in ("played", "ever_played", "progress", "fav", "utags", "external_tags", "meta"):
         mapping = state.get(key, {}) or {}
         mapping.pop(vid, None)
         state[key] = mapping
@@ -2390,7 +2456,7 @@ def browse():
 
     items = MEDIA[:]
     # --- ensure ctags are present for each video item ---
-    utags_state = (state.get("utags", {}) or {})
+    utags_state = _effective_user_tags(state)
     for v in items:
         if v.get("kind") != "video":
             continue
@@ -2439,12 +2505,12 @@ def browse():
         ql = q.lower()
         items = [i for i in items if ql in i["name"].lower() or ql in (i.get("dir", "") or "").lower()]
     if tag:
-        items = [i for i in items if tag.lower() in [t.lower() for t in i.get("tags",[])] or tag.lower() in [t.lower() for t in (state.get("utags",{}).get(i["id"],[]) or [])]]
+        items = [i for i in items if tag.lower() in [t.lower() for t in i.get("tags",[])] or tag.lower() in [t.lower() for t in (utags_state.get(i["id"],[]) or [])]]
     if utag:
-        items = [i for i in items if utag.lower() in [t.lower() for t in (state.get("utags",{}).get(i["id"],[]) or [])]]
+        items = [i for i in items if utag.lower() in [t.lower() for t in (utags_state.get(i["id"],[]) or [])]]
     if sel_tags:
         def _has_all(it):
-            alltags = [t.lower() for t in (it.get("tags",[]) or [])] + [t.lower() for t in (state.get("utags",{}).get(it["id"],[]) or [])]
+            alltags = [t.lower() for t in (it.get("tags",[]) or [])] + [t.lower() for t in (utags_state.get(it["id"],[]) or [])]
             return all(t.lower() in alltags for t in sel_tags)
         items = [i for i in items if _has_all(i)]
     if listq:
@@ -2615,7 +2681,7 @@ def browse():
             if not k:
                 continue
             counts[k] = counts.get(k,0)+1
-        for t in (state.get("utags",{}).get(i["id"],[]) or []):
+        for t in (utags_state.get(i["id"],[]) or []):
             k = (canon_tag(t) or "").strip().lower()
             if not k:
                 continue
@@ -3246,7 +3312,7 @@ def watch(vid):
     st = read_state()
     fav = bool((st.get("fav", {}) or {}).get(vid))
     played = bool((st.get("played", {}) or {}).get(vid))
-    ut = (st.get("utags", {}) or {}).get(vid, [])
+    ut = _effective_user_tags(st).get(vid, [])
     tags = []
     for it in MEDIA:
         if it.get("id") == vid:
@@ -3266,6 +3332,7 @@ def watch(vid):
     return render_template(
         "watch.html",
         vid=vid, name=name, ctype=_ctype_for(full), back=back,
+        root_name=MEDIA_NAMES[ridx], relative_path=rel, video_size=os.path.getsize(full), video_mtime=int(os.path.getmtime(full)),
         tags=tags, utags=ut, fav=fav, played=played, res=res,
         play_url=play_url, ext=ext, unsupported=unsupported,
         playback_method=playback_method, can_hls=ALLOW_TRANSCODE,
