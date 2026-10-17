@@ -76,3 +76,7 @@ Captures réalisées avec des vidéos de démonstration, sans contenu explicite.
 [Configuration et plusieurs sources](docs/configuration.fr.md) · [Windows — assistant fourni tel quel, non testé par le mainteneur](Windows-MiniVid.cmd) · [Signaler un problème](https://github.com/Aerya/MiniVid/issues) · [Licence MIT](LICENSE)
 
 Les vidéos et les données restent sur votre installation. Le lecteur HLS charge sa bibliothèque JavaScript depuis un CDN.
+
+### Compagnon facultatif
+
+MiniVid peut afficher un compagnon externe sous **◇**. Relier les deux services par un réseau Docker privé, puis définir `MINI_EXTENSION_URL` et `MINI_EXTENSION_TOKEN` (même jeton des deux côtés, au moins 24 caractères). Une connexion administrateur est nécessaire. Le compagnon peut ajouter des tags en conservant les tags manuels. Aucun service externe n’est contacté sans cette configuration.

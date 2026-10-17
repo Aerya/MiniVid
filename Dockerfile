@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fi \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY app.py /app/
+COPY app.py extension_bridge.py /app/
 COPY media_managers.py /app/
 COPY storage_manager.py /app/
 COPY gpu_bootstrap.py /app/

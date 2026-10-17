@@ -76,3 +76,7 @@ Captured with demonstration videos, without explicit content. The screenshots sh
 [Configuration and multiple sources](docs/configuration.md) · [Windows — assistant provided as is, untested by the maintainer](Windows-MiniVid.cmd) · [Report an issue](https://github.com/Aerya/MiniVid/issues) · [MIT license](LICENSE)
 
 Videos and application data stay on your installation. HLS playback loads its JavaScript library from a CDN.
+
+### Optional companion
+
+MiniVid can display an external companion under **◇**. Connect both services to a private Docker network and set `MINI_EXTENSION_URL` and `MINI_EXTENSION_TOKEN` (same token on both sides, at least 24 characters). Administrator authentication is required. The companion can add tags without replacing your manual tags. No external service is contacted when these settings are absent.
