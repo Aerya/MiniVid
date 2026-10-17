@@ -748,7 +748,7 @@
           if (countEl) countEl.textContent = `${j.videos.length}`;
           grid.innerHTML = j.videos.map(video => {
             const safeName = (video.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const statusHtml = video.played ? '<span class="side-badge side-read">Lue</span>' : '';
+            const statusHtml = video.played ? '<span class="side-badge side-read">Lue</span>' : video.reading_status === 'in_progress' ? '<span class="side-badge side-progress">En cours</span>' : '';
             const favCls = video.fav ? 'fav-btn active' : 'fav-btn';
             return `
               <article class="side-card ${video.played ? 'played' : 'unplayed'}" data-vid="${video.id}">

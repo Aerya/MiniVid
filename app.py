@@ -1354,7 +1354,7 @@ def _forget_media(vid):
         "last_scan": int(time.time()),
     }
     state = read_state()
-    for key in ("played", "ever_played", "progress", "fav", "utags", "external_tags", "meta"):
+    for key in ("played", "ever_played", "progress", "read_overrides", "watch_history", "fav", "utags", "external_tags", "meta"):
         mapping = state.get(key, {}) or {}
         mapping.pop(vid, None)
         state[key] = mapping
