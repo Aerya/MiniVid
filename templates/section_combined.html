@@ -5,7 +5,7 @@
     <img loading="lazy" class="lazy-thumb" src="/static/placeholder.svg" data-src="/thumb/{{ it.id }}.jpg"
       alt="Aperçu vidéo" />
     <div class="badge">{{ it.ext.upper() }}</div>
-    {% if it.played %}<div class="status">Lue</div>{% else %}<div class="status un">Non lue</div>{% endif %}
+    {% if it.played %}<div class="status">Lue</div>{% elif it.reading_status == 'in_progress' %}<div class="status in-progress">En cours</div>{% else %}<div class="status un">Non lue</div>{% endif %}
     {% if it.progress and it.progress > 0 %}
     <div class="thumb-progress" style="width: {{ [it.progress, 100] | min }}%;"></div>
     {% endif %}

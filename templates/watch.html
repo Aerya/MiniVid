@@ -76,8 +76,6 @@
             if (fallbackStarted) return;
             fallbackStarted = true;
             const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-            const badge = document.querySelector('.playback-badge');
-            if (badge) badge.textContent = 'hls';
             video.pause();
             video.removeAttribute('src');
             document.getElementById('vsource')?.remove();
@@ -115,9 +113,6 @@
           }, { once: true });
         </script>
         {% endif %}
-        {% endif %}
-        {% if playback_method %}
-        <span class="playback-badge">{{ playback_method }}</span>
         {% endif %}
         <div class="player-controls" id="player-controls">
           <button id="player-play" type="button" aria-label="Lecture" title="Lecture">▶</button>
@@ -158,13 +153,15 @@
         <div class="actions">
           <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
           <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
-          <span id="readstate" class="state">{{ 'Lue' if played else 'Non lue' }}</span>
+          <span id="readstate" class="state">{{ 'Lue' if played else ('En cours' if reading_status == 'in_progress' else 'Non lue') }}</span>
         </div>
-        <div class="tagsline">
-          {% for t in tags %}<a class="pill" href="/browse?tag={{ t|e }}">{{ t }}</a>{% endfor %}
-          {% for t in utags %}<a class="pill user" href="/browse?utag={{ t|e }}">{{ t }}</a>{% endfor %}
-          <button id="addtag" class="pill add">+ Tag</button>
-        </div>
+        <details id="watch-tags" class="watch-tags">
+          <summary>Tags ({{ display_tags|length }})</summary>
+          <div class="tagsline">
+            {% for t in display_tags %}<a class="pill user" href="{{ url_for('browse', tags=t) }}">{{ t }}</a>{% endfor %}
+            <button id="addtag" class="pill add">+ Tag</button>
+          </div>
+        </details>
       </section>
 
       {% if extension_enabled %}
@@ -485,7 +482,6 @@
     const v = document.getElementById('v');
     const span = document.getElementById('resval');
     if (v) {
-      let sentPlayed = false;
       let saveTick = 0;
       let sessionStarted = false;
       let watchedSinceSync = 0;
@@ -507,19 +503,22 @@
         } catch (_) {}
       }
 
-      function maybeMarkPlayed() {
-        if (sentPlayed) return;
-        const th = Math.min(10, (v.duration || 1) * 0.05);
-        if (v.currentTime >= th || v.ended) {
-          sentPlayed = true;
-          setPlayed(true).catch(() => {});
-        }
-      }
-
       v.addEventListener('loadedmetadata', () => {
         if (v.videoWidth && v.videoHeight && span) span.textContent = v.videoWidth + '×' + v.videoHeight;
         loadProgress();
       }, { once: true });
+
+      function saveProgress(keepalive = false) {
+        const watched = watchedSinceSync; watchedSinceSync = 0;
+        return fetch('/api/progress/' + encodeURIComponent(VID), {method:'POST', credentials:'same-origin', keepalive, headers:{'Content-Type':'application/json'}, body:JSON.stringify({progress:v.currentTime || 0, duration:Number.isFinite(v.duration) ? v.duration : 0, watched})}).then(r=>r.json()).then(j=>{
+          if (!j.ok) return;
+          readBtn?.classList.toggle('on', j.played);
+          if (readBtn) readBtn.textContent=j.played ? 'Marquer non lue' : 'Marquer lue';
+          if (readState) readState.textContent=j.reading_status === 'read' ? 'Lue' : j.reading_status === 'in_progress' ? 'En cours' : 'Non lue';
+        }).catch(()=>{});
+      }
+      v.addEventListener('pause', () => {if (sessionStarted) saveProgress();});
+      window.addEventListener('pagehide', () => {if (sessionStarted) saveProgress(true);});
 
       v.addEventListener('timeupdate', () => {
         if (lastObserved != null) {
@@ -527,22 +526,14 @@
           if (delta > 0 && delta < 8 && !v.paused) watchedSinceSync += delta;
         }
         lastObserved = v.currentTime;
-        maybeMarkPlayed();
         if (++saveTick % 4) return;
-        const watched = watchedSinceSync; watchedSinceSync = 0;
-        fetch('/api/progress/' + encodeURIComponent(VID), {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ progress: v.currentTime || 0, percent: v.duration ? 100 * v.currentTime / v.duration : 0, watched })
-        }).catch(() => {});
+        saveProgress();
       });
 
       v.addEventListener('ended', () => {
         fetch('/api/playback/' + encodeURIComponent(VID), { method:'POST', credentials:'same-origin',
           headers:{'Content-Type':'application/json'}, body:JSON.stringify({event:'complete'}) }).catch(() => {});
-        fetch('/api/progress/' + encodeURIComponent(VID), { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
-        maybeMarkPlayed();
+        fetch('/api/progress/' + encodeURIComponent(VID), { method: 'POST', credentials: 'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({progress:v.duration, duration:v.duration, percent:100}) }).catch(() => {});
       });
 
       v.addEventListener('touchend', function (ev) {

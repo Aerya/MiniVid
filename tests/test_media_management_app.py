@@ -604,6 +604,26 @@ if __name__ == "__main__":
 class ExternalMetadataTest(unittest.TestCase):
     setUp=MediaManagementApiTest.setUp
     tearDown=MediaManagementApiTest.tearDown
+    def test_card_more_count_uses_all_tags_and_watch_tags_are_collapsed(self):
+        context=minivid._extension_context(self.vid)
+        tags=['semantic'+str(i) for i in range(12)]
+        state=minivid._default_state()
+        state['utags']={self.vid:tags}
+        state['fav']={self.vid:True}
+        state['progress']={self.vid:35}
+        minivid.write_state(state)
+        minivid.MEDIA[0]['tags']=[]
+        page=self.client.get('/browse').get_data(as_text=True)
+        self.assertIn('>+8</span>',page)
+        watch=self.client.get('/watch/'+self.vid).get_data(as_text=True)
+        self.assertIn('<details id="watch-tags"',watch)
+        self.assertNotIn('<details id="watch-tags" open',watch)
+        self.assertIn('Tags (12)',watch)
+        self.assertNotIn('class="playback-badge"',watch)
+        entry=minivid._extension_library()[0]
+        self.assertEqual(len(entry['tags']),12)
+        self.assertTrue(entry['favorite']);self.assertTrue(entry['watched'])
+
     def test_batch_tag_import_writes_once_and_skips_unchanged_data(self):
         context=minivid._extension_context(self.vid)
         result={'tags':['external'],'_file':{k:context[k] for k in ('size','mtime')}}
@@ -629,3 +649,38 @@ class ExternalMetadataTest(unittest.TestCase):
         self.assertEqual(minivid._effective_user_tags(state)[self.vid],['manual','external'])
         state['external_tags'][self.vid]['mtime']+=1
         self.assertEqual(minivid._effective_user_tags(state)[self.vid],['manual'])
+
+class ReadingProgressTest(unittest.TestCase):
+    tearDown = MediaManagementApiTest.tearDown
+
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+
+    def test_completion_threshold_and_legacy_partial(self):
+        state=minivid.read_state();state['played']={self.vid:True};state['progress']={self.vid:567}
+        minivid.write_state(state)
+        self.assertEqual(minivid._reading_status(state,self.vid),'in_progress')
+        for progress,status in ((567,'in_progress'),(1279,'in_progress'),(1288,'read')):
+            response=self.client.post('/api/progress/'+self.vid,json={'progress':progress,'duration':1610})
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json['reading_status'],status)
+        # A completed video stays read when replaying; manual decisions remain authoritative.
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':1610}).json['reading_status'],'read')
+        self.client.post('/api/played',json={'vid':self.vid,'played':False})
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':1400,'duration':1610}).json['reading_status'],'unread')
+
+    def test_panel_is_optional_and_history_is_sorted_by_real_activity(self):
+        self.client.post('/api/progress/'+self.vid,json={'progress':567,'duration':1610})
+        page=self.client.get('/browse').get_data(as_text=True)
+        self.assertNotIn('class="reading-card"',page)
+        self.client.post('/api/preferences',json={'history_panel':'in_progress'})
+        page=self.client.get('/browse').get_data(as_text=True)
+        self.assertIn('class="reading-card"',page);self.assertIn('En cours',page)
+        page=self.client.get('/browse?read=in_progress').get_data(as_text=True)
+        self.assertIn('data-vid="'+self.vid+'"',page)
+        self.assertNotIn('data-vid="'+self.vid+'"',self.client.get('/browse?read=read').get_data(as_text=True))
+
+    def test_progress_rejects_unknown_video_and_invalid_numbers(self):
+        self.assertEqual(self.client.post('/api/progress/missing',json={'progress':20}).status_code,404)
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':'invalid'}).status_code,400)

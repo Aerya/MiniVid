@@ -10,7 +10,7 @@ from flask import Blueprint, request, jsonify, render_template, Response, abort
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):return None
 
-def register_extension(app, *, url, token, authenticated, context_for, import_metadata, contexts_for=lambda: [], import_batch=None, start_worker=True):
+def register_extension(app, *, url, token, authenticated, context_for, import_metadata, contexts_for=lambda: [], import_batch=None, library_for=lambda: [], start_worker=True):
     parsed=urlsplit(url)
     enabled=bool(url and token)
     if enabled and (parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or len(token)<24):
@@ -42,12 +42,12 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
     def page():
         failure=guard()
         if failure:return failure
-        return render_template('extensions.html')
+        return render_template('extensions.html', extension_ui='ui/discover/' if request.args.get('view')=='discover' else 'ui/')
     @bp.route('/api/extension/<path:path>',methods=['GET','POST'])
     def proxy(path):
         failure=guard()
         if failure:return failure
-        if request.content_length and request.content_length>512*1024:return jsonify(ok=False,error='Requête trop volumineuse'),413
+        if request.content_length and request.content_length>8*1024*1024:return jsonify(ok=False,error='Requête trop volumineuse'),413
         if request.method=='POST' and not request.is_json:return jsonify(ok=False,error='JSON requis'),415
         payload=request.get_data() if request.method=='POST' else None
         content,status,mime=forward(path,payload,request.query_string.decode('ascii','replace'))
@@ -56,6 +56,13 @@ def register_extension(app, *, url, token, authenticated, context_for, import_me
         response.headers['Referrer-Policy']='no-referrer'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'"
+        return response
+    @bp.get('/api/extensions/library')
+    def library():
+        failure=guard()
+        if failure:return failure
+        response=jsonify(ok=True,videos=library_for())
+        response.headers['Cache-Control']='no-store'
         return response
     @bp.post('/api/extensions/metadata/<vid>')
     def metadata(vid):

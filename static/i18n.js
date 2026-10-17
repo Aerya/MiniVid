@@ -1,6 +1,7 @@
 /* MiniVid UI language switcher. French is the original/default language. */
 (() => {
   const en = {
+    "Lectures": "Viewing history", "Panneau": "Panel", "Masqué": "Hidden", "En cours": "In progress", "Dernières lectures": "Recently watched", "En cours et récentes": "In progress and recent", "Aucune lecture à afficher.": "No viewing history to display.",
     "GESTION": "MANAGEMENT",
     "GÉRER LA BIBLIOTHÈQUE": "MANAGE YOUR LIBRARY",
     "L’ESSENTIEL EN UN COUP D’ŒIL": "AT A GLANCE",

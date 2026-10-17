@@ -560,8 +560,7 @@ html.ratio-16-9 .folder .thumb {
 }
 
 .badge,
-.status,
-.playback-badge {
+.status {
   position: absolute;
   z-index: 2;
   display: inline-flex;
@@ -2839,3 +2838,19 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 #extension-frame { display:block; border:0; width:100%; height:700px; background:transparent; }
 .extension-watch { margin-top:20px; }
 .extension-watch #extension-frame { height:220px; }
+
+.watch-tags { width:100%; margin-top:.5rem; }
+.watch-tags summary { cursor:pointer; color:var(--muted,#ad9ca5); font-size:.8rem; }
+.watch-tags .tagsline { padding-top:.7rem; max-height:220px; overflow:auto; }
+
+.watchpage.has-zoom .extension-watch { display:none; }
+
+.status.in-progress { background:#725312; color:#fff; }
+.reading-panel { margin:0 0 20px; }
+.reading-panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.reading-panel-heading label { display:flex; align-items:center; gap:8px; }
+.reading-strip { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; }
+.reading-card { flex:0 0 200px; display:flex; flex-direction:column; gap:5px; color:var(--text); text-decoration:none; font-size:12px; }
+.reading-card img { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:8px; }
+.reading-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.reading-card progress { width:100%; height:5px; accent-color:var(--accent); }
