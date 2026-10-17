@@ -2,8 +2,9 @@
   const frame=document.getElementById('extension-frame');
   if(!frame)return;
   let metadataRequest=false;
-  function send(){let video=null;try{video=frame.dataset.video?JSON.parse(frame.dataset.video):null;}catch{}frame.contentWindow?.postMessage({type:'minivid:extension:context',theme:frame.dataset.theme,accent:frame.dataset.accent,video},location.origin);}
+  function send(){let video=null;try{video=frame.dataset.video?JSON.parse(frame.dataset.video):null;}catch{}frame.contentWindow?.postMessage({type:'minivid:extension:context',lang:document.documentElement.lang,theme:frame.dataset.theme,accent:frame.dataset.accent,video},location.origin);}
   frame.addEventListener('load',send);
+  window.addEventListener('minivid:language',send);
   window.addEventListener('message',async event=>{
     if(event.origin!==location.origin||event.source!==frame.contentWindow)return;
     if(event.data?.type==='minivid:extension:resize'){

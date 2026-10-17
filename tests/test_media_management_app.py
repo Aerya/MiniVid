@@ -70,6 +70,7 @@ class MediaManagementApiTest(unittest.TestCase):
         self.client = minivid.app.test_client()
         self.client.post("/login", data={"username": "admin", "password": "test-password"})
         FakeTorrentClient.deleted.clear()
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:db.execute("DELETE FROM playback_stats WHERE vid=?",(self.vid,))
         try:
             os.remove(minivid.MEDIA_MANAGERS_FILE)
         except OSError:
@@ -610,7 +611,7 @@ class ExternalMetadataTest(unittest.TestCase):
         state=minivid._default_state()
         state['utags']={self.vid:tags}
         state['fav']={self.vid:True}
-        state['progress']={self.vid:35}
+        state['progress']={self.vid:35};state['watch_history']={self.vid:{'watched_seconds':35,'duration':100,'watched_percent':35}}
         minivid.write_state(state)
         minivid.MEDIA[0]['tags']=[]
         page=self.client.get('/browse').get_data(as_text=True)
@@ -657,21 +658,36 @@ class ReadingProgressTest(unittest.TestCase):
         MediaManagementApiTest.setUp(self)
         minivid.write_state(minivid._default_state())
 
-    def test_completion_threshold_and_legacy_partial(self):
-        state=minivid.read_state();state['played']={self.vid:True};state['progress']={self.vid:567}
-        minivid.write_state(state)
-        self.assertEqual(minivid._reading_status(state,self.vid),'in_progress')
-        for progress,status in ((567,'in_progress'),(1279,'in_progress'),(1288,'read')):
-            response=self.client.post('/api/progress/'+self.vid,json={'progress':progress,'duration':1610})
+    def test_effective_thresholds_ignore_seeks_and_keep_manual_marks(self):
+        for watched,status in ((0,'unread'),(29,'unread'),(1,'in_progress'),(30,'in_progress'),(9,'in_progress'),(1,'read')):
+            response=self.client.post('/api/progress/'+self.vid,json={'progress':99,'duration':100,'watched':watched})
             self.assertEqual(response.status_code,200)
             self.assertEqual(response.json['reading_status'],status)
-        # A completed video stays read when replaying; manual decisions remain authoritative.
-        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':1610}).json['reading_status'],'read')
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':1,'duration':100}).json['reading_status'],'read')
         self.client.post('/api/played',json={'vid':self.vid,'played':False})
-        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':1400,'duration':1610}).json['reading_status'],'unread')
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':99,'duration':100,'watched':10}).json['reading_status'],'unread')
+
+    def test_ended_or_percent_field_cannot_fake_effective_playback(self):
+        self.client.post('/api/playback/'+self.vid,json={'event':'complete'})
+        result=self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':100,'percent':100,'watched':0}).json
+        self.assertEqual(result['reading_status'],'unread')
+        self.assertEqual(result['watched_percent'],0)
+        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':100,'watched':10000}).json['watched_percent'],30)
+
+    def test_migration_uses_measured_time_not_saved_position(self):
+        state=minivid.read_state();state['watch_history']={self.vid:{'duration':100,'percent':99,'completed':True}}
+        minivid.write_state(state)
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:db.execute('INSERT INTO playback_stats(vid,watched_seconds) VALUES(?,?)',(self.vid,35))
+        minivid._migrate_effective_reading()
+        migrated=minivid.read_state()
+        self.assertEqual(minivid._reading_status(migrated,self.vid),'in_progress')
+        self.assertEqual(migrated['watch_history'][self.vid]['watched_percent'],35)
+        self.assertEqual(migrated['watch_history'][self.vid]['percent'],99)
+        minivid._migrate_effective_reading()
+        self.assertEqual(minivid.read_state(),migrated)
 
     def test_panel_is_optional_and_history_is_sorted_by_real_activity(self):
-        self.client.post('/api/progress/'+self.vid,json={'progress':567,'duration':1610})
+        self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100,'watched':30})
         page=self.client.get('/browse').get_data(as_text=True)
         self.assertNotIn('class="reading-card"',page)
         self.client.post('/api/preferences',json={'history_panel':'in_progress'})
@@ -682,7 +698,7 @@ class ReadingProgressTest(unittest.TestCase):
         self.assertNotIn('data-vid="'+self.vid+'"',self.client.get('/browse?read=read').get_data(as_text=True))
 
     def test_dismiss_resume_preserves_history_and_can_be_undone(self):
-        self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100})
+        self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100,'watched':30})
         before=minivid.read_state()
         self.assertTrue(minivid._recent_reading(before,'in_progress'))
         response=self.client.post('/api/resume/'+self.vid,json={'dismissed':True})
@@ -740,3 +756,72 @@ class LibraryIdentityAndHomeTest(unittest.TestCase):
         page=response.get_data(as_text=True)
         self.assertIn('Reprendre',page);self.assertIn('Mes favoris',page);self.assertIn(self.vid,page)
         self.assertEqual(self.client.get('/').location,'/home')
+
+class IgnoredTagReviewTest(unittest.TestCase):
+    def setUp(self):
+        MediaManagementApiTest.setUp(self)
+        minivid.write_state(minivid._default_state())
+        minivid._invalidate_banned_cache()
+
+    def tearDown(self):
+        minivid.write_state(minivid._default_state())
+        minivid._invalidate_banned_cache()
+        MediaManagementApiTest.tearDown(self)
+
+    def test_suggestions_count_videos_once_and_preserve_semantic_tags(self):
+        state=minivid.read_state()
+        state['utags']={self.vid:['1080p','HEVC','hevc','portrait','popular subject']}
+        minivid.write_state(state)
+        minivid.MEDIA[0]['tags']=['hevc']
+        before=minivid.read_state()
+        result=self.client.get('/api/banned_tags/review').json
+        rows={row['tag']:row for row in result['items']}
+        self.assertEqual(rows['hevc']['count'],1)
+        self.assertIn('1080p',rows)
+        self.assertNotIn('portrait',rows)
+        self.assertNotIn('popular subject',rows)
+        self.assertEqual(minivid.read_state(),before)
+        all_tags=self.client.get('/api/banned_tags/review?view=all&q=popular').json
+        self.assertEqual([row['tag'] for row in all_tags['items']],['popular subject'])
+
+    def test_first_save_preserves_compose_and_restore_can_override_empty_list(self):
+        with mock.patch.dict(os.environ,{'MINI_BANNED_TAGS':'existing,mp4'}):
+            minivid._invalidate_banned_cache()
+            self.assertEqual(set(minivid.get_banned_tags()),{'existing','mp4'})
+            response=self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':[' HEVC ']})
+            self.assertEqual(set(response.json['tags']),{'existing','mp4','hevc'})
+            self.assertEqual(minivid._display_tags(['mp4','hevc','portrait']),['portrait'])
+            response=self.client.post('/api/banned_tags/review',json={'action':'restore','tags':['existing','mp4','hevc']})
+            self.assertEqual(response.json['tags'],[])
+            self.assertEqual(minivid.get_banned_tags(),frozenset())
+            self.assertEqual(self.client.get('/api/banned_tags').json['source'],'ui')
+            self.assertEqual(self.client.delete('/api/banned_tags').json['source'],'env')
+            self.assertEqual(set(minivid.get_banned_tags()),{'existing','mp4'})
+
+    def test_ignoring_tags_is_reversible_for_cards_and_companion(self):
+        state=minivid.read_state();state['utags']={self.vid:['hevc','portrait']};minivid.write_state(state)
+        self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['hevc']})
+        entry=next(row for row in minivid._extension_library() if row['id']==self.vid)
+        self.assertEqual(entry['tags'],['portrait'])
+        self.assertEqual(minivid.read_state()['utags'][self.vid],['hevc','portrait'])
+        self.client.post('/api/banned_tags/review',json={'action':'restore','tags':['hevc']})
+        entry=next(row for row in minivid._extension_library() if row['id']==self.vid)
+        self.assertEqual(entry['tags'],['hevc','portrait'])
+
+    def test_rescan_preserves_original_filename_tags_for_restore(self):
+        self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['test']})
+        minivid.scan_media()
+        self.assertIn('test',[t.lower() for t in minivid.MEDIA[0]['tags']])
+        self.assertNotIn('test',[t.lower() for t in minivid._display_tags(minivid.MEDIA[0]['tags'])])
+        self.client.post('/api/banned_tags/review',json={'action':'restore','tags':['test']})
+        self.assertIn('test',[t.lower() for t in minivid._display_tags(minivid.MEDIA[0]['tags'])])
+
+    def test_validation_auth_and_pagination(self):
+        self.assertEqual(self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':[23]}).status_code,400)
+        state=minivid.read_state();state['utags']={self.vid:['subject '+str(i) for i in range(65)]};minivid.write_state(state)
+        result=self.client.get('/api/banned_tags/review?view=all&q=subject&page=2').json
+        self.assertEqual(result['page'],2);self.assertEqual(len(result['items']),15)
+        self.assertIn('/home',self.client.get('/browse').get_data(as_text=True))
+        with self.client.session_transaction() as session:session.clear()
+        self.assertEqual(self.client.get('/api/banned_tags/review').status_code,403)
+        self.assertEqual(self.client.post('/api/banned_tags/review',json={'action':'ignore','tags':['hevc']}).status_code,403)

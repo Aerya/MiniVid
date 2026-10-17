@@ -1,6 +1,7 @@
 /* MiniVid UI language switcher. French is the original/default language. */
 (() => {
   const en = {
+    "Sélections": "Selections", "Tags ignorés": "Ignored tags", "Analyser les tags": "Analyze tags", "Propositions à vérifier": "Suggestions to review", "Tous les tags disponibles": "All available tags", "Ignorer la sélection": "Ignore selected tags", "Ajouter un tag précis": "Add a specific tag", "Ignorer ce tag": "Ignore this tag", "Rechercher": "Search",
     "À regarder": "Watch next", "Reprendre": "Continue watching", "Pour toi": "For you", "Mes favoris": "My favorites", "Toute la bibliothèque →": "Browse library →", "Associations et enrichissement →": "Source matching and enrichment →", "Rien à afficher pour le moment.": "Nothing to show yet.", "Reprends une lecture ou découvre ta prochaine vidéo.": "Resume watching or discover your next video.",
     "Lectures": "Viewing history", "Panneau": "Panel", "Masqué": "Hidden", "En cours": "In progress", "Dernières lectures": "Recently watched", "En cours et récentes": "In progress and recent", "Aucune lecture à afficher.": "No viewing history to display.",
     "GESTION": "MANAGEMENT",
@@ -145,15 +146,110 @@
     "Configuration indisponible :": "Configuration unavailable:", "Configuration enregistrée. Enregistrez avant de tester un nouveau client.": "Configuration saved. Save before testing a new client."
   };
 
+  Object.assign(en, {
+  "Accueil": "Home",
+  "Module complémentaire": "Companion",
+  "Sélections": "Selections",
+  "Retirer de la reprise": "Remove from continue watching",
+  "Options de suppression": "Deletion options",
+  "Supprimer…": "Delete…",
+  "Retirée de la reprise. Le fichier et la progression sont conservés.": "Removed from continue watching. The file and playback position are kept.",
+  "Annuler": "Undo",
+  "Impossible de modifier la liste. Réessaie.": "Could not update the list. Try again.",
+  "Supprimer cette vidéo ?": "Delete this video?",
+  "Lecture des informations…": "Loading information…",
+  "Fermer": "Close",
+  "Garder le fichier et retirer de la reprise": "Keep the file and remove from continue watching",
+  "Supprimer le fichier maintenant": "Delete the file now",
+  "Continuer le seed, puis autoriser le nettoyage": "Keep seeding, then allow cleanup",
+  "Temps de seed minimum total": "Minimum total seeding time",
+  "Durée de seed": "Seeding time",
+  "Unité": "Unit",
+  "jours": "days",
+  "semaines": "weeks",
+  "Chaque torrent associé doit atteindre cette durée réelle de seed, y compris les cross-seeds. Les favoris restent protégés.": "Every associated torrent must reach this actual seeding time, including cross-seeds. Favorites stay protected.",
+  "Voir le nettoyage dans Stockage →": "See cleanup in Storage →",
+  "Pour supprimer maintenant, recopie le nom du fichier :": "To delete now, type the file name:",
+  "Nom du fichier à confirmer": "File name to confirm",
+  "Valider": "Confirm",
+  "Le nettoyage automatique est actif. Les protections et vérifications habituelles restent appliquées.": "Automatic cleanup is enabled. The usual protections and checks still apply.",
+  "Le nettoyage automatique est inactif : cette règle sera enregistrée, mais aucun fichier ne sera effacé automatiquement. Active-le dans Stockage ou supprime manuellement après le délai.": "Automatic cleanup is disabled: this rule will be saved, but no file will be deleted automatically. Enable it in Storage or delete manually after the minimum time.",
+  "Suppression définitive du fichier et de ses torrents associés.": "Permanently deletes the file and its associated torrents.",
+  "Suppression définitive du fichier.": "Permanently deletes the file.",
+  "Le fichier continue à être conservé.": "The file is kept.",
+  "Recopie exactement le nom du fichier pour confirmer.": "Type the exact file name to confirm.",
+  "Choisis une durée entre 1 et 3650 jours.": "Choose a duration between 1 and 3650 days.",
+  "Règle enregistrée.": "Rule saved.",
+  "Nettoyage automatique inactif.": "Automatic cleanup is disabled.",
+  "Opération impossible": "Operation unavailable",
+  "Tags ignorés": "Ignored tags",
+  "MiniVid repère les tags techniques. Tu choisis lesquels écarter des cartes et des suggestions.": "MiniVid identifies technical tags. You choose which ones to exclude from cards and recommendations.",
+  "Les exclusions du compose sont conservées au premier enregistrement. Tes choix sont ensuite mémorisés ici, sans redémarrage. Les tags d’origine restent conservés.": "Compose exclusions are kept on the first save. Your choices are then saved here without a restart. Original tags are preserved.",
+  "Propositions à vérifier": "Suggestions to review",
+  "Tous les tags disponibles": "All available tags",
+  "Rechercher": "Search",
+  "Chercher un tag": "Find a tag",
+  "Analyser les tags": "Analyze tags",
+  "Aucun tag dans cette vue.": "No tags in this view.",
+  "Ignorer la sélection": "Ignore selected tags",
+  "Réafficher la sélection": "Restore selected tags",
+  "Ajouter un tag précis": "Add a specific tag",
+  "Un tag, même composé de plusieurs mots": "One tag, including multiple words",
+  "Ignorer ce tag": "Ignore this tag",
+  "Tags ignorés. Les cartes et les nouvelles sélections utiliseront ce choix. Les métadonnées d’origine sont conservées.": "Tags ignored. Cards and new selections will use this choice. Original metadata is preserved.",
+  "Tags réaffichés. Le compose reste inchangé.": "Tags restored. Compose is unchanged.",
+  "Format de fichier": "File format",
+  "Encodage vidéo ou audio": "Video or audio encoding",
+  "Résolution déjà affichée dans les informations": "Resolution already shown in video information",
+  "Adresse ou fragment de domaine": "Domain name or fragment",
+  "Nombre, date ou identifiant technique": "Number, date or technical identifier",
+  "Élément technique ou fragment de page": "Technical item or page fragment",
+  "Liste de tags invalide": "Invalid tag list",
+  "Conditions réunies": "Conditions met",
+  "Ratio / durée de seed insuffisants pour au moins un torrent": "Insufficient ratio or seeding time for at least one torrent",
+  "Plusieurs liens physiques : vérification manuelle requise": "Multiple hardlinks: manual verification required",
+  "Protégé / favori": "Protected / favorite",
+  "Aucune règle": "No rule",
+  "Source vidéo non autorisée pour le nettoyage automatique": "Video source is not enabled for automatic cleanup",
+  "Suppression BitTorrent désactivée pour cette source": "BitTorrent deletion is disabled for this source",
+  "Nettoyage automatique disponible avec un seul client qBittorrent configuré": "Automatic cleanup requires a single configured qBittorrent client",
+  "Personnaliser le thème": "Customize theme",
+  "Apparence": "Appearance",
+  "Sombre": "Dark",
+  "Clair": "Light",
+  "Bleu nuit": "Midnight",
+  "Forêt": "Forest",
+  "Personnalisé": "Custom",
+  "Couleur principale": "Accent color",
+  "Fond personnalisé": "Custom background",
+  "Thème enregistré": "Theme saved",
+  "Enregistrement refusé": "Save rejected",
+  "TEST · lecture seule": "TEST · read only",
+  "Vidéos en lecture seule, données indépendantes": "Read-only videos, separate data",
+  "Supprimer le fichier": "Delete file"
+});
+  Object.assign(en, {"Pourcentage réellement regardé":"Percentage actually watched", "Temps réellement regardé : non lue sous 30 %, en cours de 30 à moins de 70 %, lue à partir de 70 %.":"Actual watched time: unwatched below 30%, in progress from 30% to less than 70%, watched from 70%."});
+  Object.assign(en, window.MINIVID_TRANSLATIONS || {});
+  const entries = Object.entries(en).sort((a,b)=>b[0].length-a[0].length);
+  const protectedText = node => node.parentElement?.closest('script,style,textarea,code,pre,[translate="no"],.reading-name,.tag,.selection-open strong,.tracker-result strong,.association-row > a,.tag-review-row strong');
   const translateText = value => {
     const match = value.match(/^(\s*)(.*?)(\s*)$/s);
     const translated = en[match[2]];
     if (translated) return match[1] + translated + match[3];
-    for (const [french, english] of Object.entries(en)) {
+    const patterns = [
+      [/^(\d+) vidéo\(s\)$/, '$1 video(s)'],
+      [/^(\d+) tag\(s\) · page (\d+)\/(\d+)$/, '$1 tag(s) · page $2/$3'],
+      [/^(\d+) proposition\(s\) technique\(s\) · (\d+) tag\(s\) ignoré\(s\) · (\d+) tag\(s\) repéré\(s\). Aucun choix automatique.$/, '$1 technical suggestion(s) · $2 ignored tag(s) · $3 distinct tag(s). No automatic choices.']
+    ];
+    for(const [pattern,replacement] of patterns) if(pattern.test(match[2])) return match[1]+match[2].replace(pattern,replacement)+match[3];
+    const dynamic = window.MINIVID_TRANSLATE_EXTRA?.(match[2]);
+    if (dynamic && dynamic !== match[2]) return match[1] + dynamic + match[3];
+    for (const [french, english] of entries) {
       if (match[2].startsWith(french + ' ')) return match[1] + english + match[2].slice(french.length) + match[3];
     }
     return value;
   };
+  window.MiniVidI18n = {t:value => document.documentElement.lang === 'en' ? translateText(String(value)) : String(value)};
   function translate(root = document.body) {
     const enabled = document.documentElement.lang === 'en';
     document.querySelectorAll('[data-i18n-original]').forEach(el => {
@@ -163,11 +259,11 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
-    nodes.forEach(node => { const replacement = translateText(node.nodeValue); if (replacement !== node.nodeValue) node.nodeValue = replacement; });
-    root.querySelectorAll?.('[title], [aria-label], [placeholder]').forEach(el => {
+    nodes.filter(node => !protectedText(node)).forEach(node => { const replacement = translateText(node.nodeValue); if (replacement !== node.nodeValue) node.nodeValue = replacement; });
+    [...(root.matches?.('[title], [aria-label], [placeholder]') ? [root] : []), ...(root.querySelectorAll?.('[title], [aria-label], [placeholder]') || [])].forEach(el => {
       ['title', 'aria-label', 'placeholder'].forEach(attr => {
         const value = el.getAttribute(attr); const replacement = value && en[value];
-        if (replacement) el.setAttribute(attr, replacement);
+        if (replacement && replacement !== value) el.setAttribute(attr, replacement);
       });
     });
   }
@@ -176,8 +272,10 @@
     document.documentElement.lang = lang;
     localStorage.setItem('minivid_lang', lang);
     document.querySelectorAll('.language-switcher button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.lang === lang)));
-    if (lang === 'en') translate(); else window.location.reload();
+    if (lang === 'en') translate();
+    window.dispatchEvent(new Event('minivid:language'));
     try { await fetch('/api/preferences', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lang}) }); } catch (_) {}
+    if(lang === 'fr') window.location.reload();
   }
 
   function mountSwitcher() {
@@ -192,13 +290,20 @@
     host.prepend(switcher);
   }
 
+  window.addEventListener('message', event => {
+    if (parent === window || event.source !== parent || event.origin !== location.origin || event.data?.type !== 'minivid:extension:context' || !['fr','en'].includes(event.data.lang)) return;
+    const previous = document.documentElement.lang;
+    document.documentElement.lang = event.data.lang;
+    if(event.data.lang === 'en') translate();
+    else if(previous === 'en') location.reload();
+  });
   document.addEventListener('DOMContentLoaded', () => {
     const stored = localStorage.getItem('minivid_lang');
     if (stored === 'en' || stored === 'fr') document.documentElement.lang = stored;
     mountSwitcher(); translate();
-    new MutationObserver(records => { if (document.documentElement.lang === 'en') records.forEach(record => record.addedNodes.forEach(node => {
+    new MutationObserver(records => { if (document.documentElement.lang === 'en') records.forEach(record => { if(record.type === 'attributes') {translate(record.target);return;} record.addedNodes.forEach(node => {
       if (node.nodeType === Node.ELEMENT_NODE) translate(node);
-      if (node.nodeType === Node.TEXT_NODE) node.nodeValue = translateText(node.nodeValue);
-    })); }).observe(document.body, {childList: true, subtree: true});
+      if (node.nodeType === Node.TEXT_NODE && !protectedText(node)) node.nodeValue = translateText(node.nodeValue);
+    }); }); }).observe(document.body, {childList: true, subtree: true, attributes:true, attributeFilter:['title','aria-label','placeholder']});
   });
 })();

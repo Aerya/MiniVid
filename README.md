@@ -17,6 +17,8 @@
 - **Customize** colors and themes. English and French interface.
 - **Connect** qBittorrent or ruTorrent to view sharing information.
 
+Statuses use actual watched time: **unwatched below 30%**, **in progress from 30% to below 70%**, **watched from 70%**. Manage ignored tags in **Maintenance**.
+
 ## Installation
 
 On Linux with **Docker Engine 25+ and Docker Compose**:

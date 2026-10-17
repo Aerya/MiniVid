@@ -175,3 +175,5 @@
   .admin-sidebar { min-width:0; }
   .admin-navigation { flex-wrap:wrap; }
 }
+
+.tag-review-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:16px 0}.tag-review-controls label{display:grid;gap:6px;max-width:100%}.tag-review-controls input,.tag-review-controls select{max-width:100%}.tag-review-list{display:grid;gap:8px}.tag-review-row{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px}.tag-review-row>span{min-width:0;overflow-wrap:anywhere;flex:1}.tag-review-row small{display:block;color:var(--muted)}.tag-review-row input{flex:0 0 auto;width:18px;height:18px}.tag-review-count{white-space:nowrap;color:var(--muted);font-size:12px}

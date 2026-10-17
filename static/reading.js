@@ -1,4 +1,9 @@
 (() => {
+  let readingChanged = false;
+  window.addEventListener('pageshow', event => {if(event.persisted)location.reload();});
+  window.addEventListener('storage', event => {if(event.key==='minivid_reading_changed')readingChanged=true;});
+  document.addEventListener('visibilitychange', () => {if(!document.hidden && readingChanged && !document.querySelector('dialog[open]'))location.reload();});
+  const t = value => window.MiniVidI18n?.t(value) || value;
   const make = (tag, text) => { const node = document.createElement(tag); if (text) node.textContent = text; return node; };
   async function api(path, data) {
     const response = await fetch(path, {method: data === undefined ? 'GET' : 'POST', credentials:'same-origin',
@@ -59,7 +64,7 @@
               const duration=Number(days.value)*Number(unit.value);
               if(!Number.isFinite(duration)||duration<1||duration>3650)throw new Error('Choisis une durée entre 1 et 3650 jours.');
               const saved=await api('/api/storage/rule/'+encodeURIComponent(id),{mode:'candidate',ratio:0,seed_seconds:Math.ceil(duration*86400),seed_operator:'and',trigger_mode:'immediate'});
-              status.textContent='Règle enregistrée. '+saved.reason+(saved.automation_active?'':' · Nettoyage automatique inactif.');
+              status.textContent=t('Règle enregistrée.')+' '+t(saved.reason)+(saved.automation_active?'':' · '+t('Nettoyage automatique inactif.'));
             }
             await api('/api/resume/'+encodeURIComponent(id),{dismissed:true});
           }

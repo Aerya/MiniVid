@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/style.css?v=2" />
   <script src="/static/i18n.js" defer></script>
   <script src="/static/theme.js" defer></script>
+  <script src="/static/watch-keys.js" defer></script>
   {% if extension_enabled %}<script src="/static/extensions.js" defer></script>{% endif %}
 </head>
 
@@ -153,7 +154,7 @@
         <div class="actions">
           <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
           <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
-          <span id="readstate" class="state">{{ 'Lue' if played else ('En cours' if reading_status == 'in_progress' else 'Non lue') }}</span>
+          <span id="readstate" class="state" title="Temps réellement regardé : non lue sous 30 %, en cours de 30 à moins de 70 %, lue à partir de 70 %.">{{ 'Lue' if played else ('En cours' if reading_status == 'in_progress' else 'Non lue') }}</span>
         </div>
         <details id="watch-tags" class="watch-tags">
           <summary>Tags ({{ display_tags|length }})</summary>
@@ -300,6 +301,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vid: VID, played: next })
       });
+      localStorage.setItem('minivid_reading_changed', String(Date.now()));
       readBtn?.classList.toggle('on', next);
       if (readBtn) readBtn.textContent = next ? 'Marquer non lue' : 'Marquer lue';
       if (readState) readState.textContent = next ? 'Lue' : 'Non lue';
@@ -483,6 +485,7 @@
     const span = document.getElementById('resval');
     if (v) {
       let saveTick = 0;
+      let saveSequence = 0, appliedSequence = 0;
       let sessionStarted = false;
       let watchedSinceSync = 0;
       let lastObserved = null;
@@ -509,9 +512,13 @@
       }, { once: true });
 
       function saveProgress(keepalive = false) {
+        const sequence = ++saveSequence;
         const watched = watchedSinceSync; watchedSinceSync = 0;
         return fetch('/api/progress/' + encodeURIComponent(VID), {method:'POST', credentials:'same-origin', keepalive, headers:{'Content-Type':'application/json'}, body:JSON.stringify({progress:v.currentTime || 0, duration:Number.isFinite(v.duration) ? v.duration : 0, watched})}).then(r=>r.json()).then(j=>{
-          if (!j.ok) return;
+          if (!j.ok || sequence < appliedSequence) return;
+          appliedSequence = sequence;
+          const previousState = readState?.dataset.status;
+          if (previousState !== j.reading_status) {localStorage.setItem('minivid_reading_changed', String(Date.now()));if(readState)readState.dataset.status=j.reading_status;}
           readBtn?.classList.toggle('on', j.played);
           if (readBtn) readBtn.textContent=j.played ? 'Marquer non lue' : 'Marquer lue';
           if (readState) readState.textContent=j.reading_status === 'read' ? 'Lue' : j.reading_status === 'in_progress' ? 'En cours' : 'Non lue';
@@ -533,7 +540,7 @@
       v.addEventListener('ended', () => {
         fetch('/api/playback/' + encodeURIComponent(VID), { method:'POST', credentials:'same-origin',
           headers:{'Content-Type':'application/json'}, body:JSON.stringify({event:'complete'}) }).catch(() => {});
-        fetch('/api/progress/' + encodeURIComponent(VID), { method: 'POST', credentials: 'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({progress:v.duration, duration:v.duration, percent:100}) }).catch(() => {});
+        saveProgress(true);
       });
 
       v.addEventListener('touchend', function (ev) {

@@ -281,7 +281,7 @@ def _extension_library():
                         'explicit_tags': bool(explicit),
                         'favorite': bool((state.get('fav', {}) or {}).get(vid)),
                         'seen': played or progress > 0 or bool((state.get('ever_played', {}) or {}).get(vid)),
-                        'watched': played or progress >= 30,
+                        'watched': played or state.get('watch_history', {}).get(vid, {}).get('watched_seconds', 0) >= 30,
                         'mtime': int(item.get('mtime') or 0)})
     return library
 
@@ -344,7 +344,7 @@ def _fmt_filesize(n):
         return str(n)
 
 
-def tagify(text):
+def tagify(text, apply_bans=True):
     """Return up to 5 single-word tags derived from filename.
     Filters: dates, tokens with digits, 2-letter tokens (except '4k'),
     pronouns (FR/EN), and common video words (video/videos/vid/vids/vidéo/vidéos).
@@ -386,7 +386,7 @@ def tagify(text):
             if len(out) >= 5:
                 break
         # filtrage final via bans (sera défini plus bas)
-        return _tagify_filter_banned(out)
+        return _tagify_filter_banned(out) if apply_bans else out
     except Exception as e:
         LOG.warning("tagify error: %s", e)
         return []
@@ -451,7 +451,7 @@ def scan_media():
                     "ext": ext[1:].lower(),
                     "size": st.st_size,
                     "mtime": int(st.st_mtime),
-                    "tags": tagify(fn),
+                    "tags": tagify(fn, apply_bans=False),
                 }
                 items.append(item)
     MEDIA = items
@@ -718,7 +718,7 @@ def get_banned_tags():
     
     st = read_state()
     ui = st.get("banned_tags")
-    if isinstance(ui, list) and any(ui):
+    if isinstance(ui, list) and (st.get("banned_tags_override") or any(ui)):
         result = frozenset(str(t).strip().lower() for t in ui if str(t).strip())
     else:
         result = frozenset(_env_banned_tags())
@@ -730,6 +730,7 @@ def set_banned_tags(tags_iterable):
     tags = {str(t).strip().lower() for t in (tags_iterable or []) if str(t).strip()}
     st = read_state()
     st["banned_tags"] = sorted(tags)
+    st["banned_tags_override"] = True
     write_state(st)
     _invalidate_banned_cache()
     return st["banned_tags"]
@@ -737,6 +738,7 @@ def set_banned_tags(tags_iterable):
 def clear_banned_tags():
     st = read_state()
     st["banned_tags"] = []
+    st["banned_tags_override"] = False
     write_state(st)
     _invalidate_banned_cache()
     return []
@@ -766,16 +768,37 @@ def _tagify_filter_banned(words):
     return out
 
 def _reading_status(state, vid):
-    """Completion is separate from ever opened; explicit user marks take precedence."""
+    """Automatic states use actual watched time; explicit manual marks take precedence."""
     overrides = state.get('read_overrides', {})
     if vid in overrides:
         return 'read' if overrides[vid] else 'unread'
     history = state.get('watch_history', {}).get(vid, {})
-    if history.get('completed') or history.get('percent', 0) >= 80:
-        return 'read'
-    if float((state.get('progress', {}) or {}).get(vid, 0) or 0) > 0:
-        return 'in_progress'
+    if 'watched_percent' in history:
+        percent = history['watched_percent']
+        return 'read' if percent >= 70 else 'in_progress' if percent >= 30 else 'unread'
+    # Older records lack effective playback time. Keep known completion until
+    # migration or the next playback supplies a duration and a measured counter.
+    if history.get('completed') or history.get('percent', 0) >= 70:return 'read'
+    if history.get('percent', 0) >= 30:return 'in_progress'
+    if float((state.get('progress', {}) or {}).get(vid, 0) or 0) > 0:return 'unread'
     return 'read' if state.get('played', {}).get(vid) else 'unread'
+
+
+def _migrate_effective_reading():
+    with storage.connect(STORAGE_DB) as db:
+        measured = {r['vid']:r['watched_seconds'] for r in db.execute('SELECT vid,watched_seconds FROM playback_stats')}
+    with STATE_LOCK:
+        state = read_state();changed = False
+        for vid, entry in state.get('watch_history', {}).items():
+            duration = entry.get('duration', 0)
+            if 'watched_seconds' in entry or not duration or vid not in measured:continue
+            watched = min(duration, max(0, measured[vid]))
+            entry.update(watched_seconds=watched, watched_percent=100*watched/duration, completed=watched/duration>=0.7)
+            if vid not in state.get('read_overrides', {}):
+                if entry['completed']:state.setdefault('played', {})[vid] = True
+                else:state.setdefault('played', {}).pop(vid, None)
+            changed = True
+        if changed:write_state(state)
 
 
 def _recent_reading(state, mode):
@@ -788,11 +811,12 @@ def _recent_reading(state, mode):
         vid = item['id']; entry = history.get(vid, {}); status = _reading_status(state, vid)
         last = entry.get('last_played', previous.get(vid, 0))
         if mode == 'in_progress' and (status != 'in_progress' or vid in state.get('resume_dismissed', {})):continue
-        if mode == 'both' and status == 'in_progress' and vid in state.get('resume_dismissed', {}):continue
+        if mode == 'resume' and (status == 'read' or not state.get('progress', {}).get(vid) or vid in state.get('resume_dismissed', {})):continue
+        if mode == 'both' and status != 'read' and vid in state.get('resume_dismissed', {}):continue
         if not last:continue
         rows.append({'id':vid, 'name':item['name'], 'status':status, 'last_played':last,
                      'progress':state.get('progress', {}).get(vid, 0),
-                     'percent':entry.get('percent', 0), 'duration':entry.get('duration', 0)})
+                     'percent':entry.get('watched_percent', entry.get('percent', 0)), 'duration':entry.get('duration', 0)})
     rows.sort(key=lambda row:row['last_played'], reverse=True)
     if mode == 'both':
         rows.sort(key=lambda row:row['status'] != 'in_progress')
@@ -979,14 +1003,26 @@ def api_progress_set(vid):
         if request.method == 'DELETE':
             progress.pop(vid, None)
         else:
-            if pos > 0:
+            if pos > 0 or watched > 0:
                 progress[vid] = round(pos, 2)
                 st.setdefault('ever_played', {})[vid] = True
                 history = st.setdefault('watch_history', {})
                 old = history.get(vid, {})
-                completed = bool(old.get('completed') or percent >= 80)
+                if 'watched_seconds' in old:
+                    previous_watched = old['watched_seconds']
+                else:
+                    with storage.connect(STORAGE_DB) as db:
+                        row = db.execute('SELECT watched_seconds FROM playback_stats WHERE vid=?', (vid,)).fetchone()
+                    previous_watched = row['watched_seconds'] if row else 0
+                watched = min(30.0, watched)
+                actual_duration = duration or old.get('duration', 0)
+                total_watched = max(0, previous_watched) + watched
+                if actual_duration:total_watched = min(actual_duration, total_watched)
+                watched_percent = 100*total_watched/actual_duration if actual_duration else 0
+                completed = watched_percent >= 70
                 history[vid] = {'progress':pos, 'duration':duration or old.get('duration', 0),
-                                'percent':percent, 'completed':completed, 'last_played':time.time()}
+                                'percent':percent, 'completed':completed, 'last_played':time.time(),
+                                'watched_seconds':total_watched, 'watched_percent':watched_percent}
                 # An explicit manual mark remains effective until the user changes it.
                 if vid not in st.get('read_overrides', {}):
                     if completed:st.setdefault('played', {})[vid] = True
@@ -995,7 +1031,8 @@ def api_progress_set(vid):
             storage.playback(STORAGE_DB, vid, percent=percent, watched=watched)
         write_state(st)
         status = _reading_status(st, vid)
-    return jsonify(ok=True, progress=progress.get(vid, 0), reading_status=status, played=status == 'read')
+    return jsonify(ok=True, progress=progress.get(vid, 0), reading_status=status, played=status == 'read',
+                   watched_percent=st.get('watch_history', {}).get(vid, {}).get('watched_percent', 0))
 
 @app.route("/api/resume/<vid>", methods=["POST"])
 def api_resume_visibility(vid):
@@ -1035,10 +1072,9 @@ def api_playback_event(vid):
 def api_banned_get():
     if not auth_required():
         return jsonify(ok=False, error="auth"), 401
-    ui = read_state().get("banned_tags", [])
-    env = sorted(list(_env_banned_tags()))
-    src = "ui" if ui else "env"
-    return jsonify(ok=True, source=src, tags=(ui if ui else env))
+    state = read_state()
+    src = "ui" if state.get("banned_tags_override") or state.get("banned_tags") else "env"
+    return jsonify(ok=True, source=src, tags=sorted(get_banned_tags()))
 
 @app.route("/api/banned_tags", methods=["POST"])
 def api_banned_set():
@@ -1059,6 +1095,70 @@ def api_banned_clear():
         return jsonify(ok=False, error="auth"), 401
     clear_banned_tags()
     return jsonify(ok=True, source="env", tags=sorted(list(_env_banned_tags())))
+
+
+
+def _tag_noise_reason(tag):
+    # Only technical artifacts are suggested, never subjects or performers.
+    if tag in {'mp4','mkv','avi','wmv','mov','webm','m4v','flv','mp3','jpg','jpeg','png','srt'}:
+        return 'Format de fichier'
+    if tag in {'h264','h265','x264','x265','hevc','avc','aac','ac3','dts','flac','webdl','web-dl','webrip','hdr','sdr','fps'}:
+        return 'Encodage vidéo ou audio'
+    if re.fullmatch(r'(?:\d{3,4}[pi]|[248]k|hd|fhd|uhd|\d{3,4}[x×]\d{3,4})', tag):
+        return 'Résolution déjà affichée dans les informations'
+    if tag in {'www','com','net','org'} or re.fullmatch(r'(?:https?://)?(?:www\.)?[a-z0-9-]+\.(?:com|net|org|tv|xxx)(?:/.*)?', tag):
+        return 'Adresse ou fragment de domaine'
+    if re.fullmatch(r'\d+|\d{4}[-_.]\d{2}[-_.]\d{2}|[a-f0-9]{32,64}', tag):
+        return 'Nombre, date ou identifiant technique'
+    if tag in {'__name__','only','uses','score','az','download','torrent','magnet'}:
+        return 'Élément technique ou fragment de page'
+    return ''
+
+
+def _tag_review_inventory():
+    state = read_state()
+    explicit = _effective_user_tags(state)
+    counts = {}
+    for item in list(MEDIA):
+        if item.get('kind', 'video') != 'video':continue
+        tags = (item.get('tags') or []) + tagify(item.get('name',''), apply_bans=False) + explicit.get(item['id'], [])
+        unique = {SYNONYMS.get(str(t).strip().lower(), str(t).strip().lower()) for t in tags if str(t).strip()}
+        for tag in unique:counts[tag] = counts.get(tag, 0) + 1
+    return counts
+
+
+@app.route('/api/banned_tags/review', methods=['GET','POST'])
+def api_banned_review():
+    if not media_admin_required():return jsonify(ok=False, error='authenticated_admin_required'), 403
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        tags = data.get('tags')
+        if data.get('action') not in ('ignore','restore') or not isinstance(tags, list) or len(tags) > 1000 or \
+                any(not isinstance(tag, str) or not tag.strip() or len(tag) > 200 for tag in tags):
+            return jsonify(ok=False, error='Liste de tags invalide'), 400
+        normalized = {SYNONYMS.get(tag.strip().lower(), tag.strip().lower()) for tag in tags}
+        with STATE_LOCK:
+            current = set(get_banned_tags())
+            # Keep existing Compose exclusions when the first UI choice is saved.
+            current = {SYNONYMS.get(tag, tag) for tag in current}
+            updated = current | normalized if data['action'] == 'ignore' else current - normalized
+            set_banned_tags(updated)
+        return jsonify(ok=True, tags=sorted(updated))
+    counts = _tag_review_inventory()
+    ignored = set(get_banned_tags())
+    ignored = {SYNONYMS.get(tag, tag) for tag in ignored}
+    query = request.args.get('q','').strip().lower()
+    view = request.args.get('view', 'suggestions')
+    try:page = max(1, int(request.args.get('page',1)))
+    except ValueError:page = 1
+    suggestions = {tag for tag in counts if tag not in ignored and _tag_noise_reason(tag)}
+    candidates = ignored if view == 'ignored' else suggestions if view == 'suggestions' else set(counts) - ignored
+    candidates = [tag for tag in candidates if query in tag]
+    candidates.sort(key=lambda tag:(-counts.get(tag,0), tag))
+    total = len(candidates); pages = max(1, math.ceil(total/50)); page = min(page,pages)
+    rows = [{'tag':tag,'count':counts.get(tag,0),'reason':_tag_noise_reason(tag)} for tag in candidates[(page-1)*50:page*50]]
+    return jsonify(ok=True, items=rows, total=total, page=page, pages=pages,
+                   suggestions=len(suggestions), ignored=len(ignored), distinct=len(counts))
 
 
 # --- Similar videos ---
@@ -2546,7 +2646,7 @@ def home():
     if not auth_required():return redirect(url_for('login'))
     state=read_state()
     favorites=sorted([item for item in MEDIA if state.get('fav',{}).get(item['id'])],key=lambda item:item.get('mtime',0),reverse=True)[:10]
-    return render_template('home.html',resume=_recent_reading(state,'in_progress'),favorites=favorites)
+    return render_template('home.html',resume=_recent_reading(state,'resume'),favorites=favorites)
 
 @app.route("/browse")
 def browse():
@@ -3476,6 +3576,8 @@ def watch(vid):
         corrupted=corrupted,
     )
 
+
+_migrate_effective_reading()
 
 # ===== Read-only JSON API (public with optional key) =====
 API_READ_KEY = os.environ.get("API_READ_KEY","").strip()

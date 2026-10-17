@@ -123,6 +123,8 @@
         </button>
       </div>
 
+      <a class="favbtn" href="/home">Accueil</a>
+      {% if extension_enabled %}<a class="favbtn" href="/extensions?view=discover">Sélections</a>{% endif %}
       <a class="favbtn {{ 'active' if fav_only else '' }}"
         href="/browse?root={{ rootq or '' }}&dir={{ dirq_q or '' }}&q={{ q|e }}&sort={{ sort }}&read={{ readf }}&per={{ per }}&mix={{ mix }}&fav={{ 0 if fav_only else 1 }}&multi={{ '1' if multi_only else '0' }}&smart={{ '1' if smart else '0' }}">Favoris</a>
       <a class="favbtn {{ 'active' if multi_only else '' }}"
@@ -175,9 +177,9 @@
       <div class="reading-strip">
         {% for item in recent_reading %}<article class="reading-item"><a class="reading-card" href="{{ url_for('watch', vid=item.id, back=request.full_path) }}">
           <img loading="lazy" src="/thumb/{{ item.id }}.jpg" alt="" /><span class="reading-name">{{ item.name }}</span>
-          <span>{{ 'Lue' if item.status == 'read' else ('En cours' if item.status == 'in_progress' else 'Non lue') }}{% if item.duration %} · {{ (item.percent|round)|int }} %{% endif %}</span>
+        </a><div class="reading-meta"><span>{{ 'Lue' if item.status == 'read' else ('En cours' if item.status == 'in_progress' else 'Non lue') }}{% if item.duration %} · {{ item.percent|int }} %{% endif %}</span>{% if item.status != 'read' and item.progress %}{% include '_resume_actions.html' %}{% endif %}</div>
           {% if item.duration %}<progress max="100" value="{{ item.percent }}"></progress>{% endif %}
-        </a>{% if item.status == "in_progress" %}<button type="button" class="resume-dismiss btn" data-resume-dismiss="{{ item.id }}">Retirer de la reprise</button><button type="button" class="btn resume-delete" data-resume-delete="{{ item.id }}">Supprimer…</button>{% endif %}</article>{% else %}<p class="muted">Aucune lecture à afficher.</p>{% endfor %}
+        </article>{% else %}<p class="muted">Aucune lecture à afficher.</p>{% endfor %}
       </div>
       {% endif %}
     </section>
