@@ -604,6 +604,10 @@ if __name__ == "__main__":
 class ExternalMetadataTest(unittest.TestCase):
     setUp=MediaManagementApiTest.setUp
     tearDown=MediaManagementApiTest.tearDown
+    def test_library_enrichment_includes_scanned_videos(self):
+        contexts=minivid._extension_contexts()
+        self.assertIn(self.vid,[item["id"] for item in contexts])
+
     def test_external_tags_preserve_manual_tags_and_ignore_replaced_files(self):
         state=minivid._default_state();state['utags']={self.vid:['manual']};minivid.write_state(state)
         context=minivid._extension_context(self.vid)

@@ -215,7 +215,6 @@ def _effective_user_tags(state):
 def _extension_contexts():
     contexts=[]
     for item in list(MEDIA):
-        if item.get('kind') != 'video':continue
         try:contexts.append(_extension_context(item['id']))
         except (ValueError,OSError):continue
     return contexts
