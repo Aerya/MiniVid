@@ -283,12 +283,6 @@ button {
   border-color: var(--danger);
 }
 
-.favbtn.active {
-  background: color-mix(in srgb, var(--favorite) 18%, var(--surface-2));
-  border-color: color-mix(in srgb, var(--favorite) 45%, var(--border));
-  color: var(--favorite);
-}
-
 .smart-toggle {
   display: inline-flex;
   align-items: center;
