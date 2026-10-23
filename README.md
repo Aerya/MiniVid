@@ -25,7 +25,7 @@ The main bar follows **Home → Selections → Videos → Favorites → Collecti
 
 On the right: **languages → themes → settings → storage** (drive) **→ extensions** (puzzle) **→ log out**. Extensions requires the companion; log out appears when authentication is enabled.
 
-**Similar videos** use the current video's tags, with a minimum of **1, 2 or 3 shared tags** configured in **Settings → Similar videos**. Manual or enriched tags take precedence over filename tags; ignored tags are excluded. The companion can personalize ordering and apply feedback, but its suggestions must also meet this minimum. Shared tags appear below each suggestion. With no matches, the sidebar stays hidden.
+**Similar videos** use the current video's tags, with a minimum of **1, 2 or 3 shared tags** configured in **Settings → Similar videos**. Manual or enriched tags take precedence over filename tags; ignored tags are excluded. The companion can personalize ordering and apply feedback, but its suggestions must also meet this minimum. Shared tags appear below each suggestion. With no matches, the sidebar stays hidden. The **>** arrow in its title collapses the sidebar to the right to widen the player; **<** opens it again. This choice is remembered in the browser across videos.
 
 ## Installation
 

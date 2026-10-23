@@ -2438,6 +2438,10 @@ input[type="radio"] {
     grid-template-columns: minmax(0, 1fr) 350px;
   }
 
+  .watchpage:not(.has-zoom) .watch.watch-studio.has-sidebar.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 36px;
+  }
+
   /* A zoomed player must not compete with the similar-videos column. */
   .watchpage.has-zoom .watch.watch-studio {
     grid-template-columns: minmax(0, 1fr);
@@ -2534,6 +2538,26 @@ input[type="radio"] {
   padding: .4rem 0 .65rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: .75rem;
+}
+
+.watch-sidebar #similar-toggle {
+  flex-shrink: 0;
+  margin-left: .5rem;
+}
+
+.sidebar-collapsed .watch-sidebar .sidebar-title,
+.sidebar-collapsed .watch-sidebar .sidebar-count,
+.sidebar-collapsed .watch-sidebar .sidebar-list {
+  display: none;
+}
+
+.sidebar-collapsed .watch-sidebar .sidebar-header {
+  justify-content: flex-end;
+  border-bottom: 0;
+}
+
+.sidebar-collapsed .watch-sidebar #similar-toggle {
+  margin-left: 0;
 }
 
 .watch-sidebar .sidebar-title {

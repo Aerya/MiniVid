@@ -4,6 +4,23 @@
   const grid=document.getElementById('similar-grid'),main=document.getElementById('watchMain'),count=document.getElementById('sidebar-count');
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
   const t=text=>window.MiniVidI18n?.t(text)||text;
+  const toggle=document.getElementById('similar-toggle');
+  let collapsed=false;
+  try{collapsed=localStorage.getItem('minivid_similar_collapsed')==='1';}catch{}
+  function updateCollapse(){
+    main.classList.toggle('sidebar-collapsed',collapsed);
+    grid.hidden=collapsed;
+    toggle.setAttribute('aria-expanded',String(!collapsed));
+    const label=t(collapsed?'Déplier les vidéos similaires':'Replier les vidéos similaires');
+    toggle.setAttribute('aria-label',label);toggle.title=label;
+    toggle.firstElementChild.textContent=collapsed?'<':'>';
+  }
+  toggle.addEventListener('click',()=>{
+    collapsed=!collapsed;updateCollapse();
+    try{localStorage.setItem('minivid_similar_collapsed',collapsed?'1':'0');}catch{}
+  });
+  window.addEventListener('minivid:language',updateCollapse);
+  updateCollapse();
   let generation=0;
   async function api(url,data){const r=await fetch(url,{method:data===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const j=await r.json();if(!r.ok||!j.ok)throw Error('Action indisponible');return j;}
   function size(bytes){const en=document.documentElement.lang==='en';return bytes>=1073741824?(bytes/1073741824).toFixed(1)+(en?' GB':' Go'):(bytes/1048576).toFixed(1)+(en?' MB':' Mo');}
