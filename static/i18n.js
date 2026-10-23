@@ -118,7 +118,7 @@
     "et le transcodage est désactivé.": " file directly and transcoding is disabled.",
     "Activez": "Enable", "pour autoriser le remux/transcodage à la volée, ou utilisez un navigateur Chromium.": "to allow live remuxing/transcoding, or use a Chromium browser.",
     "Zoom": "Zoom", "Résolution :": "Resolution:", "+ Tag": "+ Tag", "Favori": "Favorite", "Marquer non lue": "Mark unwatched",
-    "Marquer lue": "Mark watched", "Fichier et partage": "File and sharing", "Supprimer la vidéo": "Delete video", "Vidéos similaires": "Similar videos",
+    "Marquer lue": "Mark watched", "Fichier et partage": "File and sharing", "Supprimer la vidéo": "Delete video", "Vidéos similaires": "Similar videos", "Replier les vidéos similaires": "Collapse similar videos", "Déplier les vidéos similaires": "Expand similar videos",
     "Raccourcis": "Shortcuts", "Lecture/Pause": "Play/Pause", "Reculer 10s": "Back 10s", "Avancer 10s": "Forward 10s", "Volume": "Volume",
     "Plein écran": "Fullscreen", "Muet": "Mute", "Indexation, cache et options partagées.": "Indexing, cache and shared options.",
     "Actions": "Actions", "Rescan complet": "Full rescan", "Purger miniatures": "Clear thumbnails", "Prêt.": "Ready.",
