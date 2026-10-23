@@ -1,9 +1,5 @@
 <div class="header-right">
-  <a href="/home" class="icon-btn" title="Accueil" aria-label="Accueil">⌂</a>
-  {% if extension_enabled %}<a href="/extensions" class="icon-btn" title="Module complémentaire" aria-label="Module complémentaire">◇</a>{% endif %}
   {% if test_instance %}<span class="test-instance-badge" title="Vidéos en lecture seule, données indépendantes">TEST · lecture seule</span>{% endif %}
-  <a href="/browse" class="icon-btn" title="Vidéos" aria-label="Vidéos">▦</a>
-  <a href="/storage" class="icon-btn" title="Stockage" aria-label="Stockage">▤</a>
   <details class="theme-editor">
     <summary class="icon-btn" title="Personnaliser le thème" aria-label="Personnaliser le thème">🎨</summary>
     <form id="theme-form" class="theme-panel">
@@ -15,6 +11,8 @@
       <span id="theme-status" role="status"></span>
     </form>
   </details>
-  <a href="/maintenance" class="icon-btn" title="Maintenance" aria-label="Maintenance">⚙</a>
+  <a href="/maintenance" class="icon-btn" title="Options" aria-label="Options">⚙</a>
+  <a href="/storage" class="icon-btn" title="Stockage" aria-label="Stockage"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14l3 10v6H2v-6L5 4Z"/><path d="M2 14h20M6 17h.01M10 17h.01"/></svg></a>
+  {% if extension_enabled %}<a href="/extensions" class="icon-btn" title="Extensions" aria-label="Extensions"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3H4v6a3 3 0 1 0 0 6v6h6a3 3 0 1 1 6 0h5v-6a3 3 0 1 0 0-6V3h-6a3 3 0 1 0-6 0Z"/></svg></a>{% endif %}
   {% if auth_enabled %}<a href="/logout" class="icon-btn" title="Déconnexion" aria-label="Déconnexion">⎋</a>{% endif %}
 </div>

@@ -19,6 +19,14 @@
 
 Statuses use actual watched time: **unwatched below 30%**, **in progress from 30% to below 70%**, **watched from 70%**. Manage ignored tags in **Maintenance**.
 
+## Navigation and similar videos
+
+The main bar follows **Home → Selections → Videos → Favorites → Collections**. **Videos** opens `/browse`. Selections appears when the companion is enabled.
+
+On the right: **languages → themes → settings → storage** (drive) **→ extensions** (puzzle) **→ log out**. Extensions requires the companion; log out appears when authentication is enabled.
+
+**Similar videos** use the current video's tags, with a minimum of **1, 2 or 3 shared tags** configured in **Settings → Similar videos**. Manual or enriched tags take precedence over filename tags; ignored tags are excluded. The companion can personalize ordering and apply feedback, but its suggestions must also meet this minimum. Shared tags appear below each suggestion. With no matches, the sidebar stays hidden.
+
 ## Installation
 
 On Linux with **Docker Engine 25+ and Docker Compose**:

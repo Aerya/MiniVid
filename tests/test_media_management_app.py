@@ -871,3 +871,42 @@ class UnifiedSimilarVideosTest(unittest.TestCase):
         minivid.app.extensions['minivid_recommendations']=mock.Mock()
         self.assertEqual(self.client.get('/api/similar/'+self.vid).json['videos'],[])
         minivid.app.extensions['minivid_recommendations'].assert_not_called()
+
+    def test_fixed_companion_list_is_filtered_for_each_current_video(self):
+        items = [
+            {'id': 'sea', 'tags': ['ocean', 'fish']},
+            {'id': 'reef', 'tags': ['ocean', 'fish']},
+            {'id': 'woods', 'tags': ['forest', 'birds']},
+            {'id': 'trees', 'tags': ['forest', 'birds']},
+            {'id': 'partial', 'tags': ['ocean']},
+            {'id': 'folder', 'kind': 'folder', 'tags': ['ocean', 'fish']},
+        ]
+        fixed = {'videos': [{'id': v['id'], 'reasons': ['unrelated preference']} for v in items], 'opinions': {'reef': 1}}
+        minivid.set_similar_config(True, 2)
+        with mock.patch.object(minivid, 'MEDIA', items), mock.patch.dict(minivid.app.extensions, minivid_recommendations=lambda *a, **kw: fixed):
+            sea = self.client.get('/api/similar/sea').json['videos']
+            woods = self.client.get('/api/similar/woods').json['videos']
+        self.assertEqual([v['id'] for v in sea], ['reef'])
+        self.assertEqual([v['id'] for v in woods], ['trees'])
+        self.assertEqual(sea[0]['reasons'], ['fish', 'ocean'])
+        self.assertEqual(sea[0]['common'], 2)
+        self.assertEqual(sea[0]['opinion'], 1)
+
+    def test_explicit_tags_and_ignored_tags_apply_with_or_without_companion(self):
+        state = minivid.read_state()
+        state['utags'] = {'focus': ['ocean', 'fish', 'noise'], 'match': ['ocean', 'fish', 'noise'], 'unrelated': ['forest', 'birds']}
+        minivid.write_state(state)
+        minivid.set_banned_tags(['noise'])
+        items = [{'id': key, 'tags': ['filename', 'same']} for key in state['utags']]
+        fixed = {'videos': [{'id': key} for key in state['utags']], 'opinions': {}}
+        try:
+            for companion in (None, fixed):
+                with self.subTest(companion=companion is not None), mock.patch.object(minivid, 'MEDIA', items), mock.patch.dict(minivid.app.extensions, minivid_recommendations=lambda *a, **kw: companion):
+                    minivid.set_similar_config(True, 2)
+                    videos = self.client.get('/api/similar/focus').json['videos']
+                    self.assertEqual([v['id'] for v in videos], ['match'])
+                    self.assertEqual(videos[0]['reasons'], ['fish', 'ocean'])
+                    minivid.set_similar_config(True, 3)
+                    self.assertEqual(self.client.get('/api/similar/focus').json['videos'], [])
+        finally:
+            minivid._invalidate_banned_cache()

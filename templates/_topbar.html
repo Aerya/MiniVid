@@ -1,7 +1,7 @@
 {% with rootq=rootq|default(''), dirq=dirq|default(''), q=q|default(''), sort=sort|default('date'), readf=readf|default(ui_prefs.get('read','all')), per=per|default(ui_prefs.get('per','all')|string), mix=mix|default(ui_prefs.get('mix','all')), fav_only=fav_only|default(false), multi_only=multi_only|default(false), smart=smart|default(ui_prefs.get('smart',false)) %}
   <header class="topbar app-topbar">
     <div class="topbar-brand">{% if back|default(false) %}<a class="back-btn" id="btn-back" href="{{ back }}" title="Retour à la liste" aria-label="Retour à la liste">←</a>{% endif %}
-    <a class="brand" href="/browse" aria-label="Accueil MiniVid">
+    <a class="brand" href="/home" aria-label="Accueil MiniVid">
       <img src="/static/logo.svg" alt="" height="30" />
       <strong>MiniVid</strong>
     </a></div>
@@ -104,6 +104,7 @@
 
       <a class="favbtn" href="/home">Accueil</a>
       {% if extension_enabled %}<a class="favbtn" href="/extensions?view=discover">Sélections</a>{% endif %}
+      <a class="favbtn" href="/browse">Vidéos</a>
       <a class="favbtn {{ 'active' if fav_only else '' }}"
         href="{{ url_for('browse',root=rootq or '',dir=dirq or '',q=q,sort=sort,read=readf,per=per,mix=mix,fav=0 if fav_only else 1,multi=1 if multi_only else 0,smart=1 if smart else 0) }}">Favoris</a>
       <a class="favbtn {{ 'active' if multi_only else '' }}"

@@ -1214,16 +1214,20 @@ def api_similar(vid):
     st = read_state()
     utags_map = _effective_user_tags(st)
     fav_map = st.get("fav", {}) or {}
-    played_map = st.get("played", {}) or {}
+    banned = get_banned_tags()
+
+    def tags_for(item):
+        # Match the library sent to the companion: explicit/enriched metadata
+        # takes precedence over noisy tags inferred from the filename.
+        tags = utags_map.get(item['id']) or item.get('tags') or []
+        return {key for tag in tags if (key := canon_tag(tag, banned))}
 
     # Tags of the reference video
     ref_item = next((v for v in MEDIA if isinstance(v, dict) and v.get("id") == vid), None)
     if not ref_item:
         return jsonify(ok=True, videos=[])
 
-    ref_tags = set(canon_tag(t) for t in (ref_item.get("tags") or []))
-    ref_tags |= set(canon_tag(t) for t in (utags_map.get(vid) or []))
-    ref_tags = {t for t in ref_tags if t}
+    ref_tags = tags_for(ref_item)
 
     if not ref_tags:
         return jsonify(ok=True, videos=[])
@@ -1235,12 +1239,18 @@ def api_similar(vid):
         for suggestion in companion['videos']:
             key=suggestion['id']
             if key in seen or key not in by_id:continue
-            seen.add(key);item=by_id[key];meta=st.get('meta',{}).get(key,{})
+            seen.add(key);item=by_id[key]
+            if item.get('kind') == 'folder':continue
+            common = ref_tags & tags_for(item)
+            # Companion feedback may introduce unrelated preference tags.
+            # Similarity must always be anchored to the current video.
+            if len(common) < min_tags:continue
+            meta=st.get('meta',{}).get(key,{})
             status=_reading_status(st,key)
             videos.append({'id':key,'name':item.get('name',''),'ext':item.get('ext',''),
                            'size':item.get('size',0),'res':item.get('res') or (f"{meta['w']}×{meta['h']}" if meta.get('w') and meta.get('h') else ''),
                            'fav':bool(fav_map.get(key)),'played':status=='read','reading_status':status,
-                           'reasons':_display_tags(suggestion.get('reasons',[])),
+                           'reasons':sorted(common), 'common':len(common),
                            'opinion':companion.get('opinions',{}).get(key,0)})
         return jsonify(ok=True,videos=videos,source='companion')
 
@@ -1249,9 +1259,7 @@ def api_similar(vid):
         if not isinstance(item, dict) or item.get("id") == vid or item.get("kind") == "folder":
             continue
         iid = item["id"]
-        itags = set(canon_tag(t) for t in (item.get("tags") or []))
-        itags |= set(canon_tag(t) for t in (utags_map.get(iid) or []))
-        itags = {t for t in itags if t}
+        itags = tags_for(item)
         common = ref_tags & itags
         if len(common) >= min_tags:
             results.append({
@@ -1265,6 +1273,7 @@ def api_similar(vid):
                 "played": _reading_status(st, iid) == "read",
                 "reading_status": _reading_status(st, iid),
                 "common": len(common),
+                "reasons": sorted(common),
             })
 
     results.sort(key=lambda x: -x["common"])

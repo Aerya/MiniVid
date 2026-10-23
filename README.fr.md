@@ -19,6 +19,14 @@
 
 Les statuts utilisent le temps réellement regardé : **non lue < 30 %**, **en cours de 30 à moins de 70 %**, **lue dès 70 %**. Les tags à ignorer se gèrent dans **Maintenance**.
 
+## Navigation et vidéos similaires
+
+La barre principale suit l’ordre **Accueil → Sélections → Vidéos → Favoris → Collections**. **Vidéos** ouvre `/browse`. Sélections apparaît si le module complémentaire est activé.
+
+À droite : **langues → thèmes → options → stockage** (disque) **→ extensions** (puzzle) **→ déconnexion**. Extensions nécessite le module complémentaire ; la déconnexion apparaît si l’authentification est activée.
+
+Les **Vidéos similaires** dépendent des tags de la vidéo en cours, avec un minimum de **1, 2 ou 3 tags communs** réglable dans **Options → Vidéos similaires**. Les tags manuels ou enrichis sont prioritaires sur ceux du nom de fichier ; les tags ignorés sont exclus. Le module peut personnaliser l’ordre et appliquer les avis, mais ses suggestions doivent aussi respecter ce minimum. Les tags communs sont affichés sous chaque suggestion. Sans correspondance, la colonne reste masquée.
+
 ## Installation
 
 Sur Linux avec **Docker Engine 25+ et Docker Compose** :
