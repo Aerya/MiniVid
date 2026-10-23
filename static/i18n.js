@@ -105,7 +105,7 @@
     "Par page": "Per page", "Mélange": "Order", "Dossiers d'abord": "Folders first", "Vidéos d'abord": "Videos first",
     "Vignettes": "Thumbnails", "Compact": "Compact", "Confort": "Comfortable", "Large": "Large", "Grouper par période": "Group by period",
     "Groupes": "Groups", "Favoris": "Favorites", "Collections": "Collections", "Thème clair/sombre": "Light/dark theme",
-    "Maintenance": "Maintenance", "Déconnexion": "Log out", "← Parent": "← Parent", "Global": "All sources",
+    "Vidéos": "Videos", "Options": "Settings", "Extensions": "Extensions", "Maintenance": "Maintenance", "Déconnexion": "Log out", "← Parent": "← Parent", "Global": "All sources",
     "Afficher ou masquer les tags": "Show or hide tags", "Tags populaires": "Popular tags", "Masquer": "Hide", "Aucun tag": "No tags",
     "Tags sélectionnés": "Selected tags", "← Précédent": "← Previous", "Suivant →": "Next →", "Haut de page": "Back to top",
     "Aperçu vidéo": "Video preview", "Aperçu dossier": "Folder preview", "Sans tag": "No tags", "Lue": "Watched", "Non lue": "Unwatched",
