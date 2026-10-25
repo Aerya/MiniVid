@@ -429,12 +429,61 @@ def id_to_parts(vid: str):
 # ---------- Scan ----------
 MEDIA = []
 MEDIA_CACHE = {"items": [], "hash": "", "last_scan": 0, "count": 0}
+MEDIA_SCAN_LOCK = threading.Lock()
+
+
+def _scan_source_completions(cfg, root_index):
+    source = cfg.get("sources", {}).get(str(root_index), {})
+    if not source.get("client_id"):
+        return None  # Local sources have no BitTorrent completion information.
+    if not cfg.get("torrent_integration_enabled"):
+        raise TorrentClientError("Intégration désactivée : complétude de la source non vérifiable")
+    return _configured_client(cfg, source["client_id"]).file_completion(source.get("client_root", "/downloads"))
+
+
+def _scan_readable_media(path, stat, validated):
+    version = storage.identity(stat) + ":" + str(stat.st_ctime_ns)
+    if validated.get(path) == version:
+        return True
+    if not _is_decodable_media(path):
+        return False
+    try:
+        # A readable first frame alone also accepts fast-start MP4s truncated
+        # at the end. Require a decoded frame near EOF, too.
+        result = subprocess.run(
+            ["ffmpeg", "-v", "error", "-xerror", "-nostdin", "-sseof", "-1", "-i", path,
+             "-map", "0:v:0", "-frames:v", "1", "-f", "framehash", "-"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=8, check=False,
+        )
+        if result.returncode or not any(line.strip() and not line.startswith(b"#") for line in result.stdout.splitlines()):
+            return False
+        after = os.stat(path)
+        if version != storage.identity(after) + ":" + str(after.st_ctime_ns):
+            return False
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    validated[path] = version
+    return True
 
 def scan_media():
+    with MEDIA_SCAN_LOCK:
+        _scan_media_impl()
+
+
+def _scan_media_impl():
     global MEDIA, MEDIA_CACHE
-    items = []
+    items, excluded = [], 0
+    cfg = _read_media_managers()
+    with storage.connect(STORAGE_DB) as db:
+        validated = {row["path"]: row["identity"] for row in db.execute("SELECT path,identity FROM readable_media")}
     for ridx, root in enumerate(MEDIA_DIRS):
         if not root or not os.path.isdir(root):
+            continue
+        try:
+            completion = _scan_source_completions(cfg, ridx)
+        except (TorrentClientError, ValueError, TypeError, OSError) as exc:
+            LOG.warning("Source %d exclue du scan : complétude non vérifiable (%s)", ridx, exc)
             continue
         for dp, dirs, files in os.walk(root):
             # Prune before descending: excluded directories must neither be
@@ -450,6 +499,16 @@ def scan_media():
                 except Exception:
                     continue
                 rel = os.path.relpath(full, root)
+                if os.path.commonpath([os.path.realpath(root), os.path.realpath(full)]) != os.path.realpath(root):
+                    excluded += 1
+                    continue
+                status = completion.get(rel.replace("\\", "/"), {}) if completion is not None else None
+                if (status is not None and (not status.get("complete") or status.get("size") != st.st_size)) or st.st_size <= 0:
+                    excluded += 1
+                    continue
+                if not _scan_readable_media(full, st, validated):
+                    excluded += 1
+                    continue
                 item = {
                     "id": id_for(ridx, rel),
                     "root": ridx,
@@ -462,6 +521,8 @@ def scan_media():
                     "tags": tagify(fn, apply_bans=False),
                 }
                 items.append(item)
+    with storage.connect(STORAGE_DB) as db:
+        db.executemany("INSERT OR REPLACE INTO readable_media(path,identity) VALUES(?,?)", validated.items())
     MEDIA = items
     # Mise à jour du cache
     cache_hash = hashlib.md5(json.dumps([i["id"] for i in items[:100]]).encode()).hexdigest()
@@ -471,7 +532,7 @@ def scan_media():
         "last_scan": int(time.time()),
         "count": len(items)
     }
-    LOG.info("Scanned %d items across %d roots (hash: %s)", len(MEDIA), len(MEDIA_DIRS), cache_hash[:8])
+    LOG.info("Scanned %d readable complete items across %d roots; %d excluded (hash: %s)", len(MEDIA), len(MEDIA_DIRS), excluded, cache_hash[:8])
 
 # --- Auto scan thread ---
 def _autoscan_loop():

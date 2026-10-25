@@ -93,6 +93,45 @@ class QBittorrentClient(_HttpClient):
         _, payload, _ = self.request("/api/v2/app/version")
         return {"ok": True, "version": payload.decode("utf-8", "replace").strip()}
 
+    def file_completion(self, client_root):
+        """One snapshot per scan, using per-file progress even for selective packs."""
+        self.login()
+        root = _client_path(client_root, "")
+        torrents = self._json("/api/v2/torrents/info")
+        if not isinstance(torrents, list):
+            raise TorrentClientError("Liste des torrents qBittorrent invalide")
+        result = {}
+        for torrent in torrents:
+            save = str(torrent.get("save_path") or "")
+            if not posixpath.isabs(save):
+                raise TorrentClientError("Chemin torrent non vérifié")
+            save = posixpath.normpath(save)
+            if posixpath.commonpath([root, save]) not in (root, save):
+                continue
+            info_hash = str(torrent.get("hash") or "")
+            if not info_hash:
+                raise TorrentClientError("Hash qBittorrent manquant")
+            files = self._json("/api/v2/torrents/files?" + urllib.parse.urlencode({"hash": info_hash}))
+            if not isinstance(files, list) or not files:
+                raise TorrentClientError("Liste des fichiers torrent non vérifiée")
+            state = str(torrent.get("state") or "")
+            available = bool(state) and not state.lower().startswith(("checking", "moving", "error", "missing", "unknown"))
+            for item in files:
+                name = item.get("name") if isinstance(item, dict) else None
+                if not isinstance(name, str) or not name or posixpath.isabs(name) or ".." in name.split("/"):
+                    raise TorrentClientError("Chemin torrent non vérifié")
+                path = posixpath.normpath(posixpath.join(save, name))
+                if not path.startswith(root.rstrip("/") + "/"):
+                    continue
+                rel = posixpath.relpath(path, root)
+                size = int(item.get("size") or 0)
+                complete = available and size > 0 and float(item.get("progress") or 0) == 1
+                old = result.get(rel)
+                if old:
+                    complete = complete and old["complete"] and size == old["size"]
+                result[rel] = {"complete": complete, "size": size}
+        return result
+
     def _find_torrents(self, rel: str, client_root: str, expected_size: int | None = None):
         self.login()
         target = _client_path(client_root, rel)
@@ -323,12 +362,45 @@ class RutorrentClient(_HttpClient):
                 "base_path": values[25],
                 "creation_date": values[26],
                 "active": values[28],
+                "checking": values[1],
+                "checked": values[2],
+                "multi_file": values[33],
             })
         return parsed
 
     def test(self):
         torrents = self._list()
         return {"ok": True, "version": "ruTorrent", "torrent_count": len(torrents)}
+
+    def file_completion(self, client_root):
+        # ruTorrent httprpc modes list/fls:
+        # https://github.com/Novik/ruTorrent/blob/master/plugins/httprpc/action.php
+        root = _client_path(client_root, "")
+        result = {}
+        for torrent in self._list():
+            base = str(torrent.get("base_path") or "")
+            if not posixpath.isabs(base):
+                raise TorrentClientError("Chemin torrent non vérifié")
+            base = posixpath.normpath(base)
+            if not base.startswith(root.rstrip("/") + "/"):
+                continue
+            files = self._action([("mode", "fls"), ("hash", str(torrent["hash"]))])
+            if not isinstance(files, list) or not files:
+                raise TorrentClientError("Liste des fichiers ruTorrent non vérifiée")
+            for item in files:
+                if not isinstance(item, list) or len(item) < 4:
+                    raise TorrentClientError("Liste des fichiers ruTorrent invalide")
+                name, done, chunks, size = item[:4]
+                if not isinstance(name, str) or not name or posixpath.isabs(name) or ".." in name.split("/"):
+                    raise TorrentClientError("Chemin torrent non vérifié")
+                path = posixpath.join(base, name) if int(torrent["multi_file"]) else base
+                rel = posixpath.relpath(path, root)
+                complete = not int(torrent["checking"]) and bool(int(torrent["checked"])) and int(chunks) > 0 and int(done) == int(chunks) and int(size) > 0
+                old = result.get(rel)
+                if old:
+                    complete = complete and old["complete"] and int(size) == old["size"]
+                result[rel] = {"complete": complete, "size": int(size)}
+        return result
 
     def _find_torrents(self, rel: str, client_root: str, expected_size: int | None = None):
         target = _client_path(client_root, rel)
