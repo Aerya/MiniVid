@@ -112,7 +112,7 @@
     </form>
 
     {% include '_header_actions.html' %}
-    {% if initial_scan_running %}
+    {% if initial_scan_running and request.endpoint in ('browse', 'home') %}
     <p id="library-initial-scan" class="muted" role="status" data-count="{{ library_count }}" style="flex-basis:100%;margin:0"><span>Vérification de la bibliothèque en cours. Les vidéos apparaissent au fur et à mesure de leur validation.</span> <span>Vidéos disponibles :</span> <span>{{ library_count }}</span></p>
     {% endif %}
   </header>
