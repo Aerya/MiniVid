@@ -61,6 +61,13 @@ class FakeTorrentClient:
 
 class MediaManagementApiTest(unittest.TestCase):
     def setUp(self):
+        # API fixtures are tiny dummy bytes; scan admission has its own tests.
+        self.scan_readable_patch = mock.patch.object(minivid, "_scan_readable_media", return_value=True)
+        self.scan_completion_patch = mock.patch.object(minivid, "_scan_source_completions", return_value=None)
+        self.scan_readable_patch.start()
+        self.scan_completion_patch.start()
+        self.addCleanup(self.scan_readable_patch.stop)
+        self.addCleanup(self.scan_completion_patch.stop)
         self.video_name = "video-test.mkv"
         self.video_path = os.path.join(VIDEO_ROOT, self.video_name)
         with open(self.video_path, "wb") as handle:

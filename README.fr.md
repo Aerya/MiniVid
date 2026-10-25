@@ -19,6 +19,8 @@
 
 Les statuts suivent la position maximale atteinte, avances manuelles comprises : **non lue < 30 %**, **en cours de 30 à moins de 80 %**, **lue dès 80 %**. Revenir en arrière conserve le statut acquis ; les marquages manuels restent prioritaires. Les tags à ignorer se gèrent dans **Maintenance**.
 
+Le scan n’indexe que les vidéos dont le début et la fin peuvent être décodés. Pour une source associée à qBittorrent ou ruTorrent, chaque fichier doit également être confirmé à **100 %** par le client et avoir la taille attendue : un fichier préalloué ou partiellement téléchargé reste masqué. Les fichiers sans correspondance ou dont la complétude est impossible à vérifier sont exclus de cette source. Une vidéo terminée et lisible apparaît au prochain scan. Les contrôles de décodage réussis sont conservés tant que le fichier ne change pas ; le premier scan peut donc être plus long. Ces contrôles portent sur le début et la fin, sans décoder intégralement chaque vidéo.
+
 ## Navigation et vidéos similaires
 
 La barre principale suit l’ordre **Accueil → Sélections → Vidéos → Favoris → Collections**. **Vidéos** ouvre `/browse`. Sélections apparaît si le module complémentaire est activé.

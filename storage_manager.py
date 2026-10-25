@@ -33,6 +33,8 @@ def connect(db_path):
             first_seen INTEGER NOT NULL DEFAULT 0)""")
         db.execute("""CREATE TABLE IF NOT EXISTS folder_deletions (
             id TEXT PRIMARY KEY, payload TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS readable_media (
+            path TEXT PRIMARY KEY, identity TEXT NOT NULL)""")
         # These records are deliberately keyed by content, not MiniVid's local
         # root/path id. Different containers can mount the same bytes elsewhere.
         db.execute("""CREATE TABLE IF NOT EXISTS synced_policies (

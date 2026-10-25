@@ -19,6 +19,8 @@
 
 Statuses use the farthest playback position, including manual seeks: **unwatched below 30%**, **in progress from 30% to below 80%**, **watched from 80%**. Rewinding preserves the acquired status; manual marks take precedence. Manage ignored tags in **Maintenance**.
 
+Scanning only indexes videos with decodable beginning and ending frames. For sources linked to qBittorrent or ruTorrent, each file must also be confirmed **100% complete** by the client and match its expected size: preallocated or partially downloaded files stay hidden. Unmatched files and files whose completion cannot be verified are excluded from that source. Completed, readable videos appear on the next scan. Successful decoding checks are cached until the file changes, so the first scan may take longer. These checks sample the beginning and end rather than decoding the entire video.
+
 ## Navigation and similar videos
 
 The main bar follows **Home → Selections → Videos → Favorites → Collections**. **Videos** opens `/browse`. Selections appears when the companion is enabled.

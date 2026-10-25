@@ -140,6 +140,43 @@ class TorrentClientsTest(unittest.TestCase):
         result = client.test()
         self.assertEqual(result["version"], "5.1.2")
 
+    def test_qbit_file_completion_uses_each_file_not_torrent_progress(self):
+        client = QBittorrentClient(self.base_url)
+        client.login = mock.Mock()
+        torrent = {"hash":"pack", "save_path":"/downloads", "state":"forcedDL", "progress":1}
+        files = [{"name":"Pack/ready.mp4", "size":100, "progress":1},
+                 {"name":"Pack/partial.mp4", "size":100, "progress":0.999999}]
+        client._json = mock.Mock(side_effect=lambda path: [torrent] if path == '/api/v2/torrents/info' else files)
+        status = client.file_completion('/downloads')
+        self.assertTrue(status['Pack/ready.mp4']['complete'])
+        self.assertFalse(status['Pack/partial.mp4']['complete'])
+        self.assertEqual(client._json.call_count, 2)
+        for state in ('checkingDL','checkingUP','missingFiles','error','moving','unknown',''):
+            torrent['state'] = state
+            self.assertFalse(client.file_completion('/downloads')['Pack/ready.mp4']['complete'], state)
+
+    def test_qbit_file_completion_keeps_path_boundaries_and_conflicting_matches(self):
+        client = QBittorrentClient(self.base_url)
+        client.login = mock.Mock()
+        torrents = [{"hash":h, "save_path":"/downloads", "state":"stalledUP"} for h in ('ready','partial')]
+        client._json = mock.Mock(side_effect=lambda path: torrents if path == '/api/v2/torrents/info' else
+            [{"name":"Pack/video.mp4", "size":100, "progress":1 if 'ready' in path else 0.5},
+             {"name":"Pack-other/other.mp4", "size":100, "progress":1}])
+        status = client.file_completion('/downloads/Pack')
+        self.assertEqual(set(status), {'video.mp4'})
+        self.assertFalse(status['video.mp4']['complete'])
+
+    def test_rutorrent_completion_checks_chunks_and_hash_verification(self):
+        client = RutorrentClient(self.base_url+'/rutorrent')
+        torrent = {"hash":"pack", "base_path":"/downloads/Pack", "checking":0, "checked":1, "multi_file":1}
+        client._list = mock.Mock(return_value=[torrent])
+        client._action = mock.Mock(return_value=[['ready.mp4',10,10,100,1],['partial.mp4',9,10,100,1]])
+        status = client.file_completion('/downloads')
+        self.assertTrue(status['Pack/ready.mp4']['complete'])
+        self.assertFalse(status['Pack/partial.mp4']['complete'])
+        torrent['checking'] = 1
+        self.assertFalse(client.file_completion('/downloads')['Pack/ready.mp4']['complete'])
+
     def test_qbittorrent_lists_and_deletes_every_exact_match(self):
         FakeTorrentServer.duplicate_qbit = True
         client = QBittorrentClient(self.base_url, "user", "password")
