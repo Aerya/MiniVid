@@ -1819,9 +1819,39 @@ def api_folder_delete():
         return jsonify(ok=False, error=blocked), 403
     deleted, removed = [], []
     try:
+        torrent_folders = {}
+        # Preflight all qBittorrent sources before deleting anything, including
+        # file-mode sources in the merged library view.
+        for folder in folders:
+            source = cfg["sources"][str(folder["root"])]
+            if source["delete_mode"] != "torrent":
+                continue
+            client = _configured_client(cfg, source["client_id"], MEDIA_DIRS[folder["root"]])
+            if not hasattr(client, "prepare_folder_deletion"):
+                continue
+            paths = [(item["id"], *_media_item_and_path(item["id"])[2:]) for item in folder["videos"]]
+            client_root = source.get("client_root", "/downloads")
+            client.prepare_folder_deletion(dirq, client_root, [rel for _, rel, _ in paths])
+            torrent_folders[folder["root"]] = (client, client_root, paths)
         for folder in folders:
             mode = cfg["sources"][str(folder["root"])]["delete_mode"]
-            for item in folder["videos"]:
+            batch = torrent_folders.get(folder["root"])
+            if batch:
+                client, client_root, paths = batch
+                details = client.delete_folder_with_data(dirq, client_root, [rel for _, rel, _ in paths])
+                for _ in range(120):
+                    if all(not os.path.exists(full) for _, _, full in paths):
+                        break
+                    time.sleep(0.25)
+                for vid, _, full in paths:
+                    if not os.path.exists(full):
+                        _forget_media(vid)
+                        deleted.append(vid)
+                if any(os.path.exists(full) for _, _, full in paths):
+                    raise TorrentClientError("Les torrents ont été retirés, mais des vidéos existent encore sur le disque")
+                _log_event("folder_torrents_deleted", root=folder["root"], dir=dirq,
+                           torrent_count=details["torrent_count"], torrent_hashes=details["torrent_hashes"])
+            for item in ([] if batch else folder["videos"]):
                 # A torrent removal may already have taken hard-linked copies along.
                 if not any(entry.get("id") == item["id"] for entry in MEDIA):
                     continue

@@ -223,6 +223,64 @@ class MediaManagementApiTest(unittest.TestCase):
             self.assertEqual(response.status_code, 400, bad)
         self.assertTrue(os.path.exists(self.video_path))
 
+    def folder_qbit(self, folder, extra_files=(), remove_files=True):
+        from media_managers import QBittorrentClient
+        client = QBittorrentClient("http://qbit.test")
+        client.local_root = VIDEO_ROOT
+        client.login = mock.Mock()
+        torrents = [{"hash": "pack123", "name": "Pack Test", "save_path": "/downloads"}]
+        files = [{"name": name} for name in ("Pack Test/a.mkv", "Pack Test/Sub/b.mp4", "Pack Test/info.nfo", *extra_files)]
+        removed = []
+        client._json = mock.Mock(side_effect=lambda path: (
+            ([] if removed else torrents) if path == "/api/v2/torrents/info" else files))
+        def delete(*_args):
+            removed.append(True)
+            if remove_files:
+                minivid.shutil.rmtree(folder)
+            return 200, b"", {}
+        client.request = mock.Mock(side_effect=delete)
+        return client
+
+    def test_folder_torrent_pack_deleted_once_and_state_cleaned(self):
+        folder = self.make_folder()
+        self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+        vids = [item["id"] for item in minivid.MEDIA if item.get("dir", "").startswith("Pack Test")]
+        state = minivid.read_state()
+        state["fav"] = {vid: True for vid in vids}
+        minivid.write_state(state)
+        qbit = self.folder_qbit(folder)
+        with mock.patch.object(minivid, "_configured_client", return_value=qbit):
+            response = self.client.post("/api/folder/delete", json={"root": "", "dir": "Pack%20Test", "confirmation": "Pack Test"})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(set(response.json["deleted"]), set(vids))
+        self.assertTrue(response.json["folder_removed"])
+        qbit.request.assert_called_once()
+        self.assertFalse(any(item["id"] in vids for item in minivid.MEDIA))
+        self.assertFalse(any(vid in minivid.read_state()["fav"] for vid in vids))
+        self.assertTrue(os.path.exists(self.video_path))
+
+    def test_folder_torrent_external_file_blocks_all_deletion(self):
+        folder = self.make_folder()
+        self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+        qbit = self.folder_qbit(folder, extra_files=(self.video_name,))
+        before = list(minivid.MEDIA)
+        with mock.patch.object(minivid, "_configured_client", return_value=qbit):
+            response = self.client.post("/api/folder/delete", json={"root": "0", "dir": "Pack%20Test", "confirmation": "Pack Test"})
+        self.assertEqual(response.status_code, 502, response.json)
+        qbit.request.assert_not_called()
+        self.assertEqual(minivid.MEDIA, before)
+        self.assertTrue(os.path.isdir(folder))
+
+    def test_folder_torrent_keeps_index_when_data_remains(self):
+        folder = self.make_folder()
+        self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+        qbit = self.folder_qbit(folder, remove_files=False)
+        before = list(minivid.MEDIA)
+        with mock.patch.object(minivid, "_configured_client", return_value=qbit), mock.patch.object(minivid.time, "sleep"):
+            response = self.client.post("/api/folder/delete", json={"root": "0", "dir": "Pack%20Test", "confirmation": "Pack Test"})
+        self.assertEqual(response.status_code, 502, response.json)
+        self.assertEqual(minivid.MEDIA, before)
+
     def test_folder_delete_button_only_inside_a_folder(self):
         self.make_folder()
         self.assertNotIn("data-folder-delete", self.client.get("/browse").get_data(as_text=True))
