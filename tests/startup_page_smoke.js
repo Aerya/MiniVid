@@ -10,7 +10,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../static/topbar.js'),'utf8'), {
     document:{getElementById:id => id === 'library-initial-scan' ? {dataset:{count:'0'}} : null},
     fetch:async () => {if(fail)throw new Error('offline');return {ok:true,json:async () => scan};},
-    location:{reload:() => reloaded++}, setTimeout:fn => timers.push(fn),
+    location:{pathname:'/browse',reload:() => reloaded++}, setTimeout:fn => timers.push(fn),
   });
   timers.shift()(); await settle();
   assert.equal(reloaded,0,'do not reload a library that has not changed');

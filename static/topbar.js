@@ -1,6 +1,6 @@
 (() => {
     const initialScan = document.getElementById('library-initial-scan');
-    if (initialScan) {
+    if (initialScan && ['/home', '/browse'].includes(location.pathname)) {
       const poll = async () => {
         try {
           const response = await fetch('/api/maintenance/progress', {credentials:'same-origin'});
