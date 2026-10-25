@@ -184,6 +184,53 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertTrue(os.path.exists(self.video_path))
         self.assertTrue(any(item["id"] == self.vid for item in minivid.MEDIA))
 
+    def make_folder(self, name="Pack Test"):
+        folder = os.path.join(VIDEO_ROOT, name)
+        os.makedirs(os.path.join(folder, "Sub"), exist_ok=True)
+        for rel in ("a.mkv", "Sub/b.mp4", "info.nfo"):
+            with open(os.path.join(folder, rel), "wb") as handle:
+                handle.write(b"not-a-real-video")
+        minivid.scan_media()
+        self.addCleanup(lambda: (minivid.shutil.rmtree(folder, ignore_errors=True), minivid.scan_media()))
+        return folder
+
+    def test_folder_delete_removes_whole_folder_and_index_entries(self):
+        folder = self.make_folder()
+        self.save_config(deletion_enabled=True)
+        dir_q = minivid.urlq("Pack Test")
+        info = self.client.get("/api/folder/management", query_string={"root": "", "dir": dir_q}).get_json()
+        self.assertTrue(info["can_delete"], info)
+        self.assertEqual((info["name"], info["sources"][0]["video_count"], info["sources"][0]["extra_files"]), ("Pack Test", 2, 1))
+        wrong = self.client.post("/api/folder/delete", json={"root": "", "dir": dir_q, "confirmation": "Pack"})
+        self.assertEqual(wrong.status_code, 400)
+        self.assertTrue(os.path.isdir(folder))
+        response = self.client.post("/api/folder/delete", json={"root": "", "dir": dir_q, "confirmation": "Pack Test"})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(len(response.get_json()["deleted"]), 2)
+        self.assertFalse(os.path.exists(folder))
+        self.assertFalse(any((item.get("dir") or "").startswith("Pack Test") for item in minivid.MEDIA))
+        self.assertTrue(os.path.exists(self.video_path))
+
+    def test_folder_delete_respects_global_switch_and_rejects_escape(self):
+        folder = self.make_folder()
+        self.save_config(deletion_enabled=False)
+        response = self.client.post("/api/folder/delete", json={"root": "0", "dir": "Pack%20Test", "confirmation": "Pack Test"})
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(os.path.isdir(folder))
+        self.save_config(deletion_enabled=True)
+        for bad in ("", "..", "Pack%20Test/..", "/"):
+            response = self.client.post("/api/folder/delete", json={"root": "0", "dir": bad, "confirmation": ""})
+            self.assertEqual(response.status_code, 400, bad)
+        self.assertTrue(os.path.exists(self.video_path))
+
+    def test_folder_delete_button_only_inside_a_folder(self):
+        self.make_folder()
+        self.assertNotIn("data-folder-delete", self.client.get("/browse").get_data(as_text=True))
+        html = self.client.get("/browse?root=&dir=Pack%20Test").get_data(as_text=True)
+        self.assertIn('data-dir="Pack%20Test"', html)
+        anonymous = minivid.app.test_client()
+        self.assertEqual(anonymous.post("/api/folder/delete", json={"dir": "Pack%20Test"}).status_code, 403)
+
     def test_configuration_requires_authenticated_session(self):
         anonymous = minivid.app.test_client()
         response = anonymous.get("/api/settings/media-managers")

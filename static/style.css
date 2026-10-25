@@ -2890,6 +2890,7 @@ html[data-theme="forest"] { --bg:#091510; --surface:#11231b; --surface-2:#193025
 .resume-actions-dialog footer{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
 .resume-actions-dialog [hidden]{display:none}
 .resume-delete{align-self:start;font-size:12px}
+.roots .folder-delete{margin-left:auto;font-size:12px}.roots .folder-delete:hover{color:var(--danger)}
 
 @media(max-width:650px){body:has(.home-page) .topbar{flex-wrap:wrap;gap:12px}body:has(.home-page) .header-right{flex-wrap:wrap;max-width:100%;gap:10px}}
 

@@ -36,6 +36,10 @@
     {% if crumbs and root_index is not none %}
     <span class="crumbs">/ {% for c in crumbs %}<a href="{{ c.url }}">{{ c.label }}</a>{% if not loop.last %} / {% endif %}{% endfor %}</span>
     {% endif %}
+    {% if dirq_q and auth and user %}
+    <button type="button" class="btn folder-delete" data-folder-delete data-root="{{ rootq or '' }}" data-dir="{{ dirq_q }}" data-parent="{{ parent_url or '/browse' }}">Supprimer le dossier…</button>
+    <script src="/static/folder-delete.js" defer></script>
+    {% endif %}
   </nav>
 
   <div class="tagbar open" id="tagbar-popular">
