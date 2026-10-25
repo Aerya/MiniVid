@@ -37,6 +37,8 @@ jobs:
         run: node tests/storage_page_smoke.js
       - name: Vérifier le suivi des suppressions et les avances du lecteur
         run: node tests/playback_folder_smoke.js
+      - name: Vérifier le rafraîchissement progressif au démarrage
+        run: node tests/startup_page_smoke.js
       - name: Vérifier la syntaxe JavaScript
         run: |
           for script in static/*.js; do

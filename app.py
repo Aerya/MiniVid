@@ -175,6 +175,8 @@ def inject_footer_config():
         hide_credits=HIDE_FOOTER_CREDITS, ui_prefs=prefs,
         auth_enabled=AUTH_ENABLED,
         test_instance=os.environ.get("MINI_READ_ONLY_TEST") == "1",
+        initial_scan_running=bool(SCAN_STATE.get("running") and SCAN_STATE.get("kind") == "initial"),
+        library_count=MEDIA_CACHE.get("count", 0),
     )
 
 @app.before_request
@@ -472,11 +474,20 @@ def scan_media():
 
 
 def _scan_media_impl():
-    global MEDIA, MEDIA_CACHE
     items, excluded = [], 0
+    initial = not MEDIA_CACHE["last_scan"]
+    last_publish = time.monotonic()
     cfg = _read_media_managers()
     with storage.connect(STORAGE_DB) as db:
         validated = {row["path"]: row["identity"] for row in db.execute("SELECT path,identity FROM readable_media")}
+    saved = dict(validated)
+
+    def persist_validation():
+        updates = [(path, identity) for path, identity in validated.items() if saved.get(path) != identity]
+        if updates:
+            with storage.connect(STORAGE_DB) as db:
+                db.executemany("INSERT OR REPLACE INTO readable_media(path,identity) VALUES(?,?)", updates)
+            saved.update(updates)
     for ridx, root in enumerate(MEDIA_DIRS):
         if not root or not os.path.isdir(root):
             continue
@@ -521,10 +532,20 @@ def _scan_media_impl():
                     "tags": tagify(fn, apply_bans=False),
                 }
                 items.append(item)
-    with storage.connect(STORAGE_DB) as db:
-        db.executemany("INSERT OR REPLACE INTO readable_media(path,identity) VALUES(?,?)", validated.items())
+                if initial and (len(items) == 1 or time.monotonic() - last_publish >= 3):
+                    _publish_media(items)
+                    persist_validation()
+                    last_publish = time.monotonic()
+    persist_validation()
+    _publish_media(items)
+    LOG.info("Scanned %d readable complete items across %d roots; %d excluded (hash: %s)", len(items), len(MEDIA_DIRS), excluded, MEDIA_CACHE["hash"][:8])
+
+
+def _publish_media(items):
+    global MEDIA, MEDIA_CACHE
+    # Publish a snapshot: the scanning thread continues building its own list.
+    items = list(items)
     MEDIA = items
-    # Mise à jour du cache
     cache_hash = hashlib.md5(json.dumps([i["id"] for i in items[:100]]).encode()).hexdigest()
     MEDIA_CACHE = {
         "items": items,
@@ -532,7 +553,6 @@ def _scan_media_impl():
         "last_scan": int(time.time()),
         "count": len(items)
     }
-    LOG.info("Scanned %d readable complete items across %d roots; %d excluded (hash: %s)", len(MEDIA), len(MEDIA_DIRS), excluded, cache_hash[:8])
 
 # --- Auto scan thread ---
 def _autoscan_loop():
@@ -4099,6 +4119,7 @@ def api_maint_progress():
         "kind": SCAN_STATE.get("kind", ""),
         "started": SCAN_STATE.get("started", 0),
         "finished": SCAN_STATE.get("finished", 0),
+        "indexed": MEDIA_CACHE.get("count", 0),
     }
     return jsonify(ok=True, **st)
 
@@ -4168,8 +4189,16 @@ def short_file_hash(path, limit=1024*1024):
 def ensure_thumbs_background():
     pass
 
-# Initial scan + autoscan thread
-scan_media()
+# Validation can take minutes on a cold/network library. Start the HTTP
+# server without waiting; only verified snapshots are published during scanning.
+def _start_initial_scan():
+    worker = threading.Thread(target=_run_scan, args=("initial", scan_media),
+                              daemon=True, name="minivid-initial-scan")
+    worker.start()
+    return worker
+
+
+_start_initial_scan()
 # The worker is harmless while automation is disabled (the persisted default).
 # Starting it unconditionally lets a later explicit UI activation take effect
 # without a restart, but never turns deletion on during an image update.
