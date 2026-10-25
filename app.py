@@ -180,7 +180,7 @@ def inject_footer_config():
 @app.before_request
 def protect_test_media():
     if os.environ.get("MINI_READ_ONLY_TEST") == "1" and request.method == "POST" and request.endpoint in {
-        "api_media_delete", "api_storage_selection_delete", "api_storage_duplicate_delete",
+        "api_media_delete", "api_folder_delete", "api_storage_selection_delete", "api_storage_duplicate_delete",
         "api_storage_automation", "api_media_managers_settings",
     }:
         return jsonify(ok=False, error="Instance de test : suppression et automatisation désactivées"), 403
@@ -1716,6 +1716,135 @@ def api_media_delete(vid):
     except (ValueError, OSError, TorrentClientError) as exc:
         LOG.warning("Suppression vidéo refusée: %s", exc)
         return jsonify(ok=False, error=str(exc)), 502
+
+
+def _folder_targets(root_arg, dir_arg):
+    """Resolve a /browse folder (dir quoted as in the URL) to its directories and indexed videos."""
+    try:
+        dirq = unquote_to_bytes(str(dir_arg or "")).decode("utf-8", "surrogatepass")
+    except Exception:
+        dirq = str(dir_arg or "")
+    dirq = dirq.replace("\\", "/").strip("/")
+    if not dirq or any(part in ("", ".", "..") for part in dirq.split("/")):
+        raise ValueError("Dossier invalide")
+    if root_arg in (None, ""):
+        roots = range(len(MEDIA_DIRS))
+    elif str(root_arg).isdigit() and int(root_arg) < len(MEDIA_DIRS):
+        roots = [int(root_arg)]
+    else:
+        raise ValueError("Source invalide")
+    folders = []
+    for root_index in roots:
+        root_real = os.path.realpath(MEDIA_DIRS[root_index])
+        full = os.path.realpath(os.path.join(root_real, dirq))
+        if full == root_real or os.path.commonpath([root_real, full]) != root_real or not os.path.isdir(full):
+            continue
+        videos = [item for item in MEDIA if item.get("kind", "video") == "video" and int(item.get("root", -1)) == root_index
+                  and ((item.get("dir") or "") == dirq or (item.get("dir") or "").startswith(dirq + "/"))]
+        indexed = set()
+        for item in videos:
+            try:
+                indexed.add(_media_item_and_path(item["id"])[3])
+            except (ValueError, FileNotFoundError):
+                pass
+        extra = 0
+        for base, _, names in os.walk(full):
+            extra += sum(1 for name in names if os.path.realpath(os.path.join(base, name)) not in indexed)
+        folders.append({"root": root_index, "full": full, "videos": videos, "extra_files": extra})
+    if not folders:
+        raise FileNotFoundError("Dossier introuvable")
+    return dirq, folders
+
+
+def _folder_blocker(cfg, root_index):
+    if not cfg.get("deletion_enabled"):
+        return "suppression_desactivee"
+    source = cfg.get("sources", {}).get(str(root_index), {})
+    mode = source.get("delete_mode", "disabled")
+    if mode == "torrent" and not cfg.get("torrent_integration_enabled"):
+        return "integration_torrent_desactivee"
+    if mode == "torrent" and not source.get("client_id"):
+        return "client_non_configure"
+    if mode not in ("file", "torrent"):
+        return "suppression_interdite_pour_cette_source"
+    return ""
+
+
+@app.route("/api/folder/management", methods=["GET"])
+def api_folder_management():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    try:
+        dirq, folders = _folder_targets(request.args.get("root"), request.args.get("dir"))
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    cfg, fav = _read_media_managers(), read_state().get("fav", {}) or {}
+    sources = []
+    for folder in folders:
+        source = cfg.get("sources", {}).get(str(folder["root"]), {})
+        size = 0
+        for item in folder["videos"]:
+            try:
+                size += os.path.getsize(_media_item_and_path(item["id"])[3])
+            except (ValueError, OSError):
+                pass
+        sources.append({
+            "root": folder["root"], "root_name": safe_display_name(MEDIA_NAMES[folder["root"]]),
+            "delete_mode": source.get("delete_mode", "disabled"), "blocked": _folder_blocker(cfg, folder["root"]),
+            "video_count": len(folder["videos"]), "size": size, "extra_files": folder["extra_files"],
+            "favorites": sum(1 for item in folder["videos"] if fav.get(item["id"])),
+        })
+    return jsonify(ok=True, name=dirq.rsplit("/", 1)[-1], dir=dirq, sources=sources,
+                   can_delete=all(not source["blocked"] for source in sources))
+
+
+@app.route("/api/folder/delete", methods=["POST"])
+def api_folder_delete():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        dirq, folders = _folder_targets(data.get("root"), data.get("dir"))
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    if str(data.get("confirmation") or "") != dirq.rsplit("/", 1)[-1]:
+        return jsonify(ok=False, error="confirmation_invalide"), 400
+    cfg = _read_media_managers()
+    blocked = next((reason for reason in (_folder_blocker(cfg, folder["root"]) for folder in folders) if reason), "")
+    if blocked:
+        return jsonify(ok=False, error=blocked), 403
+    deleted, removed = [], []
+    try:
+        for folder in folders:
+            mode = cfg["sources"][str(folder["root"])]["delete_mode"]
+            for item in folder["videos"]:
+                # A torrent removal may already have taken hard-linked copies along.
+                if not any(entry.get("id") == item["id"] for entry in MEDIA):
+                    continue
+                _delete_media_impl(item["id"], cfg)
+                deleted.append(item["id"])
+            if mode == "file":
+                shutil.rmtree(folder["full"])
+            else:
+                # Torrent clients own their data: only prune what they left empty.
+                for base, _, _ in os.walk(folder["full"], topdown=False):
+                    try:
+                        os.rmdir(base)
+                    except OSError:
+                        pass
+            if not os.path.exists(folder["full"]):
+                removed.append(folder["root"])
+    except PermissionError:
+        return jsonify(ok=False, error="source_montée_en_lecture_seule", deleted=deleted), 403
+    except (ValueError, OSError, FileNotFoundError, TorrentClientError) as exc:
+        LOG.warning("Suppression dossier interrompue: %s", exc)
+        return jsonify(ok=False, error=str(exc), deleted=deleted), 502
+    _log_event("folder_deleted", dir=dirq, count=len(deleted), roots=removed)
+    return jsonify(ok=True, deleted=deleted, removed_roots=removed, folder_removed=len(removed) == len(folders))
 
 
 # ---------- Storage and cleanup ----------
