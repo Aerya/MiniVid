@@ -3,6 +3,7 @@ import os
 import tempfile
 import threading
 import unittest
+from unittest import mock
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -177,6 +178,77 @@ class TorrentClientsTest(unittest.TestCase):
         with self.assertRaises(TorrentClientError):
             client.delete_with_data("other.mkv", "/downloads")
         self.assertEqual(FakeTorrentServer.deleted, [])
+
+    def folder_client(self, files):
+        client = QBittorrentClient(self.base_url)
+        torrent = {"hash": "pack123", "name": "Pack", "save_path": "/downloads"}
+        client.login = mock.Mock()
+        client._json = mock.Mock(side_effect=lambda path: (
+            [torrent] if path == "/api/v2/torrents/info" else files))
+        client.request = mock.Mock(return_value=(200, b"", {}))
+        return client
+
+    def test_folder_deletes_multifile_pack_once_with_data(self):
+        client = self.folder_client([{"name": name} for name in ("Pack/a.mkv", "Pack/Sub/b.mp4", "Pack/info.nfo")])
+        original_json = client._json.side_effect
+        client._json.side_effect = lambda path: [] if client.request.called else original_json(path)
+        result = client.delete_folder_with_data("Pack", "/downloads", ["Pack/a.mkv", "Pack/Sub/b.mp4"])
+        self.assertEqual(result["torrent_count"], 1)
+        client.request.assert_called_once_with("/api/v2/torrents/delete", {"hashes": "pack123", "deleteFiles": "true"})
+
+    def test_folder_refuses_external_sibling_traversal_and_uncovered_video(self):
+        for names, required in (
+            (["Pack/a.mkv", "Elsewhere/b.mkv"], ["Pack/a.mkv"]),
+            (["Pack/a.mkv", "Pack-other/b.mkv"], ["Pack/a.mkv"]),
+            (["Pack/a.mkv", "Pack/../outside.nfo"], ["Pack/a.mkv"]),
+            (["Pack/a.mkv", "/outside.nfo"], ["Pack/a.mkv"]),
+            (["Pack/a.mkv"], ["Pack/missing.mkv"]),
+        ):
+            with self.subTest(names=names, required=required):
+                client = self.folder_client([{"name": name} for name in names])
+                with self.assertRaises(TorrentClientError):
+                    client.delete_folder_with_data("Pack", "/downloads", required)
+                client.request.assert_not_called()
+
+    def test_folder_refuses_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.mkdir(os.path.join(root, "Pack"))
+            os.symlink(root, os.path.join(root, "Pack", "escape"))
+            client = self.folder_client([{"name": "Pack/escape/a.mkv"}])
+            client.local_root = root
+            with self.assertRaises(TorrentClientError):
+                client.delete_folder_with_data("Pack", "/downloads", [])
+            client.request.assert_not_called()
+
+    def test_folder_batches_multiple_torrents_and_leaves_unrelated_torrent(self):
+        client = self.folder_client([])
+        torrents = [{"hash": value, "name": value, "save_path": "/downloads"} for value in ("one", "two", "other")]
+        manifests = {"one": [{"name": "Pack/a.mkv"}], "two": [{"name": "Pack/b.mkv"}], "other": [{"name": "Pack-other/c.mkv"}]}
+        def read(path):
+            if path == "/api/v2/torrents/info":
+                return torrents[2:] if client.request.called else torrents
+            return manifests[urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["hash"][0]]
+        client._json.side_effect = read
+        result = client.delete_folder_with_data("Pack", "/downloads", ["Pack/a.mkv", "Pack/b.mkv"])
+        self.assertEqual(result["torrent_hashes"], ["one", "two"])
+        client.request.assert_called_once_with("/api/v2/torrents/delete", {"hashes": "one|two", "deleteFiles": "true"})
+
+    def test_folder_preflights_later_torrents_before_deleting_first(self):
+        client = self.folder_client([])
+        torrents = [{"hash": value, "save_path": "/downloads"} for value in ("safe", "unsafe")]
+        client._json.side_effect = lambda path: torrents if path == "/api/v2/torrents/info" else (
+            [{"name": "Pack/a.mkv"}] if "safe" == urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["hash"][0]
+            else [{"name": "Pack/b.mkv"}, {"name": "outside.nfo"}])
+        with self.assertRaises(TorrentClientError):
+            client.delete_folder_with_data("Pack", "/downloads", ["Pack/a.mkv", "Pack/b.mkv"])
+        client.request.assert_not_called()
+
+    def test_single_video_still_refuses_multifile_torrent(self):
+        client = self.folder_client([{"name": "Pack/a.mkv"}, {"name": "Pack/b.mkv"}])
+        client._find_torrents = mock.Mock(return_value=([{"hash": "pack123", "save_path": "/downloads"}], "/downloads/Pack/a.mkv"))
+        with self.assertRaises(TorrentClientError):
+            client.delete_with_data("Pack/a.mkv", "/downloads")
+        client.request.assert_not_called()
 
     def test_rutorrent_metadata_and_remove_with_data(self):
         client = RutorrentClient(self.base_url + "/rutorrent", "user", "password")

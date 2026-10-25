@@ -191,6 +191,58 @@ class QBittorrentClient(_HttpClient):
                 if not candidate.startswith(root_real + os.sep) or not os.path.isfile(candidate) or not os.path.samefile(
                         candidate, os.path.join(root_real, rel)):
                     raise TorrentClientError("Chemin torrent non vérifié : suppression refusée")
+        return self._delete_verified_torrents(torrents)
+
+    def prepare_folder_deletion(self, rel: str, client_root: str, required_files):
+        """Verify the complete file list of every torrent touching this folder."""
+        self.login()
+        target = _client_path(client_root, rel).rstrip("/") + "/"
+        required = {_client_path(client_root, path) for path in required_files}
+        covered, selected = set(), []
+        torrents = self._json("/api/v2/torrents/info")
+        if not isinstance(torrents, list):
+            raise TorrentClientError("Liste des torrents qBittorrent invalide")
+        for torrent in torrents:
+            save_path = str(torrent.get("save_path") or "")
+            # Read every manifest: content_path/name alone cannot prove that
+            # all data removed by deleteFiles stays inside the chosen folder.
+            info_hash = str(torrent.get("hash") or "")
+            if not info_hash or not posixpath.isabs(save_path):
+                raise TorrentClientError("Chemin ou hash torrent non vérifié")
+            files = self._json("/api/v2/torrents/files?" + urllib.parse.urlencode({"hash": info_hash}))
+            if not isinstance(files, list) or not files:
+                raise TorrentClientError("Liste des fichiers torrent non vérifiée")
+            paths = set()
+            for item in files:
+                name = item.get("name") if isinstance(item, dict) else None
+                if not isinstance(name, str) or not name or posixpath.isabs(name) or ".." in name.split("/"):
+                    raise TorrentClientError("Chemin torrent non vérifié")
+                paths.add(posixpath.normpath(posixpath.join(save_path, name)))
+            inside = {path for path in paths if path.startswith(target)}
+            if not inside:
+                continue
+            if inside != paths:
+                raise TorrentClientError("Ce torrent contient des fichiers hors du dossier : suppression refusée")
+            # Reject local symlinks escaping the selected directory too.
+            local_root = getattr(self, "local_root", None)
+            if local_root:
+                local_folder = os.path.realpath(os.path.join(local_root, rel))
+                for path in paths:
+                    local_path = os.path.realpath(os.path.join(local_root, posixpath.relpath(path, client_root)))
+                    if os.path.commonpath([local_folder, local_path]) != local_folder:
+                        raise TorrentClientError("Chemin torrent hors du dossier : suppression refusée")
+            covered.update(paths)
+            selected.append(torrent)
+        if required - covered:
+            raise TorrentClientError("Certaines vidéos du dossier ne correspondent à aucun torrent vérifié")
+        return selected
+
+    def delete_folder_with_data(self, rel: str, client_root: str, required_files):
+        return self._delete_verified_torrents(self.prepare_folder_deletion(rel, client_root, required_files))
+
+    def _delete_verified_torrents(self, torrents):
+        if not torrents:
+            return {"torrent_hashes": [], "torrent_names": [], "torrent_count": 0}
         info_hashes = [str(torrent.get("hash") or "") for torrent in torrents]
         if not info_hashes or any(not info_hash for info_hash in info_hashes):
             raise TorrentClientError("Hash qBittorrent manquant")
