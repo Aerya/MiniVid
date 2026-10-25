@@ -232,13 +232,15 @@ class QBittorrentClient(_HttpClient):
                     if os.path.commonpath([local_folder, local_path]) != local_folder:
                         raise TorrentClientError("Chemin torrent hors du dossier : suppression refusée")
             covered.update(paths)
-            selected.append(torrent)
+            selected.append({**torrent, "_verified_files": sorted(paths)})
         if required - covered:
             raise TorrentClientError("Certaines vidéos du dossier ne correspondent à aucun torrent vérifié")
         return selected
 
     def delete_folder_with_data(self, rel: str, client_root: str, required_files):
-        return self._delete_verified_torrents(self.prepare_folder_deletion(rel, client_root, required_files))
+        plan = self.prepare_folder_deletion(rel, client_root, required_files)
+        result = self._delete_verified_torrents(plan)
+        return {**result, "torrent_files": sorted({path for torrent in plan for path in torrent["_verified_files"]})}
 
     def _delete_verified_torrents(self, torrents):
         if not torrents:

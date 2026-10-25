@@ -781,36 +781,36 @@ def _tagify_filter_banned(words):
     return out
 
 def _reading_status(state, vid):
-    """Automatic states use actual watched time; explicit manual marks take precedence."""
+    """Farthest playback position includes seeks; explicit manual marks win."""
     overrides = state.get('read_overrides', {})
     if vid in overrides:
         return 'read' if overrides[vid] else 'unread'
     history = state.get('watch_history', {}).get(vid, {})
-    if 'watched_percent' in history:
-        percent = history['watched_percent']
-        return 'read' if percent >= 70 else 'in_progress' if percent >= 30 else 'unread'
-    # Older records lack effective playback time. Keep known completion until
-    # migration or the next playback supplies a duration and a measured counter.
-    if history.get('completed') or history.get('percent', 0) >= 70:return 'read'
-    if history.get('percent', 0) >= 30:return 'in_progress'
+    percent = history.get('furthest_percent', history.get('percent', 0))
+    if history.get('completed') or percent >= 80:return 'read'
+    if percent >= 30:return 'in_progress'
     if float((state.get('progress', {}) or {}).get(vid, 0) or 0) > 0:return 'unread'
     return 'read' if state.get('played', {}).get(vid) else 'unread'
 
 
 def _migrate_effective_reading():
     with storage.connect(STORAGE_DB) as db:
-        measured = {r['vid']:r['watched_seconds'] for r in db.execute('SELECT vid,watched_seconds FROM playback_stats')}
+        measured = {r['vid']: dict(r) for r in db.execute('SELECT vid,watched_seconds,max_percent FROM playback_stats')}
     with STATE_LOCK:
-        state = read_state();changed = False
+        state = read_state(); changed = False
         for vid, entry in state.get('watch_history', {}).items():
             duration = entry.get('duration', 0)
-            if 'watched_seconds' in entry or not duration or vid not in measured:continue
-            watched = min(duration, max(0, measured[vid]))
-            entry.update(watched_seconds=watched, watched_percent=100*watched/duration, completed=watched/duration>=0.7)
-            if vid not in state.get('read_overrides', {}):
-                if entry['completed']:state.setdefault('played', {})[vid] = True
-                else:state.setdefault('played', {}).pop(vid, None)
-            changed = True
+            stats = measured.get(vid, {})
+            if 'furthest_percent' not in entry:
+                entry['furthest_percent'] = max(entry.get('percent', 0), stats.get('max_percent', 0))
+                entry['completed'] = entry.get('completed', False) or entry['furthest_percent'] >= 80
+                changed = True
+            if 'watched_seconds' not in entry and duration and stats:
+                watched = min(duration, max(0, stats['watched_seconds']))
+                entry.update(watched_seconds=watched, watched_percent=100*watched/duration)
+                changed = True
+            if vid not in state.get('read_overrides', {}) and entry.get('completed'):
+                state.setdefault('played', {})[vid] = True
         if changed:write_state(state)
 
 
@@ -829,7 +829,7 @@ def _recent_reading(state, mode):
         if not last:continue
         rows.append({'id':vid, 'name':item['name'], 'status':status, 'last_played':last,
                      'progress':state.get('progress', {}).get(vid, 0),
-                     'percent':entry.get('watched_percent', entry.get('percent', 0)), 'duration':entry.get('duration', 0)})
+                     'percent':entry.get('furthest_percent', entry.get('percent', 0)), 'duration':entry.get('duration', 0)})
     rows.sort(key=lambda row:row['last_played'], reverse=True)
     if mode == 'both':
         rows.sort(key=lambda row:row['status'] != 'in_progress')
@@ -1032,10 +1032,12 @@ def api_progress_set(vid):
                 total_watched = max(0, previous_watched) + watched
                 if actual_duration:total_watched = min(actual_duration, total_watched)
                 watched_percent = 100*total_watched/actual_duration if actual_duration else 0
-                completed = watched_percent >= 70
+                furthest_percent = max(percent, old.get('furthest_percent', old.get('percent', 0)))
+                completed = old.get('completed', False) or furthest_percent >= 80
                 history[vid] = {'progress':pos, 'duration':duration or old.get('duration', 0),
                                 'percent':percent, 'completed':completed, 'last_played':time.time(),
-                                'watched_seconds':total_watched, 'watched_percent':watched_percent}
+                                'watched_seconds':total_watched, 'watched_percent':watched_percent,
+                                'furthest_percent':furthest_percent}
                 # An explicit manual mark remains effective until the user changes it.
                 if vid not in st.get('read_overrides', {}):
                     if completed:st.setdefault('played', {})[vid] = True
@@ -1800,11 +1802,112 @@ def api_folder_management():
                    can_delete=all(not source["blocked"] for source in sources))
 
 
+FOLDER_DELETE_LOCK = threading.RLock()
+
+
+def _save_folder_deletion(job):
+    with storage.connect(STORAGE_DB) as db:
+        db.execute("INSERT OR REPLACE INTO folder_deletions(id,payload) VALUES(?,?)",
+                   (job["id"], json.dumps(job)))
+
+
+def _active_folder_deletion(root, directory):
+    try:
+        directory = unquote_to_bytes(str(directory or "")).decode("utf-8", "surrogatepass").replace("\\", "/").strip("/")
+    except (UnicodeError, ValueError):
+        return None
+    with storage.connect(STORAGE_DB) as db:
+        rows = db.execute("SELECT payload FROM folder_deletions").fetchall()
+    for row in rows:
+        job = json.loads(row[0])
+        roots_overlap = root in (None, "") or any(str(folder["root"]) == str(root) for folder in job["folders"])
+        if job["status"] == "pending" and job["dir"] == directory and roots_overlap:
+            return job
+    return None
+
+
+def _folder_deletion_status(job):
+    """Observe accepted deletions only; never send another client command."""
+    if job["status"] != "pending":
+        return job
+    deleted, remaining, removed = [], 0, []
+    previously_deleted = set(job.get("deleted", []))
+    for folder in job["folders"]:
+        root = folder["root"]
+        if root >= len(MEDIA_DIRS) or os.path.realpath(MEDIA_DIRS[root]) != folder["source"]:
+            raise ValueError("La source du dossier a changé")
+        for video in folder["videos"]:
+            # stat distinguishes missing data from permission/network errors.
+            try:
+                os.stat(video["path"])
+            except FileNotFoundError:
+                if video["id"] not in previously_deleted:
+                    with STATE_LOCK:
+                        _forget_media(video["id"])
+                deleted.append(video["id"])
+        for path in folder["files"]:
+            try:
+                os.stat(path)
+                remaining += 1
+            except FileNotFoundError:
+                pass
+        # Only prune empty directories; extra files not owned by torrents stay.
+        for base, _, _ in os.walk(folder["full"], topdown=False):
+            try:
+                os.rmdir(base)
+            except OSError:
+                pass
+        if not os.path.exists(folder["full"]):
+            removed.append(root)
+    job.update(deleted=deleted, remaining_files=remaining,
+               remaining_videos=sum(len(f["videos"]) for f in job["folders"]) - len(deleted),
+               removed_roots=removed, folder_removed=len(removed) == len(job["folders"]))
+    if not remaining:
+        job["status"] = "completed"
+    _save_folder_deletion(job)
+    return job
+
+
+def _folder_deletion_response(job):
+    job = _folder_deletion_status(job)
+    if job["status"] == "failed":
+        return jsonify(ok=False, status="failed", error=job["error"]), 502
+    public = {key: job[key] for key in ("id", "status", "deleted", "remaining_files", "remaining_videos", "folder_removed", "removed_roots")}
+    return jsonify(ok=True, **public), 202 if job["status"] == "pending" else 200
+
+
+@app.route("/api/folder/deletion", methods=["GET"])
+def api_folder_deletion_status():
+    if not media_admin_required():
+        return jsonify(ok=False, error="authenticated_admin_required"), 403
+    with FOLDER_DELETE_LOCK:
+        with storage.connect(STORAGE_DB) as db:
+            row = db.execute("SELECT payload FROM folder_deletions WHERE id=?", (request.args.get("id", ""),)).fetchone()
+        job = json.loads(row[0]) if row else _active_folder_deletion(request.args.get("root"), request.args.get("dir"))
+        if not job:
+            return jsonify(ok=True, status="idle")
+        try:
+            return _folder_deletion_response(job)
+        except (ValueError, OSError) as exc:
+            return jsonify(ok=False, error=str(exc)), 502
+
+
 @app.route("/api/folder/delete", methods=["POST"])
 def api_folder_delete():
+    with FOLDER_DELETE_LOCK:
+        try:
+            return _api_folder_delete()
+        except (ValueError, OSError) as exc:
+            return jsonify(ok=False, error=str(exc)), 502
+
+
+def _api_folder_delete():
     if not media_admin_required():
         return jsonify(ok=False, error="authenticated_admin_required"), 403
     data = request.get_json(force=True, silent=True) or {}
+    existing = _active_folder_deletion(data.get("root"), data.get("dir"))
+    if existing:
+        return _folder_deletion_response(existing)
     try:
         dirq, folders = _folder_targets(data.get("root"), data.get("dir"))
     except FileNotFoundError as exc:
@@ -1813,11 +1916,19 @@ def api_folder_delete():
         return jsonify(ok=False, error=str(exc)), 400
     if str(data.get("confirmation") or "") != dirq.rsplit("/", 1)[-1]:
         return jsonify(ok=False, error="confirmation_invalide"), 400
+    # A pending parent/child folder or another library view must not resubmit.
+    with storage.connect(STORAGE_DB) as db:
+        active = [json.loads(row[0]) for row in db.execute("SELECT payload FROM folder_deletions")]
+    for prior in active:
+        if prior["status"] == "pending" and any(
+            os.path.commonpath([a["full"], b["full"]]) in (a["full"], b["full"])
+            for a in prior["folders"] for b in folders):
+            return _folder_deletion_response(prior)
     cfg = _read_media_managers()
     blocked = next((reason for reason in (_folder_blocker(cfg, folder["root"]) for folder in folders) if reason), "")
     if blocked:
         return jsonify(ok=False, error=blocked), 403
-    deleted, removed = [], []
+    deleted, removed, job = [], [], None
     try:
         torrent_folders = {}
         # Preflight all qBittorrent sources before deleting anything, including
@@ -1831,24 +1942,32 @@ def api_folder_delete():
                 continue
             paths = [(item["id"], *_media_item_and_path(item["id"])[2:]) for item in folder["videos"]]
             client_root = source.get("client_root", "/downloads")
-            client.prepare_folder_deletion(dirq, client_root, [rel for _, rel, _ in paths])
-            torrent_folders[folder["root"]] = (client, client_root, paths)
+            plan = client.prepare_folder_deletion(dirq, client_root, [rel for _, rel, _ in paths])
+            tracked = [os.path.join(MEDIA_DIRS[folder["root"]], os.path.relpath(path, client_root))
+                       for torrent in plan for path in torrent["_verified_files"]]
+            torrent_folders[folder["root"]] = (client, client_root, paths, tracked)
+        if torrent_folders:
+            # Persist before dispatch, so reopening/restarting cannot resubmit.
+            job = {"id": uuid.uuid4().hex, "status": "pending",
+                   "dir": dirq, "folders": []}
+            for folder in folders:
+                videos = [{"id": item["id"], "path": _media_item_and_path(item["id"])[3]} for item in folder["videos"]]
+                batch = torrent_folders.get(folder["root"])
+                files = batch[3] if batch else [v["path"] for v in videos]
+                job["folders"].append({"root": folder["root"], "source": os.path.realpath(MEDIA_DIRS[folder["root"]]),
+                                       "full": folder["full"], "videos": videos, "files": files})
+            _save_folder_deletion(job)
         for folder in folders:
             mode = cfg["sources"][str(folder["root"])]["delete_mode"]
             batch = torrent_folders.get(folder["root"])
             if batch:
-                client, client_root, paths = batch
+                client, client_root, paths, _ = batch
                 details = client.delete_folder_with_data(dirq, client_root, [rel for _, rel, _ in paths])
-                for _ in range(120):
-                    if all(not os.path.exists(full) for _, _, full in paths):
-                        break
-                    time.sleep(0.25)
-                for vid, _, full in paths:
-                    if not os.path.exists(full):
-                        _forget_media(vid)
-                        deleted.append(vid)
-                if any(os.path.exists(full) for _, _, full in paths):
-                    raise TorrentClientError("Les torrents ont été retirés, mais des vidéos existent encore sur le disque")
+                recorded = next(f for f in job["folders"] if f["root"] == folder["root"])
+                recorded["files"] = sorted(set(recorded["files"]) | {
+                    os.path.join(MEDIA_DIRS[folder["root"]], os.path.relpath(path, client_root))
+                    for path in details["torrent_files"]})
+                _save_folder_deletion(job)
                 _log_event("folder_torrents_deleted", root=folder["root"], dir=dirq,
                            torrent_count=details["torrent_count"], torrent_hashes=details["torrent_hashes"])
             for item in ([] if batch else folder["videos"]):
@@ -1869,10 +1988,18 @@ def api_folder_delete():
             if not os.path.exists(folder["full"]):
                 removed.append(folder["root"])
     except PermissionError:
+        if job:
+            job.update(status="failed", error="source_montée_en_lecture_seule")
+            _save_folder_deletion(job)
         return jsonify(ok=False, error="source_montée_en_lecture_seule", deleted=deleted), 403
     except (ValueError, OSError, FileNotFoundError, TorrentClientError) as exc:
         LOG.warning("Suppression dossier interrompue: %s", exc)
+        if job:
+            job.update(status="failed", error=str(exc))
+            _save_folder_deletion(job)
         return jsonify(ok=False, error=str(exc), deleted=deleted), 502
+    if job:
+        return _folder_deletion_response(job)
     _log_event("folder_deleted", dir=dirq, count=len(deleted), roots=removed)
     return jsonify(ok=True, deleted=deleted, removed_roots=removed, folder_removed=len(removed) == len(folders))
 

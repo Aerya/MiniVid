@@ -145,7 +145,7 @@
         <div class="actions">
           <button id="favbtn" class="fav {{ 'on' if fav else '' }}">Favori</button>
           <button id="readbtn" class="fav {{ 'on' if played else '' }}">{{ 'Marquer non lue' if played else 'Marquer lue' }}</button>
-          <span id="readstate" class="state" title="Temps réellement regardé : non lue sous 30 %, en cours de 30 à moins de 70 %, lue à partir de 70 %.">{{ 'Lue' if played else ('En cours' if reading_status == 'in_progress' else 'Non lue') }}</span>
+          <span id="readstate" class="state" title="Position maximale atteinte, avances comprises : non lue sous 30 %, en cours de 30 à moins de 80 %, lue à partir de 80 %.">{{ 'Lue' if played else ('En cours' if reading_status == 'in_progress' else 'Non lue') }}</span>
         </div>
         <details id="watch-tags" class="watch-tags">
           <summary>Tags ({{ display_tags|length }})</summary>
@@ -517,6 +517,7 @@
         }).catch(()=>{});
       }
       v.addEventListener('pause', () => {if (sessionStarted) saveProgress();});
+      v.addEventListener('seeked', () => saveProgress());
       window.addEventListener('pagehide', () => {if (sessionStarted) saveProgress(true);});
 
       v.addEventListener('timeupdate', () => {

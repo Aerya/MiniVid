@@ -28,7 +28,36 @@
     dialog.append(title, status, close); document.body.append(dialog);
     dialog.addEventListener('close', () => { dialog.remove(); button.disabled = false; }); dialog.showModal();
     const target = {root: button.dataset.root, dir: button.dataset.dir};
+    const statusUrl = '/api/folder/deletion?' + new URLSearchParams(target);
+    const finished = () => {
+      try { localStorage.setItem('minivid_reading_changed', String(Date.now())); } catch (_) {}
+      location.href = button.dataset.parent;
+    };
+    async function followDeletion(result) {
+      title.textContent = t('Suppression en cours…');
+      while (dialog.isConnected && result.status === 'pending') {
+        status.textContent = t('Suppression en cours…') + ` · ${result.remaining_videos} ` + t('vidéo(s) restante(s)')
+          + ` · ${result.remaining_files} ` + t('fichier(s) restant(s)') + '. ' + t('Tu peux fermer cette fenêtre, la suppression continue.');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        if (!dialog.isConnected) return;
+        try {
+          result = await api('/api/folder/deletion?' + new URLSearchParams({id: result.id}));
+        } catch (error) {
+          if (error.result?.status === 'failed') {
+            status.textContent = reason(error.message);
+            return;
+          }
+          // A failed observation must never enable another destructive POST.
+          status.textContent = t('Vérification momentanément indisponible. La suppression peut continuer sur le serveur.') + ' ' + reason(error.message);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      }
+      if (dialog.isConnected && result.status === 'completed') finished();
+    }
     try {
+      const current = await api(statusUrl);
+      if (!dialog.isConnected) return;
+      if (current.status === 'pending') { await followDeletion(current); return; }
       const info = await api('/api/folder/management?' + new URLSearchParams(target));
       if (!dialog.isConnected) return;
       const name = make('p'); name.append(make('strong', info.dir));
@@ -53,13 +82,28 @@
       dialog.replaceChildren(title, name, list, warning, confirmLabel, status, footer);
       save.onclick = async () => {
         save.disabled = true;
+        let submitted = false;
         try {
           if (confirmation.value !== info.name) throw new Error('Recopie exactement le nom du dossier pour confirmer.');
           status.textContent = 'Suppression en cours…';
-          await api('/api/folder/delete', {...target, confirmation: confirmation.value});
-          try { localStorage.setItem('minivid_reading_changed', String(Date.now())); } catch (_) {}
-          location.href = button.dataset.parent;
+          submitted = true;
+          const result = await api('/api/folder/delete', {...target, confirmation: confirmation.value});
+          if (result.status === 'pending') {
+            save.hidden = confirmLabel.hidden = true;
+            await followDeletion(result);
+          } else finished();
         } catch (error) {
+          if (submitted && !error.result) {
+            // The POST may have reached the server despite a lost response.
+            save.hidden = confirmLabel.hidden = true;
+            status.textContent = t('Vérification momentanément indisponible. La suppression peut continuer sur le serveur.');
+            try {
+              const current = await api(statusUrl);
+              if (current.status === 'pending') await followDeletion(current);
+              else if (current.status === 'completed') finished();
+            } catch (_) {}
+            return;
+          }
           const done = error.result?.deleted?.length;
           status.textContent = reason(error.message) + (done ? ` · ${done} vidéo(s) déjà supprimée(s)` : '');
           save.disabled = false;
