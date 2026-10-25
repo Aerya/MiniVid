@@ -17,7 +17,7 @@
 - **Personnaliser** les couleurs et les thèmes. Interface en français et en anglais.
 - **Connecter** qBittorrent ou ruTorrent pour consulter les informations de partage.
 
-Les statuts utilisent le temps réellement regardé : **non lue < 30 %**, **en cours de 30 à moins de 70 %**, **lue dès 70 %**. Les tags à ignorer se gèrent dans **Maintenance**.
+Les statuts suivent la position maximale atteinte, avances manuelles comprises : **non lue < 30 %**, **en cours de 30 à moins de 80 %**, **lue dès 80 %**. Revenir en arrière conserve le statut acquis ; les marquages manuels restent prioritaires. Les tags à ignorer se gèrent dans **Maintenance**.
 
 ## Navigation et vidéos similaires
 

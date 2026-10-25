@@ -17,7 +17,7 @@
 - **Customize** colors and themes. English and French interface.
 - **Connect** qBittorrent or ruTorrent to view sharing information.
 
-Statuses use actual watched time: **unwatched below 30%**, **in progress from 30% to below 70%**, **watched from 70%**. Manage ignored tags in **Maintenance**.
+Statuses use the farthest playback position, including manual seeks: **unwatched below 30%**, **in progress from 30% to below 80%**, **watched from 80%**. Rewinding preserves the acquired status; manual marks take precedence. Manage ignored tags in **Maintenance**.
 
 ## Navigation and similar videos
 

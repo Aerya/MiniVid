@@ -192,6 +192,10 @@
   "Nom du dossier à confirmer": "Folder name to confirm",
   "Recopie exactement le nom du dossier pour confirmer.": "Type the exact folder name to confirm.",
   "Suppression en cours…": "Deleting…",
+  "vidéo(s) restante(s)": "video(s) remaining",
+  "fichier(s) restant(s)": "file(s) remaining",
+  "Tu peux fermer cette fenêtre, la suppression continue.": "You can close this window; deletion will continue.",
+  "Vérification momentanément indisponible. La suppression peut continuer sur le serveur.": "Status temporarily unavailable. Deletion may still be running on the server.",
   "Les favoris de ce dossier seront aussi supprimés.": "Favorites in this folder will be deleted too.",
   "Torrents associés supprimés avec leurs données ; les autres fichiers restent si le client ne les retire pas.": "Linked torrents are removed with their data; other files stay unless the client removes them.",
   "Dossier entier supprimé, fichiers annexes compris.": "Whole folder deleted, including extra files.",
@@ -245,7 +249,7 @@
   "Vidéos en lecture seule, données indépendantes": "Read-only videos, separate data",
   "Supprimer le fichier": "Delete file"
 });
-  Object.assign(en, {"Pourcentage réellement regardé":"Percentage actually watched", "Temps réellement regardé : non lue sous 30 %, en cours de 30 à moins de 70 %, lue à partir de 70 %.":"Actual watched time: unwatched below 30%, in progress from 30% to less than 70%, watched from 70%."});
+  Object.assign(en, {"Position maximale atteinte":"Farthest playback position", "Position maximale atteinte, avances comprises : non lue sous 30 %, en cours de 30 à moins de 80 %, lue à partir de 80 %.":"Farthest playback position, including seeks: unwatched below 30%, in progress from 30% to less than 80%, watched from 80%."});
   Object.assign(en,{"Ça m’intéresse":"Interested","Pas pour moi":"Not for me","Avis et sources":"Feedback and sources","Impossible d’enregistrer cet avis.":"Could not save feedback."});
   Object.assign(en, window.MINIVID_TRANSLATIONS || {});
   const entries = Object.entries(en).sort((a,b)=>b[0].length-a[0].length);

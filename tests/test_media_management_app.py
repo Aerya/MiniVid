@@ -70,7 +70,9 @@ class MediaManagementApiTest(unittest.TestCase):
         self.client = minivid.app.test_client()
         self.client.post("/login", data={"username": "admin", "password": "test-password"})
         FakeTorrentClient.deleted.clear()
-        with minivid.storage.connect(minivid.STORAGE_DB) as db:db.execute("DELETE FROM playback_stats WHERE vid=?",(self.vid,))
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:
+            db.execute("DELETE FROM playback_stats WHERE vid=?", (self.vid,))
+            db.execute("DELETE FROM folder_deletions")
         try:
             os.remove(minivid.MEDIA_MANAGERS_FILE)
         except OSError:
@@ -271,15 +273,67 @@ class MediaManagementApiTest(unittest.TestCase):
         self.assertEqual(minivid.MEDIA, before)
         self.assertTrue(os.path.isdir(folder))
 
-    def test_folder_torrent_keeps_index_when_data_remains(self):
+    def test_folder_torrent_reports_pending_when_data_remains(self):
         folder = self.make_folder()
         self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
         qbit = self.folder_qbit(folder, remove_files=False)
         before = list(minivid.MEDIA)
-        with mock.patch.object(minivid, "_configured_client", return_value=qbit), mock.patch.object(minivid.time, "sleep"):
-            response = self.client.post("/api/folder/delete", json={"root": "0", "dir": "Pack%20Test", "confirmation": "Pack Test"})
-        self.assertEqual(response.status_code, 502, response.json)
+        data = {"root": "0", "dir": "Pack%20Test", "confirmation": "Pack Test"}
+        with mock.patch.object(minivid, "_configured_client", return_value=qbit), mock.patch.object(minivid.time, "sleep") as sleep:
+            response = self.client.post("/api/folder/delete", json=data)
+        self.assertEqual(response.status_code, 202, response.json)
+        self.assertEqual(response.json["status"], "pending")
+        self.assertEqual((response.json["remaining_videos"], response.json["remaining_files"]), (2, 3))
+        sleep.assert_not_called()
         self.assertEqual(minivid.MEDIA, before)
+        job_id = response.json["id"]
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:
+            self.assertEqual(json.loads(db.execute("SELECT payload FROM folder_deletions WHERE id=?", (job_id,)).fetchone()[0])["status"], "pending")
+        other_session = minivid.app.test_client()
+        other_session.post("/login", data={"username": "admin", "password": "test-password"})
+        self.assertEqual(other_session.get("/api/folder/deletion", query_string={"id": job_id}).json["status"], "pending")
+        self.assertEqual(minivid.app.test_client().get("/api/folder/deletion", query_string={"id": job_id}).status_code, 403)
+        # Reopening and duplicate POSTs only observe the persisted job.
+        with mock.patch.object(minivid, "_configured_client", side_effect=AssertionError("must not resend")):
+            self.assertEqual(self.client.get("/api/folder/deletion", query_string={"root": "0", "dir": "Pack%20Test"}).json["id"], job_id)
+            self.assertEqual(self.client.get("/api/folder/deletion", query_string={"root": "", "dir": "Pack Test"}).json["id"], job_id)
+            self.assertEqual(self.client.post("/api/folder/delete", json=data).json["id"], job_id)
+            # A different source view is also protected while the torrent is gone.
+            self.assertEqual(self.client.post("/api/folder/delete", json={**data, "root": ""}).json["id"], job_id)
+            os.remove(os.path.join(folder, "a.mkv"))
+            progress = self.client.get("/api/folder/deletion", query_string={"id": job_id})
+            self.assertEqual(progress.status_code, 202, progress.json)
+            self.assertEqual(progress.json["remaining_videos"], 1)
+            self.assertEqual(len(progress.json["deleted"]), 1)
+            os.remove(os.path.join(folder, "Sub/b.mp4"))
+            images_only = self.client.get("/api/folder/deletion", query_string={"id": job_id})
+            self.assertEqual(images_only.status_code, 202, images_only.json)
+            self.assertEqual(images_only.json["remaining_videos"], 0)
+            self.assertEqual(images_only.json["remaining_files"], 1)
+            os.remove(os.path.join(folder, "info.nfo"))
+            done = self.client.get("/api/folder/deletion", query_string={"id": job_id})
+            self.assertEqual(done.status_code, 200, done.json)
+            self.assertEqual(done.json["status"], "completed")
+            self.assertTrue(done.json["folder_removed"])
+        qbit.request.assert_called_once()
+
+    def test_pending_deletion_does_not_treat_io_error_as_missing_files(self):
+        folder = self.make_folder()
+        self.save_config(deletion_enabled=True, delete_mode="torrent", linked=True)
+        qbit = self.folder_qbit(folder, remove_files=False)
+        with mock.patch.object(minivid, "_configured_client", return_value=qbit):
+            result = self.client.post("/api/folder/delete", json={"root":"0", "dir":"Pack%20Test", "confirmation":"Pack Test"}).json
+        original_stat = os.stat
+        def stat(path, *args, **kwargs):
+            if path == os.path.join(folder, "a.mkv"):
+                raise OSError("network unavailable")
+            return original_stat(path, *args, **kwargs)
+        before = list(minivid.MEDIA)
+        with mock.patch.object(minivid.os, "stat", side_effect=stat):
+            response = self.client.get("/api/folder/deletion", query_string={"id": result["id"]})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(minivid.MEDIA, before)
+        self.assertEqual(self.client.get("/api/folder/deletion", query_string={"id": result["id"]}).json["status"], "pending")
 
     def test_folder_delete_button_only_inside_a_folder(self):
         self.make_folder()
@@ -763,33 +817,56 @@ class ReadingProgressTest(unittest.TestCase):
         MediaManagementApiTest.setUp(self)
         minivid.write_state(minivid._default_state())
 
-    def test_effective_thresholds_ignore_seeks_and_keep_manual_marks(self):
-        for watched,status in ((0,'unread'),(29,'unread'),(1,'in_progress'),(30,'in_progress'),(9,'in_progress'),(1,'read')):
-            response=self.client.post('/api/progress/'+self.vid,json={'progress':99,'duration':100,'watched':watched})
-            self.assertEqual(response.status_code,200)
-            self.assertEqual(response.json['reading_status'],status)
-        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':1,'duration':100}).json['reading_status'],'read')
-        self.client.post('/api/played',json={'vid':self.vid,'played':False})
-        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':99,'duration':100,'watched':10}).json['reading_status'],'unread')
+    def test_position_thresholds_include_seeks_and_keep_manual_marks(self):
+        for position, status in ((0, 'unread'), (29.99, 'unread'), (30, 'in_progress'), (79.99, 'in_progress'), (80, 'read'), (99, 'read'), (1, 'read')):
+            response = self.client.post('/api/progress/'+self.vid, json={'progress':position, 'duration':100, 'watched':0})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['reading_status'], status)
+        history = minivid.read_state()['watch_history'][self.vid]
+        self.assertEqual(history['furthest_percent'], 99)
+        self.assertEqual(history['watched_seconds'], 0)
+        self.client.post('/api/played', json={'vid':self.vid, 'played':False})
+        self.assertEqual(self.client.post('/api/progress/'+self.vid, json={'progress':99, 'duration':100}).json['reading_status'], 'unread')
+        self.client.post('/api/played', json={'vid':self.vid, 'played':True})
+        self.assertEqual(self.client.post('/api/progress/'+self.vid, json={'progress':1, 'duration':100}).json['reading_status'], 'read')
 
-    def test_ended_or_percent_field_cannot_fake_effective_playback(self):
-        self.client.post('/api/playback/'+self.vid,json={'event':'complete'})
-        result=self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':100,'percent':100,'watched':0}).json
-        self.assertEqual(result['reading_status'],'unread')
-        self.assertEqual(result['watched_percent'],0)
-        self.assertEqual(self.client.post('/api/progress/'+self.vid,json={'progress':100,'duration':100,'watched':10000}).json['watched_percent'],30)
+    def test_end_event_alone_does_not_mark_read_and_watched_time_stays_separate(self):
+        self.client.post('/api/playback/'+self.vid, json={'event':'complete'})
+        result = self.client.post('/api/progress/'+self.vid, json={'progress':0, 'duration':100, 'percent':100, 'watched':0}).json
+        self.assertEqual(result['reading_status'], 'unread')
+        result = self.client.post('/api/progress/'+self.vid, json={'progress':81, 'duration':100, 'watched':0}).json
+        self.assertEqual(result['reading_status'], 'read')
+        self.assertEqual(result['watched_percent'], 0)
+        self.assertEqual(self.client.post('/api/progress/'+self.vid, json={'progress':100, 'duration':100, 'watched':10000}).json['watched_percent'], 30)
 
-    def test_migration_uses_measured_time_not_saved_position(self):
-        state=minivid.read_state();state['watch_history']={self.vid:{'duration':100,'percent':99,'completed':True}}
+    def test_migration_preserves_position_and_measured_time_separately(self):
+        state = minivid.read_state()
+        state['watch_history'] = {self.vid:{'duration':100, 'percent':99, 'completed':False}}
         minivid.write_state(state)
-        with minivid.storage.connect(minivid.STORAGE_DB) as db:db.execute('INSERT INTO playback_stats(vid,watched_seconds) VALUES(?,?)',(self.vid,35))
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:
+            db.execute('INSERT INTO playback_stats(vid,watched_seconds) VALUES(?,?)', (self.vid,35))
         minivid._migrate_effective_reading()
-        migrated=minivid.read_state()
-        self.assertEqual(minivid._reading_status(migrated,self.vid),'in_progress')
-        self.assertEqual(migrated['watch_history'][self.vid]['watched_percent'],35)
-        self.assertEqual(migrated['watch_history'][self.vid]['percent'],99)
+        migrated = minivid.read_state()
+        self.assertEqual(minivid._reading_status(migrated,self.vid), 'read')
+        self.assertEqual(migrated['watch_history'][self.vid]['watched_percent'], 35)
+        self.assertEqual(migrated['watch_history'][self.vid]['percent'], 99)
         minivid._migrate_effective_reading()
-        self.assertEqual(minivid.read_state(),migrated)
+        self.assertEqual(minivid.read_state(), migrated)
+
+    def test_migration_recovers_past_seeks_without_overriding_manual_marks(self):
+        state = minivid.read_state()
+        state['watch_history'] = {self.vid:{'duration':100, 'percent':10, 'watched_seconds':5, 'watched_percent':5}}
+        minivid.write_state(state)
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:
+            db.execute('INSERT INTO playback_stats(vid,watched_seconds,max_percent) VALUES(?,?,?)', (self.vid,5,85))
+        minivid._migrate_effective_reading()
+        history = minivid.read_state()['watch_history'][self.vid]
+        self.assertEqual(history['furthest_percent'], 85)
+        self.assertEqual(history['watched_percent'], 5)
+        self.assertEqual(minivid._reading_status(minivid.read_state(), self.vid), 'read')
+        self.client.post('/api/played', json={'vid':self.vid, 'played':False})
+        minivid._migrate_effective_reading()
+        self.assertEqual(minivid._reading_status(minivid.read_state(), self.vid), 'unread')
 
     def test_panel_is_optional_and_history_is_sorted_by_real_activity(self):
         self.client.post('/api/progress/'+self.vid,json={'progress':35,'duration':100,'watched':30})
