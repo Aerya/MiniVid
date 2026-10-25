@@ -192,6 +192,8 @@
   "Nom du dossier à confirmer": "Folder name to confirm",
   "Recopie exactement le nom du dossier pour confirmer.": "Type the exact folder name to confirm.",
   "Suppression en cours…": "Deleting…",
+  "Vérification de la bibliothèque en cours. Les vidéos apparaissent au fur et à mesure de leur validation.": "Library verification is in progress. Videos appear as they pass validation.",
+  "Vidéos disponibles :": "Available videos:",
   "vidéo(s) restante(s)": "video(s) remaining",
   "fichier(s) restant(s)": "file(s) remaining",
   "Tu peux fermer cette fenêtre, la suppression continue.": "You can close this window; deletion will continue.",

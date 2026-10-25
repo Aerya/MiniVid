@@ -1,4 +1,19 @@
 (() => {
+    const initialScan = document.getElementById('library-initial-scan');
+    if (initialScan) {
+      const poll = async () => {
+        try {
+          const response = await fetch('/api/maintenance/progress', {credentials:'same-origin'});
+          const scan = await response.json();
+          if (response.ok && scan.ok && (!scan.running || scan.kind !== 'initial' || scan.indexed > Number(initialScan.dataset.count))) {
+            location.reload();
+            return;
+          }
+        } catch (_) {}
+        setTimeout(poll, 5000);
+      };
+      setTimeout(poll, 5000);
+    }
     const form = document.getElementById('library-controls');
     if (!form) return;
     const PREFS = JSON.parse(form.dataset.prefs || '{}');
