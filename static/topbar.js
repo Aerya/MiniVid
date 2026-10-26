@@ -1,13 +1,26 @@
 (() => {
     const initialScan = document.getElementById('library-initial-scan');
     if (initialScan && ['/home', '/browse'].includes(location.pathname)) {
+      const initialCount = Number(initialScan.dataset.count);
+      const status = document.createElement('span');
+      const refresh = document.createElement('a');
+      status.textContent = initialScan.textContent;
+      refresh.href = location.href;
+      refresh.textContent = 'Actualiser pour afficher les nouvelles vidéos';
+      refresh.hidden = true;
+      initialScan.replaceChildren(status, ' ', refresh);
       const poll = async () => {
         try {
           const response = await fetch('/api/maintenance/progress', {credentials:'same-origin'});
           const scan = await response.json();
-          if (response.ok && scan.ok && (!scan.running || scan.kind !== 'initial' || scan.indexed > Number(initialScan.dataset.count))) {
-            location.reload();
-            return;
+          if (response.ok && scan.ok) {
+            const count = Number(scan.indexed);
+            const finished = !scan.running || scan.kind !== 'initial';
+            if (Number.isInteger(count) && count >= 0) {
+              status.textContent = `${finished ? 'Vérification de la bibliothèque terminée.' : 'Vérification de la bibliothèque en cours.'} Vidéos disponibles : ${count}.`;
+              refresh.hidden = count === initialCount;
+            }
+            if (finished) return;
           }
         } catch (_) {}
         setTimeout(poll, 5000);
