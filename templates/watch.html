@@ -42,7 +42,7 @@
           const video = document.getElementById('v');
           const hlsSrc = "{{ play_url }}";
           if (Hls.isSupported()) {
-            const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+            const hls = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 90, maxBufferSize: 128 * 1000 * 1000, backBufferLength: 30 });
             hls.loadSource(hlsSrc);
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
@@ -73,7 +73,7 @@
             document.getElementById('vsource')?.remove();
             video.load();
             if (Hls.isSupported()) {
-              const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+              const hls = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 90, maxBufferSize: 128 * 1000 * 1000, backBufferLength: 30 });
               hls.loadSource(hlsSrc);
               hls.attachMedia(video);
               hls.on(Hls.Events.MANIFEST_PARSED, () => {

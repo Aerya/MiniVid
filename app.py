@@ -3592,6 +3592,7 @@ def _is_h264(path):
 HLS_SEGMENT_DIR      = os.path.join(THUMB_DIR, "hls")
 HLS_SEGMENT_DURATION = int(os.environ.get("MINI_HLS_SEGMENT_DURATION", "10"))   # secondes par segment
 HLS_CACHE_MAX_AGE_H  = int(os.environ.get("MINI_HLS_CACHE_MAX_AGE_H",  "24"))   # durée de rétention du cache
+HLS_CACHE_VERSION = "capped-v1"
 os.makedirs(HLS_SEGMENT_DIR, exist_ok=True)
 
 # Pré-génération : ensemble des (vid, seg) en cours pour éviter les doublons
@@ -3715,14 +3716,17 @@ def _vcodec_args(full, software=False):
     info = _probe_all(full)
     if info["vcodec"] in ("h264", "avc1"):
         return ["-c:v", "copy"]
+    # Constant quality alone can inflate a 4K HLS segment above 90 MB and
+    # exhaust the browser's buffer. Keep the source resolution with capped VBR.
+    rate = ["-b:v", "20M", "-maxrate", "24M", "-bufsize", "48M"]
     if HAS_NVENC and not software:
-        return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-cq", "23"]
+        return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "23"] + rate
     if HAS_VAAPI and not software:
         return [
             "-vaapi_device", os.environ.get("MINI_VAAPI_DEVICE", "/dev/dri/renderD128"),
-            "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "23",
-        ]
-    return ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
+            "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi",
+        ] + rate
+    return ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"] + rate
 
 def _build_segment_file(full, cache_path, seg_index):
     with _hls_encode_lock:
@@ -3738,6 +3742,8 @@ def _encode_segment_file(full, cache_path, seg_index):
     prefix = [
         "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
         "-threads", "2", "-filter_threads", "1",
+    ]
+    input_args = [
         "-ss", str(start_time), "-i", full,
         "-t", str(HLS_SEGMENT_DURATION),
         "-avoid_negative_ts", "1",
@@ -3747,7 +3753,9 @@ def _encode_segment_file(full, cache_path, seg_index):
         "-f", "mpegts", temp_path
     ]
     try:
-        subprocess.run(prefix + _vcodec_args(full) + suffix, check=True, timeout=60)
+        codec_args = _vcodec_args(full)
+        decoder_args = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"] if "h264_nvenc" in codec_args else []
+        subprocess.run(prefix + decoder_args + input_args + codec_args + suffix, check=True, timeout=60)
         # Le fichier final n'apparaît qu'une fois complètement écrit. Une requête
         # HLS concurrente ne peut donc plus recevoir un segment tronqué.
         os.replace(temp_path, cache_path)
@@ -3759,7 +3767,7 @@ def _encode_segment_file(full, cache_path, seg_index):
         if HAS_NVENC or HAS_VAAPI:
             LOG.warning("HLS segment %d hardware encoding failed; retrying with libx264: %s", seg_index, e)
             try:
-                subprocess.run(prefix + _vcodec_args(full, software=True) + suffix, check=True, timeout=60)
+                subprocess.run(prefix + input_args + _vcodec_args(full, software=True) + suffix, check=True, timeout=60)
                 os.replace(temp_path, cache_path)
                 return True
             except Exception as fallback_error:
@@ -3783,7 +3791,7 @@ def _prebuild_segment(vid, ridx, rel, seg_index):
         _seg_building.add(key)
     try:
         v_cache_dir = os.path.join(HLS_SEGMENT_DIR, vid)
-        cache_path  = os.path.join(v_cache_dir, f"seg_{seg_index}.ts")
+        cache_path  = os.path.join(v_cache_dir, f"{HLS_CACHE_VERSION}_seg_{seg_index}.ts")
         if os.path.exists(cache_path):
             return
         full = os.path.normpath(os.path.join(MEDIA_DIRS[ridx], rel))
@@ -3810,7 +3818,7 @@ def hls_segment(vid, seg):
 
     v_cache_dir = os.path.join(HLS_SEGMENT_DIR, vid)
     os.makedirs(v_cache_dir, exist_ok=True)
-    cache_path = os.path.join(v_cache_dir, f"seg_{seg}.ts")
+    cache_path = os.path.join(v_cache_dir, f"{HLS_CACHE_VERSION}_seg_{seg}.ts")
 
     if os.path.exists(cache_path):
         # Pré-générer les 2 segments suivants en arrière-plan
