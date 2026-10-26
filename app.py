@@ -3597,6 +3597,9 @@ os.makedirs(HLS_SEGMENT_DIR, exist_ok=True)
 # Pré-génération : ensemble des (vid, seg) en cours pour éviter les doublons
 _seg_building: set = set()
 _seg_build_lock = threading.Lock()
+# Foreground requests and prefetches share one encoder. Each 4K decoder and
+# NVENC session owns large buffers; duplicate/parallel jobs can kill the server.
+_hls_encode_lock = threading.Lock()
 
 def _hls_cache_cleanup():
     """Supprime périodiquement les segments HLS non accédés depuis HLS_CACHE_MAX_AGE_H heures."""
@@ -3722,17 +3725,25 @@ def _vcodec_args(full, software=False):
     return ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
 
 def _build_segment_file(full, cache_path, seg_index):
+    with _hls_encode_lock:
+        # Another request or prefetch may have finished while we were waiting.
+        if os.path.exists(cache_path):
+            return True
+        return _encode_segment_file(full, cache_path, seg_index)
+
+def _encode_segment_file(full, cache_path, seg_index):
     """Lance ffmpeg pour générer un segment .ts, retourne True si succès."""
     start_time = seg_index * HLS_SEGMENT_DURATION
     temp_path = f"{cache_path}.tmp.{os.getpid()}.{threading.get_ident()}"
     prefix = [
-        "ffmpeg", "-y", "-loglevel", "error",
+        "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
+        "-threads", "2", "-filter_threads", "1",
         "-ss", str(start_time), "-i", full,
         "-t", str(HLS_SEGMENT_DURATION),
         "-avoid_negative_ts", "1",
     ]
     suffix = [
-        "-c:a", "aac", "-ac", "2", "-b:a", "128k",
+        "-threads", "2", "-c:a", "aac", "-ac", "2", "-b:a", "128k",
         "-f", "mpegts", temp_path
     ]
     try:
