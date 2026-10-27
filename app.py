@@ -443,9 +443,26 @@ def _scan_source_completions(cfg, root_index):
     return _configured_client(cfg, source["client_id"]).file_completion(source.get("client_root", "/downloads"))
 
 
+def _readable_media_identity(stat):
+    # SSHFS assigns new device/inode numbers after a remount. These numbers
+    # identify the local mount, not a changed video on the remote server.
+    return f"v2:{stat.st_size}:{stat.st_mtime_ns}:{stat.st_ctime_ns}"
+
+
+def _cached_readable_media(path, stat, validated):
+    version = _readable_media_identity(stat)
+    cached = validated.get(path, "")
+    # Migrate existing successful validations without probing the videos again.
+    legacy = cached.split(":")
+    if cached == version or (len(legacy) == 5 and ":".join(legacy[2:]) == version[3:]):
+        validated[path] = version
+        return True
+    return False
+
+
 def _scan_readable_media(path, stat, validated):
-    version = storage.identity(stat) + ":" + str(stat.st_ctime_ns)
-    if validated.get(path) == version:
+    version = _readable_media_identity(stat)
+    if _cached_readable_media(path, stat, validated):
         return True
     if not _is_decodable_media(path):
         return False
@@ -461,7 +478,7 @@ def _scan_readable_media(path, stat, validated):
         if result.returncode or not any(line.strip() and not line.startswith(b"#") for line in result.stdout.splitlines()):
             return False
         after = os.stat(path)
-        if version != storage.identity(after) + ":" + str(after.st_ctime_ns):
+        if version != _readable_media_identity(after):
             return False
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -474,7 +491,7 @@ def scan_media():
 
 
 def _scan_media_impl():
-    items, excluded = [], 0
+    items, pending, excluded = [], [], 0
     initial = not MEDIA_CACHE["last_scan"]
     last_publish = time.monotonic()
     cfg = _read_media_managers()
@@ -517,9 +534,6 @@ def _scan_media_impl():
                 if (status is not None and (not status.get("complete") or status.get("size") != st.st_size)) or st.st_size <= 0:
                     excluded += 1
                     continue
-                if not _scan_readable_media(full, st, validated):
-                    excluded += 1
-                    continue
                 item = {
                     "id": id_for(ridx, rel),
                     "root": ridx,
@@ -531,11 +545,33 @@ def _scan_media_impl():
                     "mtime": int(st.st_mtime),
                     "tags": tagify(fn, apply_bans=False),
                 }
-                items.append(item)
-                if initial and (len(items) == 1 or time.monotonic() - last_publish >= 3):
-                    _publish_media(items)
-                    persist_validation()
-                    last_publish = time.monotonic()
+                if _cached_readable_media(full, st, validated):
+                    items.append(item)
+                else:
+                    pending.append((full, st, item))
+    # Restore every unchanged, previously verified file before slow probes of
+    # new/modified media. Missing files and incomplete torrents stay excluded.
+    if initial:
+        _publish_media(items)
+        persist_validation()
+        last_publish = time.monotonic()
+    for full, st, item in pending:
+        try:
+            current = os.stat(full)
+        except OSError:
+            excluded += 1
+            continue
+        if _readable_media_identity(current) != _readable_media_identity(st):
+            excluded += 1
+            continue
+        if _scan_readable_media(full, current, validated):
+            items.append(item)
+            if initial and (len(items) == 1 or time.monotonic() - last_publish >= 3):
+                _publish_media(items)
+                persist_validation()
+                last_publish = time.monotonic()
+        else:
+            excluded += 1
     persist_validation()
     _publish_media(items)
     LOG.info("Scanned %d readable complete items across %d roots; %d excluded (hash: %s)", len(items), len(MEDIA_DIRS), excluded, MEDIA_CACHE["hash"][:8])
