@@ -107,3 +107,44 @@ class ScanAdmissionTest(unittest.TestCase):
             handle.truncate(400)
         minivid.scan_media()
         self.assertEqual(minivid.MEDIA, [])
+
+    def test_remounted_device_and_inode_reuse_legacy_validation(self):
+        from types import SimpleNamespace
+        original = os.stat(self.video_path)
+        legacy = minivid.storage.identity(original) + ':' + str(original.st_ctime_ns)
+        remounted = SimpleNamespace(st_dev=original.st_dev+123, st_ino=original.st_ino+456,
+            st_size=original.st_size, st_mtime_ns=original.st_mtime_ns, st_ctime_ns=original.st_ctime_ns)
+        cache = {self.video_path:legacy}
+        with mock.patch.object(minivid, '_is_decodable_media', side_effect=AssertionError('unchanged video must not be decoded')):
+            self.assertTrue(minivid._scan_readable_media(self.video_path, remounted, cache))
+            self.assertTrue(cache[self.video_path].startswith('v2:'))
+            self.assertTrue(minivid._scan_readable_media(self.video_path, original, cache))
+        remounted.st_size += 1
+        with mock.patch.object(minivid, '_is_decodable_media', return_value=False) as probe:
+            self.assertFalse(minivid._scan_readable_media(self.video_path, remounted, cache))
+            probe.assert_called_once()
+        remounted.st_size -= 1
+        remounted.st_ctime_ns += 1
+        with mock.patch.object(minivid, '_is_decodable_media', return_value=False) as probe:
+            self.assertFalse(minivid._scan_readable_media(self.video_path, remounted, cache))
+            probe.assert_called_once()
+
+    def test_restore_cached_library_before_probing_new_file(self):
+        self.save_config(deletion_enabled=False)
+        stat = os.stat(self.video_path)
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:
+            db.execute('INSERT INTO readable_media(path,identity) VALUES(?,?)',
+                (self.video_path, minivid.storage.identity(stat)+':'+str(stat.st_ctime_ns)))
+        with open(os.path.join(fixtures.VIDEO_ROOT, 'new.mp4'), 'wb') as handle:
+            handle.write(b'new unverified video')
+        minivid.MEDIA_CACHE['last_scan'] = 0
+        def probe(path, stat, validated):
+            self.assertEqual([item['id'] for item in minivid.MEDIA], [self.vid], 'cached library is available before a new file probe')
+            self.assertTrue(path.endswith('new.mp4'))
+            return False
+        with mock.patch.object(minivid, '_scan_readable_media', side_effect=probe) as pending:
+            minivid.scan_media()
+            pending.assert_called_once()
+        self.assertEqual([item['id'] for item in minivid.MEDIA], [self.vid])
+        with minivid.storage.connect(minivid.STORAGE_DB) as db:
+            self.assertTrue(db.execute('SELECT identity FROM readable_media WHERE path=?',(self.video_path,)).fetchone()[0].startswith('v2:'))
